@@ -1,0 +1,1 @@
+"""Navigation logic and user progress tracking module."""

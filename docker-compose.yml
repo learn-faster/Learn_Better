@@ -1,0 +1,45 @@
+services:
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: learnfast-neo4j
+    ports:
+      - "7475:7474"
+      - "7688:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/password
+      - NEO4J_PLUGINS=["apoc", "graph-data-science"]
+      - NEO4J_dbms_security_procedures_unrestricted=apoc.*,gds.*
+      - NEO4J_dbms_security_procedures_allowlist=apoc.*,gds.*
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - neo4j_import:/var/lib/neo4j/import
+      - neo4j_plugins:/plugins
+    networks:
+      - learnfast-network
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: learnfast-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=learnfast
+      - POSTGRES_USER=learnfast
+      - POSTGRES_PASSWORD=password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - learnfast-network
+
+volumes:
+  neo4j_data:
+  neo4j_logs:
+  neo4j_import:
+  neo4j_plugins:
+  postgres_data:
+
+networks:
+  learnfast-network:
+    driver: bridge

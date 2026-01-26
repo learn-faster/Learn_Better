@@ -1,0 +1,1 @@
+"""Path resolution and content retrieval module."""
