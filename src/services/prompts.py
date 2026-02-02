@@ -3,6 +3,7 @@ You are an expert tutor creating flashcards for spaced repetition.
 Based on the following text, create {count} flashcards.
 Each flashcard should focus on a single key concept, fact, or definition.
 Avoid complex or ambiguous questions.
+Use LaTeX for math notation (e.g. \( ... \) for inline, \[ ... \] for block equations).
 The output must be a valid JSON array of objects with "front" and "back" keys.
 
 Text:
@@ -19,6 +20,7 @@ QUESTION_PROMPT_TEMPLATE = """
 You are an expert teacher creating a quiz to test understanding of the following text.
 Create {count} multiple-choice questions.
 Each question should check for comprehension of key concepts.
+Use LaTeX for math notation (e.g. \( ... \) for inline, \[ ... \] for block equations).
 The output must be a valid JSON array of objects.
 
 Text:

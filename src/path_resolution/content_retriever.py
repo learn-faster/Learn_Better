@@ -34,7 +34,8 @@ Guidelines:
 3.  **Engagement**: Use a helpful and encouraging tone.
 4.  **Markdown**: Use proper Markdown formatting (headers, lists, bold text) to make the content readable.
 5.  **Conciseness**: Ensure the content is appropriate for a {time_budget}-minute reading session. Do not include irrelevant fluff.
-6.  **Accuracy**: Stick to the facts provided in the chunks. Do not hallucinate external information unless it's common knowledge used for analogies.
+6.  **Formatting**: Use proper Markdown (headers, lists, etc.). Use LaTeX for math notation (e.g. \( ... \) for inline, \[ ... \] for block equations).
+7.  **Accuracy**: Stick to the facts provided in the chunks. Do not hallucinate external information unless it's common knowledge used for analogies.
 
 Raw Chunks:
 {raw_chunks}

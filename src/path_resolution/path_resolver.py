@@ -59,9 +59,10 @@ class PathResolver:
             
             if result and result[0]:
                 chunk_count = result[0]['chunk_count']
-                return chunk_count * MINUTES_PER_CHUNK
+                return max(1, chunk_count) * MINUTES_PER_CHUNK
             
-            return 0
+            # If no chunks found, return a baseline instead of 0
+            return MINUTES_PER_CHUNK
             
         except Exception as e:
             logger.error(f"Error estimating time for concepts: {str(e)}")

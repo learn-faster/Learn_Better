@@ -112,21 +112,37 @@ async def generate_learning_path(
     """
     # 1. Try Graph Resolution
     # PathRequest requires user_id, so we always try this if not explicitly skipped (future flag?)
+    graph_exists = False
     try:
+        # Check if concept exists in graph first to decide on fallback
+        concept_check = path_resolver.navigation.connection.execute_query(
+             "MATCH (c:Concept {name: $name}) RETURN count(*) as cnt", 
+             {"name": request.target_concept.lower()}
+        )
+        graph_exists = concept_check and concept_check[0]["cnt"] > 0
+
         # Use provided time budget
         graph_path = path_resolver.resolve_path(
             request.user_id, 
             request.target_concept, 
             time_budget_minutes=request.time_budget_minutes
         )
-        if graph_path and graph_path.concepts:
-            # If we found a valid path, return it (casted to dict or allowed as Pydantic)
+        
+        # If we found a valid path (even if empty but concept exists), 
+        # return it if we want to avoid LLM fallback for known graph concepts.
+        if graph_exists:
             return graph_path
+            
     except Exception as e:
-        print(f"Graph resolution failed, falling back to LLM: {e}")
-        # Continue to LLM fallback
+        print(f"Graph resolution failed: {e}")
+        # Continue to fallback ONLY if concept doesn't exist in graph
 
-    # 2. Fallback to LLM Generation
+    # 2. Fallback to LLM Generation (Only if NOT in graph or graph resolution failed and concept is new)
+    if graph_exists:
+        # If it's in the graph but we got here, it's either an error or empty path.
+        # We already returned above if graph_exists.
+        pass
+
     text = ""
     if request.document_id:
         document = db.query(Document).filter(Document.id == request.document_id).first()

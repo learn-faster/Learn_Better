@@ -335,6 +335,7 @@ function updateGraphHighlights(value) {
 async function generatePath(targetConcept) {
     const timeBudget = document.getElementById('timeBudget').value;
     const btn = document.querySelector('.btn');
+    const originalText = btn.textContent;
     btn.textContent = 'Generating...';
     btn.disabled = true;
 
@@ -345,13 +346,28 @@ async function generatePath(targetConcept) {
             time_budget_minutes: parseInt(timeBudget)
         });
 
-        // Navigate to the lesson of the first concept in the path (or the target itself if path is short)
-        // For simplicity, let's just go to the target lesson, the API handles the full content retrieval
-        window.location.hash = `#lesson/${encodeURIComponent(targetConcept)}?time=${timeBudget}`;
+        if (!path.concepts || path.concepts.length === 0) {
+            alert(`Budget too low! Your current budget of ${timeBudget} min isn't enough to start "${formatConcept(targetConcept)}". Try increasing the time or picking a simpler concept.`);
+            btn.textContent = originalText;
+            btn.disabled = false;
+            return;
+        }
+
+        // If path was pruned, inform the user they are learning a sub-goal
+        if (path.pruned && path.target_concept !== targetConcept) {
+            const proceed = confirm(`Total path to "${formatConcept(targetConcept)}" exceeds ${timeBudget} min. \n\nWe've created a shorter path to "${formatConcept(path.target_concept)}" instead. Proceed?`);
+            if (!proceed) {
+                btn.textContent = originalText;
+                btn.disabled = false;
+                return;
+            }
+        }
+
+        window.location.hash = `#lesson/${encodeURIComponent(path.target_concept)}?time=${timeBudget}`;
 
     } catch (err) {
         alert('Failed to generate path: ' + err.message);
-        btn.textContent = 'Generate Path';
+        btn.textContent = originalText;
         btn.disabled = false;
     }
 }
@@ -378,8 +394,16 @@ async function renderLesson(concept) {
             breaks: false // Disable breaks to let text reflow naturally
         });
 
+        // Pre-process Markdown: Double-escape LaTeX delimiters so 'marked' doesn't eat the backslashes
+        // \[ -> \\[ , \] -> \\] , \( -> \\( , \) -> \\)
+        const protectedMarkdown = lesson.content_markdown
+            .replace(/\\\[/g, '\\\\[')
+            .replace(/\\\]/g, '\\\\]')
+            .replace(/\\\(/g, '\\\\(')
+            .replace(/\\\)/g, '\\\\)');
+
         // Convert Markdown to HTML using marked.js
-        const htmlContent = marked.parse(lesson.content_markdown);
+        const htmlContent = marked.parse(protectedMarkdown);
 
         mainContent.innerHTML = `
             <div class="lesson-container">
@@ -400,21 +424,39 @@ async function renderLesson(concept) {
 
                 <div style="margin-top: 3rem; text-align: center; display: flex; gap: 1rem; justify-content: center;">
                     <button class="btn btn-secondary" onclick="window.location.hash='#dashboard'">Back to Dashboard</button>
-                    <button class="btn" onclick="completeLesson('${concept}')">Complete Lesson</button>
+                    <button class="btn" onclick='completeLesson(${JSON.stringify(lesson.path)})'>Complete Lesson</button>
                 </div>
             </div>
         `;
+
+        // Render Math
+        if (window.renderMathInElement) {
+            renderMathInElement(mainContent, {
+                delimiters: [
+                    { left: '$$', right: '$$', display: true },
+                    { left: '$', right: '$', display: false },
+                    { left: '\\(', right: '\\)', display: false },
+                    { left: '\\[', right: '\\]', display: true }
+                ],
+                throwOnError: false
+            });
+        }
     } catch (err) {
         mainContent.innerHTML = `<div class="error">Failed to load lesson: ${err.message}</div>`;
     }
 }
 
-async function completeLesson(concept) {
+async function completeLesson(concepts) {
+    if (!Array.isArray(concepts)) concepts = [concepts];
+
     try {
-        await api.post('/api/progress/complete', {
-            user_id: state.userId,
-            concept_name: concept
-        });
+        // Mark each concept in the path as completed
+        for (const concept of concepts) {
+            await api.post('/api/progress/complete', {
+                user_id: state.userId,
+                concept_name: concept
+            });
+        }
         window.location.hash = '#dashboard';
     } catch (err) {
         alert('Failed to complete lesson: ' + err.message);
