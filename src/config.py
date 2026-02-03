@@ -27,9 +27,10 @@ class Settings(BaseSettings):
     allowed_image_extensions: List[str] = [".jpg", ".jpeg", ".png"]
     
     # LLM Settings
-    llm_provider: str = "openai"  # openai, groq, ollama
+    llm_provider: str = "openai"  # openai, groq, ollama, openrouter
     openai_api_key: str = ""
     groq_api_key: str = ""
+    openrouter_api_key: str = ""
     ollama_base_url: str = "http://localhost:11434"
     llm_model: str = "gpt-3.5-turbo" 
 
