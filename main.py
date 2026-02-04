@@ -31,8 +31,11 @@ from src.routers import (
     folders as folders_router,
     analytics as analytics_router,
     ai as ai_router,
-    navigation as navigation_router
+    navigation as navigation_router,
+    cognitive as cognitive_router,
+    curriculum as curriculum_router
 )
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -110,6 +113,9 @@ app.include_router(folders_router.router)
 app.include_router(analytics_router.router)
 app.include_router(ai_router.router)
 app.include_router(navigation_router.router)
+app.include_router(cognitive_router.router)
+app.include_router(curriculum_router.router)
+
 
 # Mount static files
 app.mount("/static", StaticFiles(directory="src/static"), name="static")
@@ -125,3 +131,4 @@ async def root():
 # /documents/* -> Moved to /api/documents/*
 # /concepts/*, /learning/lesson, /progress/* -> Moved to /api (served by navigation router)
 # /learning/path -> Moved to /api/ai/learning-path
+ 
