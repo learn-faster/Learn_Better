@@ -22,7 +22,6 @@ class LLMService:
     def __init__(self):
         """Initializes the LLM service using global settings."""
         self.provider = settings.llm_provider.lower()
-        self.api_key = settings.openai_api_key if self.provider == "openai" else settings.groq_api_key
         self.base_url = settings.ollama_base_url if self.provider == "ollama" else None
         self.model = settings.llm_model
         if settings.use_opik:
@@ -37,6 +36,13 @@ class LLMService:
              # Groq uses OpenAI-compatible client
             self.client = AsyncOpenAI(
                 base_url="https://api.groq.com/openai/v1/",
+                api_key=self.api_key,
+                http_client=httpx.AsyncClient(trust_env=False)
+            )
+        elif self.provider == "openrouter":
+            # OpenRouter uses OpenAI-compatible API
+            self.client = AsyncOpenAI(
+                base_url="https://openrouter.ai/api/v1",
                 api_key=self.api_key,
                 http_client=httpx.AsyncClient(trust_env=False)
             )
@@ -77,6 +83,12 @@ class LLMService:
             return AsyncOpenAI(
                 base_url="https://api.groq.com/openai/v1/",
                 api_key=api_key or settings.groq_api_key,
+                http_client=httpx.AsyncClient(trust_env=False)
+            ), model
+        elif provider == "openrouter":
+            return AsyncOpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=api_key or settings.openrouter_api_key,
                 http_client=httpx.AsyncClient(trust_env=False)
             ), model
         elif provider == "ollama":

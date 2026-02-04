@@ -43,6 +43,7 @@ class Document(Base):
     # Time tracking
     time_spent_reading = Column(Integer, default=0) # Seconds
     last_opened = Column(DateTime, nullable=True)
+    first_opened = Column(DateTime, nullable=True)
     completion_estimate = Column(Integer, nullable=True) # Estimated seconds
     reading_progress = Column(Float, default=0.0) # 0.0 to 1.0
 

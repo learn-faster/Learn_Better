@@ -50,7 +50,9 @@ class DocumentProcessor:
         
         try:
             result = self._converter.convert(str(path))
-            return result.text_content
+            text = result.text_content
+            # PostgreSQL does not allow NUL (\x00) characters in string literals
+            return text.replace('\x00', '') if text else ""
         except Exception as e:
             raise RuntimeError(f"Failed to convert document: {str(e)}") from e
     

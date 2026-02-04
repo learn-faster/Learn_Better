@@ -1,0 +1,423 @@
+@import "tailwindcss";
+
+@theme {
+  /* Premium Deep Dark Theme - Sophisticated Midnight */
+  --color-primary-50: #f5f3ff;
+  --color-primary-100: #ede9fe;
+  --color-primary-200: #ddd6fe;
+  --color-primary-300: #c4b5fd;
+  --color-primary-400: #a78bfa;
+  --color-primary-500: #8b5cf6;
+  --color-primary-600: #7c3aed;
+  --color-primary-700: #6d28d9;
+  --color-primary-800: #5b21b6;
+  --color-primary-900: #4c1d95;
+  --color-primary-950: #2e1065;
+
+  /* Deep Midnight Backgrounds */
+  --color-dark-50: #f8fafc;
+  --color-dark-100: #f1f5f9;
+  --color-dark-200: #e2e8f0;
+  --color-dark-300: #cbd5e1;
+  --color-dark-400: #94a3b8;
+  --color-dark-500: #64748b;
+  --color-dark-600: #475569;
+  --color-dark-700: #334155;
+  --color-dark-800: #1e293b;
+  --color-dark-900: #0f172a;
+  --color-dark-950: #020617;
+  /* True Midnight */
+}
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background-color: #020617;
+  color: #f8fafc;
+  font-family: 'Outfit', 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Glassmorphism Classes - Refined for Deep Dark */
+.glass {
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.glass-light {
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.glass-morphism {
+  background: rgba(2, 6, 23, 0.7);
+  backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.4), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0f172a;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(99, 102, 241, 0.4);
+}
+
+/* Form Styles */
+input,
+select,
+textarea {
+  background: rgba(30, 41, 59, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: white;
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  transition: all 0.2s;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #8b5cf6;
+  box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+/* Button Premium Styles */
+.btn-primary {
+  @apply bg-gradient-to-r from-primary-600 to-primary-500 hover:from-primary-500 hover:to-primary-400 text-white font-medium py-2 px-4 rounded-lg transition-all shadow-lg hover:shadow-primary-500/20 active:scale-95 flex items-center justify-center gap-2;
+}
+
+.btn-secondary {
+  @apply bg-dark-800 hover:bg-dark-700 text-white font-medium py-2 px-4 rounded-lg border border-dark-700 transition-all active:scale-95 flex items-center justify-center gap-2;
+}
+
+.btn-ghost {
+  @apply hover:bg-white/10 text-dark-300 hover:text-white font-medium py-2 px-4 rounded-lg transition-all active:scale-95 flex items-center justify-center gap-2;
+}
+
+/* Card Styles */
+.card-premium {
+  background: rgba(15, 23, 42, 0.6);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  @apply rounded-2xl p-6 transition-all hover:translate-y-[-4px] hover:shadow-2xl hover:shadow-black/40;
+}
+
+/* Math symbols support */
+.katex {
+  font-size: 1.1em;
+}
+
+/* Premium Typography for Markdown/Text */
+.markdown-content {
+  @apply text-dark-100 leading-relaxed text-lg font-normal;
+}
+
+.markdown-content h1 {
+  font-size: 2.25rem;
+  line-height: 2.5rem;
+  font-weight: 900;
+  color: white;
+  margin-bottom: 2rem;
+  margin-top: 3rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.markdown-content h2 {
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 900;
+  color: white;
+  margin-bottom: 1.5rem;
+  margin-top: 2.5rem;
+}
+
+.markdown-content h3 {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+  font-weight: 700;
+  color: var(--color-primary-300);
+  margin-bottom: 1rem;
+  margin-top: 2rem;
+}
+
+.markdown-content p {
+  margin-bottom: 1.5rem;
+}
+
+.markdown-content ul,
+.markdown-content ol {
+  margin-bottom: 2rem;
+  padding-left: 1.5rem;
+}
+
+.markdown-content ul>li,
+.markdown-content ol>li {
+  list-style-type: disc;
+}
+
+.markdown-content blockquote {
+  padding-left: 1.5rem;
+  border-left: 4px solid rgba(244, 63, 94, 0.3);
+  font-style: italic;
+  color: var(--color-dark-300);
+  background-color: rgba(255, 255, 255, 0.05);
+  padding-top: 1rem;
+  padding-bottom: 1rem;
+  padding-right: 1rem;
+  border-top-right-radius: 0.75rem;
+  border-bottom-right-radius: 0.75rem;
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+}
+
+.markdown-content code {
+  background-color: var(--color-dark-800);
+  padding: 0.125rem 0.5rem;
+  border-radius: 0.25rem;
+  color: var(--color-primary-300);
+  font-family: monospace;
+  font-size: 0.875rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.markdown-content pre {
+  background-color: var(--color-dark-900);
+  padding: 1.5rem;
+  border-radius: 1rem;
+  overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 2rem;
+  margin-bottom: 2rem;
+  box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.05);
+}
+
+.markdown-content pre code {
+  background-color: transparent;
+  padding: 0;
+  border: none;
+  color: var(--color-dark-100);
+  font-size: 0.875rem;
+  line-height: 1.625;
+}
+
+.markdown-content a {
+  color: var(--color-primary-400);
+  text-decoration: underline;
+  transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.markdown-content a:hover {
+  color: var(--color-primary-300);
+}
+
+.markdown-content img {
+  border-radius: 2rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  margin-top: 3rem;
+  margin-bottom: 3rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Animation Utilities */
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float {
+  0% {
+    transform: translateY(0px);
+  }
+
+  50% {
+    transform: translateY(-10px);
+  }
+
+  100% {
+    transform: translateY(0px);
+  }
+}
+
+@keyframes shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  25% {
+    transform: translateX(-5px);
+  }
+
+  75% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes pulse-slow {
+
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.8;
+    transform: scale(0.98);
+  }
+}
+
+.animate-shake {
+  animation: shake 0.4s ease-in-out;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 4s ease-in-out infinite;
+}
+
+@keyframes scan {
+  0% {
+    top: 0%
+  }
+
+  50% {
+    top: 100%
+  }
+
+  100% {
+    top: 0%
+  }
+}
+
+.animate-scan {
+  animation: scan 4s linear infinite;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 4px 24px -1px rgba(0, 0, 0, 0.2);
+}
+
+.text-glow {
+  text-shadow: 0 0 15px rgba(129, 140, 248, 0.5);
+}
+
+/* Universe Background - Animated Starfield */
+.universe-stars {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  background: transparent;
+  z-index: 1;
+}
+
+.star-layer-1 {
+  width: 1px;
+  height: 1px;
+  background: transparent;
+  box-shadow: 10vw 20vh #fff, 35vw 45vh #fff, 60vw 10vh #fff, 85vw 80vh #fff, 15vw 90vh #fff, 50vw 30vh #fff, 75vw 60vh #fff, 5vw 10vh #fff;
+  animation: twinkle 4s ease-in-out infinite;
+}
+
+.star-layer-2 {
+  width: 2px;
+  height: 2px;
+  background: transparent;
+  box-shadow: 20vw 15vh #a855f7, 45vw 60vh #06b6d4, 70vw 25vh #a855f7, 90vw 50vh #06b6d4, 5vw 70vh #a855f7, 40vw 10vh #06b6d4, 80vw 90vh #a855f7;
+  animation: twinkle 7s ease-in-out infinite alternate;
+}
+
+@keyframes twinkle {
+
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+}
+
+/* Cosmic Glow Utilities */
+.cosmic-nebula {
+  background: radial-gradient(circle at center, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+}
+
+.cosmic-card {
+  background: rgba(2, 6, 23, 0.6);
+  backdrop-filter: blur(40px);
+  border: 1px solid rgba(139, 92, 246, 0.1);
+  box-shadow: 0 0 40px rgba(0, 0, 0, 0.6), inset 0 0 20px rgba(139, 92, 246, 0.05);
+}
+
+@keyframes indeterminate-bar {
+  0% {
+    transform: translateX(-100%);
+    width: 50%;
+  }
+
+  50% {
+    width: 50%;
+  }
+
+  100% {
+    transform: translateX(200%);
+    width: 50%;
+  }
+}
+
+.animate-indeterminate-bar {
+  animation: indeterminate-bar 1.5s infinite linear;
+}

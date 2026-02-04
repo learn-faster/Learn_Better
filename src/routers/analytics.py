@@ -183,7 +183,7 @@ def get_retention_metrics(db: Session = Depends(get_db)):
         .scalar()
     
     # Calculate retention rate
-    retention_rate = (successful_reviews / total_reviews * 100) if total_reviews and total_reviews > 0 else 0
+    retention_rate = (successful_reviews / total_reviews * 100) if total_reviews > 0 else 0
     
     # Get rating distribution
     rating_distribution = db.query(
@@ -237,7 +237,7 @@ def calculate_study_streak(db: Session) -> int:
     
     # Get all unique study dates (in reverse order)
     study_dates = db.query(func.date(StudySession.start_time).label('date'))\
-        .distinct()\
+        .group_by(func.date(StudySession.start_time))\
         .order_by(func.date(StudySession.start_time).desc())\
         .all()
     

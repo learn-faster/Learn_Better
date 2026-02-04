@@ -101,6 +101,7 @@ class DocumentResponse(DocumentBase):
     file_type: Optional[FileType] = FileType.OTHER
     file_path: Optional[str] = None
     upload_date: datetime
+    status: str = "pending"
     extracted_text: Optional[str] = None
     reading_progress: float = 0.0
     folder_id: Optional[str] = None
@@ -167,7 +168,7 @@ class FlashcardBase(BaseModel):
 
 class FlashcardCreate(FlashcardBase):
     """Schema for creating a new flashcard."""
-    document_id: Optional[int] = None # Adapted to int
+    document_id: Optional[int] = None
 
 
 class FlashcardUpdate(BaseModel):
@@ -180,7 +181,7 @@ class FlashcardUpdate(BaseModel):
 class FlashcardResponse(FlashcardBase):
     """Schema for flashcard API responses, including SRS data."""
     id: str
-    document_id: Optional[int] # Adapted to int
+    document_id: Optional[int]
     created_at: datetime
     ease_factor: float
     interval: int
@@ -219,11 +220,11 @@ class StudySessionResponse(BaseModel):
 
 class ActivityLogResponse(BaseModel):
     """Schema for user activity log entries."""
-    id: int # ActivityLog ID is int in orm.py? Let's check. Yes, Integer.
+    id: int
     activity_type: str
     description: str
     timestamp: datetime
-    document_id: Optional[int] = None # Adapted to int
+    document_id: Optional[int] = None
     extra_data: dict = {}
 
     class Config:
@@ -259,20 +260,6 @@ class PathRequest(BaseModel):
     target_concept: str
     time_budget_minutes: int = 60
     document_id: Optional[int] = None
-    # Document.id is String/UUID in some places, Int in DocumentResponse? 
-    # DocumentResponse says id: int. DocumentStore uses int. 
-    # Let's stick to int for document_id if that's the system standard.
-    # But wait, main.py saved documents using UUID strings?
-    # No, DocumentStore probably manages IDs. 
-    # ORM Document.id is String usually in my experience with this user instructions, but let's check orm.py.
-    # ORM ID: `id = Column(Integer, primary_key=True)` usually.
-    # In `documents.py` earlier, I saw `doc_id = str(uuid.uuid4())`.
-    # AND `db.add(document)`.
-    # If `Document.id` is Integer (autoincrement), assigning a UUID string would fail.
-    # If `Document.id` is String, it works.
-    # `documents.py` earlier: `id=doc_id` (str). So ID is String.
-    # `DocumentResponse` in `schemas.py`: `id: int`. This is a mismatch!
-    # I should verify `src/models/orm.py`.
 
 
 class ProgressUpdate(BaseModel):

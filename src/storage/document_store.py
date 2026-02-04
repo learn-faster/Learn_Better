@@ -29,11 +29,11 @@ class DocumentStore:
             # Let's insert first to get ID.
             
             insert_query = """
-                INSERT INTO documents (filename, status)
-                VALUES (%s, 'pending')
+                INSERT INTO documents (filename, title, status)
+                VALUES (%s, %s, 'pending')
                 RETURNING id, upload_date
             """
-            result = self.db.execute_query(insert_query, (file.filename,))
+            result = self.db.execute_query(insert_query, (file.filename, file.filename))
             doc_id = result[0]['id']
             upload_date = result[0]['upload_date']
             
@@ -77,11 +77,11 @@ class DocumentStore:
                 logger.info(f"Reusing existing record {doc_id} for YouTube video {video_id}")
             else:
                 insert_query = """
-                    INSERT INTO documents (filename, status)
-                    VALUES (%s, 'pending')
+                    INSERT INTO documents (filename, title, status)
+                    VALUES (%s, %s, 'pending')
                     RETURNING id, upload_date
                 """
-                result = self.db.execute_query(insert_query, (filename,))
+                result = self.db.execute_query(insert_query, (filename, f"YouTube: {video_id}"))
                 doc_id = result[0]['id']
                 upload_date = result[0]['upload_date']
             

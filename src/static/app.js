@@ -380,11 +380,16 @@ async function renderLesson(concept) {
     mainContent.innerHTML = '<div class="loading-spinner">Loading lesson content...</div>';
 
     try {
-        // Start the concept first to mark progress
-        await api.post('/api/progress/start', {
-            user_id: state.userId,
-            concept_name: concept
-        });
+        // Try to mark progress as started (may fail if prerequisites not met, but continue anyway)
+        try {
+            await api.post('/api/progress/start', {
+                user_id: state.userId,
+                concept_name: concept
+            });
+        } catch (progressErr) {
+            console.log('Could not mark progress started:', progressErr.message);
+            // Continue loading the lesson anyway
+        }
 
         const lesson = await api.get(`/api/learning/lesson/${state.userId}/${encodeURIComponent(concept)}?time_budget=${timeBudget}`);
 
@@ -421,6 +426,8 @@ async function renderLesson(concept) {
                 <div class="lesson-content">
                     ${htmlContent}
                 </div>
+
+                ${flashcardsHtml}
 
                 <div style="margin-top: 3rem; text-align: center; display: flex; gap: 1rem; justify-content: center;">
                     <button class="btn btn-secondary" onclick="window.location.hash='#dashboard'">Back to Dashboard</button>
@@ -503,7 +510,7 @@ async function loadDocuments() {
             <table class="doc-table">
                 <thead>
                     <tr>
-                        <th>Filename</th>
+                        <th>Title</th>
                         <th>Upload Date</th>
                         <th>Status</th>
                         <th>Actions</th>
@@ -514,10 +521,10 @@ async function loadDocuments() {
                         <tr>
                             <td>${doc.title || doc.filename || 'Untitled'}</td>
                             <td>${new Date(doc.upload_date).toLocaleDateString()}</td>
-                            <td><span class="tag ${doc.status === 'completed' ? 'unlocked' : 'root'}">${doc.status}</span></td>
+                            <td><span class="tag ${doc.status === 'completed' ? 'unlocked' : 'root'}">${doc.status || 'pending'}</span></td>
                             <td>
                                 <div style="display: flex; gap: 0.5rem;">
-                                    <a href="/documents/${doc.id}" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Download</a>
+                                    <a href="/api/documents/${doc.id}/download" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem;">Download</a>
                                     <button onclick="deleteDocument(${doc.id})" class="btn btn-secondary" style="padding: 0.25rem 0.5rem; font-size: 0.8rem; border-color: #ef4444; color: #ef4444;">Delete</button>
                                 </div>
                             </td>
@@ -533,7 +540,8 @@ async function loadDocuments() {
 
 async function deleteDocument(id) {
     try {
-        await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+        const res = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+        if (!res.ok) throw new Error('Delete failed');
         loadDocuments();
     } catch (err) {
         alert('Failed to delete document: ' + err.message);
@@ -549,6 +557,7 @@ async function handleFileUpload(input) {
 
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('title', file.name); // Add required title field
 
     try {
         const res = await fetch('/api/documents/upload', {
@@ -556,10 +565,13 @@ async function handleFileUpload(input) {
             body: formData
         });
 
-        if (!res.ok) throw new Error(res.statusText);
+        if (!res.ok) {
+            const errorData = await res.json().catch(() => ({ detail: res.statusText }));
+            throw new Error(errorData.detail || res.statusText);
+        }
         const data = await res.json();
 
-        status.innerHTML = `<span style="color: var(--success)">Success! ${data.message}</span>`;
+        status.innerHTML = `<span style="color: var(--success)">Success! Document uploaded and processing started.</span>`;
         loadDocuments(); // Refresh list
     } catch (err) {
         status.innerHTML = `<span style="color: var(--warning)">Error: ${err.message}</span>`;

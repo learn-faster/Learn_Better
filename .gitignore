@@ -11,9 +11,24 @@ wheels/
 .hypothesis
 .env
 
-# Uploads
+# Uploads and data
 temp_uploads/
-data
+data/
+*.db
+
+# Testing artifacts
+.playwright-mcp/
+test-data/
+clicktest.txt
+*.log
+
+# AI/Claude notes (local dev only)
+Ai-notes/
+
+# IDE
+.idea/
+.vscode/
+*.swp
 
 # Documentation
 docs/existing-backend.md

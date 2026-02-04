@@ -362,3 +362,110 @@ a:hover {
 .step:last-child::after {
     display: none;
 }
+
+/* Flashcard Styles */
+.flashcards-section {
+    margin-top: 3rem;
+    padding-top: 2rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.flashcard-container {
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.flashcard {
+    width: 100%;
+    margin-bottom: 1rem;
+}
+
+.flashcard-inner {
+    width: 100%;
+    min-height: 250px;
+    cursor: pointer;
+    border-radius: 1rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+.flashcard-inner:hover {
+    transform: scale(1.02);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+}
+
+.flashcard-front {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+    min-height: 250px;
+    border-radius: 1rem;
+    text-align: center;
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+}
+
+.flashcard-back {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 2rem;
+    min-height: 250px;
+    border-radius: 1rem;
+    text-align: center;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+}
+
+.flashcard-inner.flipped .flashcard-front {
+    display: none;
+}
+
+.flashcard-inner.flipped .flashcard-back {
+    display: flex;
+}
+
+.flashcard-front p,
+.flashcard-back p {
+    font-size: 1.25rem;
+    line-height: 1.6;
+    margin: 1rem 0;
+    color: white;
+}
+
+.card-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0.8;
+    margin-bottom: 0.5rem;
+}
+
+.flip-hint {
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-top: auto;
+    padding-top: 1rem;
+}
+
+.flashcard-nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1.5rem;
+    margin-top: 1rem;
+}
+
+.flashcard-nav button {
+    min-width: 100px;
+}
+
+#cardCounter {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    min-width: 60px;
+    text-align: center;
+}

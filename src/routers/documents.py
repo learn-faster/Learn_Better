@@ -4,6 +4,7 @@ Handles document uploads, metadata updates, and time tracking sessions.
 Note: This is the 'App' API. Core engine endpoints are also available at /documents.
 """
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Form, Body
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import os
@@ -32,6 +33,100 @@ document_processor = DocumentProcessor()
 os.makedirs(settings.upload_dir, exist_ok=True)
 
 
+from fastapi import BackgroundTasks
+from src.database.orm import SessionLocal
+
+async def process_document_background(
+    doc_id: int,
+    file_path: str,
+    file_type: FileType,
+    document_processor: DocumentProcessor,
+    ingestion_engine: IngestionEngine,
+    document_store: DocumentStore
+):
+    """Background task for document processing."""
+    # Create a fresh database session for this background task
+    db = SessionLocal()
+    try:
+        print(f"DEBUG: Background processing started for {doc_id}...")
+
+        # 1. Extract Text
+        extracted_text = ""
+        try:
+            if file_type == FileType.PDF or os.path.exists(file_path):
+                extracted_text = document_processor.convert_to_markdown(file_path)
+                print(f"DEBUG: Extraction complete for {doc_id}")
+
+            # Update DB with extracted text
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if document:
+                document.extracted_text = extracted_text
+                document.page_count = 0 # Placeholder
+                db.commit()
+
+        except Exception as e:
+            print(f"Extraction failed: {e}")
+            import traceback
+            traceback.print_exc()
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if document:
+                document.status = "failed"
+                document.extracted_text = ""
+                db.commit()
+            return
+
+        # 2. Trigger Full Ingestion
+        try:
+            if extracted_text:
+                print(f"DEBUG: Triggering IngestionEngine for document {doc_id}...")
+                chunks = document_processor.chunk_content(extracted_text)
+                await ingestion_engine.process_document_complete(
+                    doc_source=os.path.basename(file_path),
+                    markdown=extracted_text,
+                    content_chunks=chunks,
+                    document_id=doc_id
+                )
+                print("DEBUG: IngestionEngine processing complete.")
+
+                # Update status to completed
+                # Re-fetch is good practice in long running tasks
+                document = db.query(Document).filter(Document.id == doc_id).first()
+                if document:
+                    document.status = "completed"
+                    document_store.update_status(doc_id, "completed")
+                    db.commit()
+                    print(f"DEBUG: Document {doc_id} marked as completed.")
+            else:
+                # No content extracted, mark as failed
+                document = db.query(Document).filter(Document.id == doc_id).first()
+                if document:
+                    document.status = "failed"
+                    db.commit()
+        except Exception as e:
+            print(f"ERROR: IngestionEngine failed: {e}")
+            import traceback
+            traceback.print_exc()
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if document:
+                document.status = "failed"
+                db.commit()
+
+    except Exception as e:
+        print(f"Background process critical failure: {e}")
+        import traceback
+        traceback.print_exc()
+        # Attempt to mark document as failed
+        try:
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if document:
+                document.status = "failed"
+                db.commit()
+        except Exception as cleanup_error:
+            print(f"Failed to update status during cleanup: {cleanup_error}")
+    finally:
+        db.close()
+
+
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
     file: UploadFile = File(...),
@@ -39,15 +134,15 @@ async def upload_document(
     tags: Optional[str] = Form(""),
     category: Optional[str] = Form(None),
     folder_id: Optional[str] = Form(None),
+    background_tasks: BackgroundTasks = BackgroundTasks(),
     db: Session = Depends(get_db),
     ingestion_engine: IngestionEngine = Depends(get_ingestion_engine),
     document_store: DocumentStore = Depends(get_document_store)
 ):
     """
-    Uploads a new study document and extracts its content.
-    
-    Processes the file (PDF or Image), saves it to disk (via DocumentStore), 
-    and uses the DocumentProcessor to extract text.
+    Uploads a new study document and extracts its content asynchronously.
+
+    TODO: Add rate limiting to prevent abuse of upload endpoint.
     """
     # Validate file type
     file_ext = Path(file.filename).suffix.lower()
@@ -59,12 +154,7 @@ async def upload_document(
     else:
         file_type = FileType.OTHER
     
-    # Read file content for size check (DocumentStore will read it again? 
-    # DocumentStore.save_document takes UploadFile. It reads from file.file.
-    # If I read it here, I might exhaust the stream.
-    # Better to check size if possible without consuming, or rely on nginx/fastapi limits.
-    # settings.max_file_size logic was here. 
-    # To check size safely: file.file.seek(0, 2); size = file.file.tell(); file.file.seek(0)
+    # Size check
     file.file.seek(0, 2)
     file_size = file.file.tell()
     file.file.seek(0)
@@ -76,15 +166,14 @@ async def upload_document(
         )
     
     try:
-        # 1. Use DocumentStore to handle initial save and DB record creation
+        # 1. Initial Save (Synchronous, fast)
         doc_metadata = document_store.save_document(file)
         doc_id = doc_metadata.id
         file_path = doc_metadata.file_path
         
-        # 2. Get the ORM object to update metadata
+        # 2. Update Metadata
         document = db.query(Document).filter(Document.id == doc_id).first()
         if not document:
-             # Should not happen if save_document worked
              raise HTTPException(status_code=500, detail="Document created but not found in DB")
         
         # 3. Update Metadata
@@ -95,53 +184,34 @@ async def upload_document(
         document.file_type = file_type.value # Store string value
         document.status = "processing"
         
-        # 4. Extract text
-        print(f"DEBUG: Starting text extraction for {doc_id}...")
-        try:
-            if file_type == FileType.PDF or os.path.exists(file_path):
-                # Use DocumentProcessor (MarkItDown)
-                document.extracted_text = document_processor.convert_to_markdown(file_path)
-                document.page_count = 0 
-                print("DEBUG: Text extraction complete.")
-            else:
-                document.extracted_text = ""
-        except Exception as e:
-            print(f"Warning: Text extraction failed: {str(e)}")
-            import traceback
-            traceback.print_exc()
-            document.extracted_text = ""
-        
-        # Save updates to DB
         db.commit()
         db.refresh(document)
         
-        # 5. Trigger Full Ingestion
-        try:
-            if document.extracted_text:
-                print(f"DEBUG: Triggering IngestionEngine for document {doc_id}...")
-                chunks = document_processor.chunk_content(document.extracted_text)
-                await ingestion_engine.process_document_complete(
-                    doc_source=os.path.basename(file_path),
-                    markdown=document.extracted_text,
-                    content_chunks=chunks,
-                    document_id=doc_id
-                )
-                print("DEBUG: IngestionEngine processing complete.")
-                
-                # Update status
-                document.status = "completed"
-                document_store.update_status(doc_id, "completed") # Sync raw status
-                db.commit()
-        except Exception as e:
-            print(f"ERROR: IngestionEngine failed: {e}")
-            logger.error(f"Ingestion failed for doc {doc_id}: {e}")
-            
-        return document
+        # 3. Queue Background Processing
+        background_tasks.add_task(
+            process_document_background,
+            doc_id,
+            file_path,
+            file_type,
+            document_processor,
+            ingestion_engine,
+            document_store
+        )
         
+        return document
+
     except Exception as e:
         import traceback
         traceback.print_exc()
+        # Cleanup: delete file if it was saved but something went wrong
+        if 'file_path' in locals() and file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                print(f"Cleaned up orphaned file: {file_path}")
+            except Exception as cleanup_error:
+                print(f"Failed to cleanup file {file_path}: {cleanup_error}")
         raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+
 
 
 @router.post("/youtube", summary="Ingest transcripts from a YouTube video", response_model=DocumentResponse)
@@ -166,7 +236,7 @@ async def ingest_youtube(
     try:
         # 1. Fetch transcript
         transcript = fetch_transcript(video_id)
-        if not transcript:
+        if not transcript or not transcript.strip():
             raise HTTPException(status_code=404, detail="Transcript not available for this video")
             
         # 2. Save transcript as virtual document
@@ -234,6 +304,22 @@ def get_document(document_id: int, db: Session = Depends(get_db)):
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
     return document
+
+
+@router.get("/{document_id}/download")
+async def download_document(document_id: int, db: Session = Depends(get_db)):
+    """
+    Downloads a document file.
+    """
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    file_path = document.file_path
+    if not file_path or not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+
+    return FileResponse(file_path, filename=document.filename)
 
 
 @router.put("/{document_id}", response_model=DocumentResponse)
