@@ -22,10 +22,14 @@ class ContentRetriever:
     Generates multiple flashcards per concept for spaced repetition learning.
     """
 
-    REWRITE_PROMPT_TEMPLATE = """You are an expert pedagogical writer. Your goal is to take a set of raw information chunks about a specific topic and rewrite them into a high-quality, coherent, and engaging educational lesson.
+    REWRITE_PROMPT_TEMPLATE = r"""You are an expert pedagogical writer. Your goal is to take a set of raw information chunks about a specific topic and rewrite them into a high-quality, coherent, and engaging educational lesson.
 
 Topic: {topic}
 Target Time: {time_budget} minutes
+
+User Context:
+The user has ALREADY MASTERED the following concepts: {mastered_concepts}.
+You do NOT need to explain these basics in depth, but you can reference them as a foundation. Focus the lesson on the NEW information provided in the chunks.
 
 Guidelines:
 1.  **Structure**: Create a logical flow with an introduction, detailed explanation, and a summary.
@@ -169,7 +173,7 @@ Return ONLY the JSON object, no other text:"""
             base_url=settings.ollama_base_url
         )
 
-    async def _rewrite_with_llm(self, target_concept: str, time_budget: int, raw_content: str) -> str:
+    async def _rewrite_with_llm(self, target_concept: str, time_budget: int, raw_content: str, completed_concepts: List[str] = None) -> str:
         """Use LLM to rewrite raw content into a coherent lesson."""
         try:
             # Enforce context window limit
@@ -178,9 +182,12 @@ Return ONLY the JSON object, no other text:"""
             if len(raw_content) > context_window:
                 logger.warning(f"Truncated content for LLM rewrite for {target_concept} (budget: {time_budget}m)")
 
+            mastered_str = ", ".join(completed_concepts) if completed_concepts else "None"
+
             prompt = self.REWRITE_PROMPT_TEMPLATE.format(
                 topic=target_concept.title(),
                 time_budget=time_budget,
+                mastered_concepts=mastered_str,
                 raw_chunks=truncated_content
             )
 
@@ -275,7 +282,7 @@ Return ONLY the JSON object, no other text:"""
             logger.error(f"Flashcard generation failed: {e}")
             return []
 
-    async def get_lesson_content(self, path_concepts: List[str], time_budget_minutes: int = 30) -> str:
+    async def get_lesson_content(self, path_concepts: List[str], time_budget_minutes: int = 30, completed_concepts: List[str] = None) -> str:
         """
         Generate a complete formatted lesson for a learning path.
 
@@ -285,6 +292,7 @@ Return ONLY the JSON object, no other text:"""
         Args:
             path_concepts: Ordered list of concept names
             time_budget_minutes: Total time available for the lesson
+            completed_concepts: List of concepts the user has already mastered
 
         Returns:
             Formatted Markdown string
@@ -293,19 +301,40 @@ Return ONLY the JSON object, no other text:"""
             return ""
 
         target_concept = path_concepts[-1]
+        completed_concepts = completed_concepts or []
 
-        # 1. Check Cache
-        cached = self._get_cached_lesson(target_concept, time_budget_minutes)
-        if cached:
-            logger.info(f"Returning cached lesson for {target_concept} ({time_budget_minutes}m)")
-            return cached
+        # 1. Check Cache (Skip if pruning is active? Or cache keyed by mastered state? 
+        # For valid caching with pruning, we'd need to include state in key. 
+        # For V1, let's skip cache if we have mastered concepts to ensure pruning happens)
+        if not completed_concepts:
+            cached = self._get_cached_lesson(target_concept, time_budget_minutes)
+            if cached:
+                logger.info(f"Returning cached lesson for {target_concept} ({time_budget_minutes}m)")
+                return cached
 
-        # 2. Gather All Raw Content
+        # 2. Gather All Raw Content (Filtering out mastered concepts)
         lesson_parts = []
-        for concept in path_concepts:
+        
+        # We process the target concept AND its prerequisites traversing the path?
+        # Typically the path includes prereqs. 
+        # We prune prereqs if they are in completed_concepts.
+        
+        relevant_concepts = [c for c in path_concepts if c not in completed_concepts]
+        
+        # Always include the target concept even if "mastered" if explicitly requested?
+        # If the path ends in it, the user probably wants to learn it/review it.
+        # But if strictly pruning, we assume the path generator handled "what to learn".
+        # If relevant_concepts is empty (everything mastered), maybe just show target?
+        if not relevant_concepts and path_concepts:
+            relevant_concepts = [target_concept]
+
+        logger.info(f"Generating lesson for {target_concept}. Pruned {len(path_concepts) - len(relevant_concepts)} concepts.")
+
+        for concept in relevant_concepts:
             chunks = self.retrieve_chunks_by_concept(concept)
             for chunk in chunks:
-                lesson_parts.append(f"Source: {chunk.doc_source}\n\nContent: ```\n{chunk.content}\n```")
+                # Add explicit concept label for LLM
+                lesson_parts.append(f"Source: {chunk.doc_source} (Concept: {concept})\nContent: ```\n{chunk.content}\n```")
         
         raw_full_content = "\n\n".join([f"### {i+1}\n{part}" for i,part in enumerate(lesson_parts)])
 
@@ -316,21 +345,19 @@ Return ONLY the JSON object, no other text:"""
         else:
             # Rewrite existing chunks into coherent lesson
             logger.info(f"Generating new lesson for {target_concept} ({time_budget_minutes}m)")
-            enhanced_lesson = await self._rewrite_with_llm(target_concept, time_budget_minutes, raw_full_content)
+            enhanced_lesson = await self._rewrite_with_llm(target_concept, time_budget_minutes, raw_full_content, completed_concepts)
 
-        # 3. Rewrite with LLM
-        logger.info(f"Generating new lesson for {target_concept} ({time_budget_minutes}m)")
-        enhanced_lesson = await self._rewrite_with_llm(target_concept, time_budget_minutes, raw_full_content)
-
-        # 4. Cache and Return
-        self._cache_lesson(target_concept, time_budget_minutes, enhanced_lesson)
+        # 4. Cache (Only if no pruning happened, to be safe?)
+        if not completed_concepts:
+            self._cache_lesson(target_concept, time_budget_minutes, enhanced_lesson)
 
         return enhanced_lesson
 
     async def get_lesson_with_flashcards(
         self,
         path_concepts: List[str],
-        time_budget_minutes: int = 30
+        time_budget_minutes: int = 30,
+        completed_concepts: List[str] = None
     ) -> Dict[str, Any]:
         """
         Generate a complete lesson with multiple flashcards for spaced repetition.
@@ -338,6 +365,7 @@ Return ONLY the JSON object, no other text:"""
         Args:
             path_concepts: Ordered list of concept names
             time_budget_minutes: Total time available for the lesson
+            completed_concepts: List of concepts the user has already mastered
 
         Returns:
             Dict containing:
@@ -350,7 +378,7 @@ Return ONLY the JSON object, no other text:"""
         target_concept = path_concepts[-1]
 
         # Get or generate the lesson content
-        lesson_content = await self.get_lesson_content(path_concepts, time_budget_minutes)
+        lesson_content = await self.get_lesson_content(path_concepts, time_budget_minutes, completed_concepts)
 
         # Generate flashcards from the lesson content
         card_count = self._calculate_flashcard_count(time_budget_minutes)
