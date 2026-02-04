@@ -38,32 +38,49 @@ async def get_concept_graph(
 
 # --- Content Retrieval Endpoints ---
 
-@router.get("/learning/lesson/{user_id}/{target_concept}", summary="Get formatted lesson content")
+@router.get("/learning/lesson/{user_id}/{target_concept}", summary="Get formatted lesson content with flashcards")
 async def get_lesson_content(
-    user_id: str, 
-    target_concept: str, 
+    user_id: str,
+    target_concept: str,
     time_budget: int = Query(30),
     path_resolver: PathResolver = Depends(get_path_resolver),
     content_retriever: ContentRetriever = Depends(get_content_retriever)
 ):
     """
-    Get full lesson content (text) for a path to target.
-    Convenience endpoint that resolves path + retrieves content.
+    Get full lesson content (text) and flashcards for a path to target.
+
+    Returns:
+        - target: The target concept name
+        - path: List of concepts in the learning path
+        - estimated_time: Estimated minutes for the lesson
+        - content_markdown: The lesson content in Markdown
+        - flashcards: List of flashcards with 'front' and 'back' fields
     """
     # Resolve path first
     path = path_resolver.resolve_path(user_id, target_concept, time_budget)
-    
+
+    # If no path found in graph, create a path with just the target concept
+    # This allows generating content for concepts that aren't in the graph yet
     if not path or not path.concepts:
-        raise HTTPException(status_code=404, detail="No content found for learning path")
-        
-    # Retrieve formatted content
-    lesson_text = await content_retriever.get_lesson_content(path.concepts, time_budget_minutes=time_budget)
-    
+        # Create a minimal path with just the target concept
+        concepts = [target_concept.lower()]
+        estimated_time = time_budget
+    else:
+        concepts = path.concepts
+        estimated_time = path.estimated_time_minutes
+
+    # Retrieve formatted content WITH flashcards
+    lesson_data = await content_retriever.get_lesson_with_flashcards(
+        concepts,
+        time_budget_minutes=time_budget
+    )
+
     return {
         "target": target_concept,
-        "path": path.concepts,
-        "estimated_time": path.estimated_time_minutes,
-        "content_markdown": lesson_text
+        "path": concepts,
+        "estimated_time": estimated_time,
+        "content_markdown": lesson_data["content_markdown"],
+        "flashcards": lesson_data["flashcards"]
     }
 
 

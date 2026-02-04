@@ -187,11 +187,16 @@ async function renderLesson(concept) {
     mainContent.innerHTML = '<div class="loading-spinner">Loading lesson content...</div>';
 
     try {
-        // Start the concept first to mark progress
-        await api.post('/api/progress/start', {
-            user_id: state.userId,
-            concept_name: concept
-        });
+        // Try to mark progress as started (may fail if prerequisites not met, but continue anyway)
+        try {
+            await api.post('/api/progress/start', {
+                user_id: state.userId,
+                concept_name: concept
+            });
+        } catch (progressErr) {
+            console.log('Could not mark progress started:', progressErr.message);
+            // Continue loading the lesson anyway
+        }
 
         const lesson = await api.get(`/api/learning/lesson/${state.userId}/${encodeURIComponent(concept)}?time_budget=${timeBudget}`);
 
@@ -203,6 +208,41 @@ async function renderLesson(concept) {
 
         // Convert Markdown to HTML using marked.js and sanitize with DOMPurify
         const htmlContent = DOMPurify.sanitize(marked.parse(lesson.content_markdown));
+
+        // Build flashcards section if flashcards exist
+        const flashcardsHtml = lesson.flashcards && lesson.flashcards.length > 0 ? `
+            <div class="flashcards-section" style="margin-top: 3rem;">
+                <div class="section-header">
+                    <h2>Review Flashcards</h2>
+                    <span class="tag unlocked">${lesson.flashcards.length} cards</span>
+                </div>
+                <div class="flashcard-slider" id="flashcardSlider">
+                    <div class="flashcard-container">
+                        ${lesson.flashcards.map((card, idx) => `
+                            <div class="flashcard" data-index="${idx}" style="display: ${idx === 0 ? 'block' : 'none'}">
+                                <div class="flashcard-inner" onclick="flipCard(this)">
+                                    <div class="flashcard-front">
+                                        <span class="card-label">Question ${idx + 1}/${lesson.flashcards.length}</span>
+                                        <p>${DOMPurify.sanitize(card.front)}</p>
+                                        <span class="flip-hint">Click to flip</span>
+                                    </div>
+                                    <div class="flashcard-back">
+                                        <span class="card-label">Answer</span>
+                                        <p>${DOMPurify.sanitize(card.back)}</p>
+                                        <span class="flip-hint">Click to flip</span>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div class="flashcard-nav" style="display: flex; justify-content: center; gap: 1rem; margin-top: 1rem;">
+                        <button class="btn btn-secondary" onclick="prevCard()">Previous</button>
+                        <span id="cardCounter" style="line-height: 2.5rem;">1 / ${lesson.flashcards.length}</span>
+                        <button class="btn btn-secondary" onclick="nextCard()">Next</button>
+                    </div>
+                </div>
+            </div>
+        ` : '';
 
         mainContent.innerHTML = `
             <div class="lesson-container">
@@ -221,14 +261,52 @@ async function renderLesson(concept) {
                     ${htmlContent}
                 </div>
 
+                ${flashcardsHtml}
+
                 <div style="margin-top: 3rem; text-align: center; display: flex; gap: 1rem; justify-content: center;">
                     <button class="btn btn-secondary" onclick="window.location.hash='#dashboard'">Back to Dashboard</button>
                     <button class="btn" onclick="completeLesson('${concept}')">Complete Lesson</button>
                 </div>
             </div>
         `;
+
+        // Initialize flashcard state
+        if (lesson.flashcards && lesson.flashcards.length > 0) {
+            window.currentCardIndex = 0;
+            window.totalCards = lesson.flashcards.length;
+        }
     } catch (err) {
         mainContent.innerHTML = `<div class="error">Failed to load lesson: ${err.message}</div>`;
+    }
+}
+
+// Flashcard navigation functions
+function flipCard(element) {
+    element.classList.toggle('flipped');
+}
+
+function showCard(index) {
+    const cards = document.querySelectorAll('.flashcard');
+    cards.forEach((card, idx) => {
+        card.style.display = idx === index ? 'block' : 'none';
+        // Reset flip state when switching cards
+        const inner = card.querySelector('.flashcard-inner');
+        if (inner) inner.classList.remove('flipped');
+    });
+    document.getElementById('cardCounter').textContent = `${index + 1} / ${window.totalCards}`;
+}
+
+function nextCard() {
+    if (window.currentCardIndex < window.totalCards - 1) {
+        window.currentCardIndex++;
+        showCard(window.currentCardIndex);
+    }
+}
+
+function prevCard() {
+    if (window.currentCardIndex > 0) {
+        window.currentCardIndex--;
+        showCard(window.currentCardIndex);
     }
 }
 
