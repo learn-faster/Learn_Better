@@ -56,8 +56,10 @@ def initialize_orm_tables():
         print("ORM tables initialized successfully")
         
         # Manually migrate 'documents' table to add new columns if they don't exist
-        # This is needed because 'documents' table might already exist from raw SQL init
         migrate_documents_table()
+        
+        # Manually migrate 'user_settings' table
+        migrate_user_settings_table()
         
         return True
     except Exception as e:
@@ -100,25 +102,55 @@ def migrate_documents_table():
             pass
 
 
+def migrate_user_settings_table():
+    """Add new columns to user_settings table if they are missing."""
+    cols_to_add = [
+        ("email", "VARCHAR"),
+        ("resend_api_key", "VARCHAR"),
+        ("current_streak", "INTEGER DEFAULT 0"),
+        ("longest_streak", "INTEGER DEFAULT 0"),
+        ("last_activity_date", "TIMESTAMP"),
+        ("target_retention", "FLOAT DEFAULT 0.9"),
+        ("daily_new_limit", "INTEGER DEFAULT 20"),
+        ("focus_duration", "INTEGER DEFAULT 25"),
+        ("break_duration", "INTEGER DEFAULT 5"),
+        ("email_daily_reminder", "BOOLEAN DEFAULT TRUE"),
+        ("email_streak_alert", "BOOLEAN DEFAULT TRUE"),
+        ("email_weekly_digest", "BOOLEAN DEFAULT TRUE"),
+        ("created_at", "TIMESTAMP"),
+        ("updated_at", "TIMESTAMP")
+    ]
+    
+    for col_name, col_type in cols_to_add:
+        try:
+            postgres_conn.execute_query(f"ALTER TABLE user_settings ADD COLUMN {col_name} {col_type}")
+            print(f"Added column {col_name} to user_settings table")
+        except Exception as e:
+            # Ignore error if column already exists
+            pass
+
+
 def initialize_databases():
     """Initialize both Neo4j and PostgreSQL databases."""
     print("Initializing databases...")
     
-    # Initialize Neo4j constraints
+    # 1. Verify PostgreSQL schema
+    if not verify_postgres_schema():
+        print("PostgreSQL verification failed")
+        return False
+        
+    # 2. Initialize ORM tables and run migrations
+    if not initialize_orm_tables():
+        print("ORM initialization failed")
+        return False
+
+    # 3. Initialize Neo4j constraints
     try:
         initialize_neo4j_constraints()
         print("Neo4j constraints initialized successfully")
     except Exception as e:
-        print(f"Neo4j initialization failed: {e}")
-        return False
-    
-    # Verify PostgreSQL schema
-    if not verify_postgres_schema():
-        return False
-        
-    # Initialize ORM tables
-    if not initialize_orm_tables():
-        return False
+        print(f"Neo4j initialization failed (non-fatal): {e}")
+        # We allow this to be non-fatal for now to avoid blocking the whole app
     
     print("Database initialization completed successfully")
     return True

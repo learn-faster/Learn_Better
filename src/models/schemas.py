@@ -213,6 +213,17 @@ class StudyReviewCreate(BaseModel):
     time_taken: Optional[int] = None
 
 
+class StudySessionCreate(BaseModel):
+    """Schema for creating a new study session with a goal."""
+    goal: Optional[str] = None
+    study_type: str = "deep" # deep, practice
+    document_id: Optional[int] = None
+
+class StudySessionEnd(BaseModel):
+    """Schema for ending a study session with reflection."""
+    reflection: Optional[str] = None
+    effectiveness_rating: Optional[int] = Field(None, ge=1, le=5)
+
 class StudySessionResponse(BaseModel):
     """Schema for study session statistics."""
     id: str
@@ -222,6 +233,10 @@ class StudySessionResponse(BaseModel):
     new_cards: int
     review_cards: int
     average_rating: Optional[float]
+    goal: Optional[str]
+    study_type: str
+    reflection: Optional[str]
+    effectiveness_rating: Optional[int]
     
     class Config:
         from_attributes = True
@@ -316,11 +331,91 @@ class CurriculumResponse(CurriculumBase):
     id: str
     user_id: str
     document_id: Optional[int] = None
+    goal_id: Optional[str] = None
     status: str
     progress: float
     created_at: datetime
     updated_at: datetime
     modules: List[CurriculumModuleResponse] = []
+
+    class Config:
+        from_attributes = True
+
+
+# ========== Goal Schemas ==========
+
+class GoalBase(BaseModel):
+    """Base schema for goal data."""
+    title: str
+    description: Optional[str] = None
+    domain: str = "learning"  # learning, health, career, project
+    target_hours: float = 100.0
+    deadline: Optional[datetime] = None
+    priority: int = 1  # 1=high, 2=medium, 3=low
+    email_reminders: bool = True
+    reminder_frequency: str = "daily"  # daily, weekly, none
+
+
+class GoalCreate(GoalBase):
+    """Schema for creating a new goal."""
+    pass
+
+
+class GoalUpdate(BaseModel):
+    """Schema for updating a goal."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    domain: Optional[str] = None
+    target_hours: Optional[float] = None
+    deadline: Optional[datetime] = None
+    priority: Optional[int] = None
+    status: Optional[str] = None
+    email_reminders: Optional[bool] = None
+    reminder_frequency: Optional[str] = None
+
+
+class GoalResponse(GoalBase):
+    """Schema for goal API responses."""
+    id: str
+    user_id: str
+    logged_hours: float = 0.0
+    status: str = "active"
+    created_at: datetime
+    updated_at: datetime
+    
+    # Computed fields (set by API)
+    progress_percent: Optional[float] = 0.0
+    days_remaining: Optional[int] = None
+    is_on_track: Optional[bool] = True
+
+    class Config:
+        from_attributes = True
+
+
+# ========== Focus Session Schemas ==========
+
+class FocusSessionCreate(BaseModel):
+    """Schema for starting a focus session."""
+    goal_id: Optional[str] = None
+    session_type: str = "focus"
+
+
+class FocusSessionEnd(BaseModel):
+    """Schema for ending a focus session."""
+    duration_minutes: int
+    notes: Optional[str] = None
+
+
+class FocusSessionResponse(BaseModel):
+    """Schema for focus session responses."""
+    id: str
+    goal_id: Optional[str] = None
+    user_id: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    duration_minutes: int
+    session_type: str
+    notes: Optional[str] = None
 
     class Config:
         from_attributes = True

@@ -99,6 +99,12 @@ class StudySession(Base):
     review_cards = Column(Integer, default=0)
     average_rating = Column(Float, default=0.0)
     
+    # New focus session fields
+    goal = Column(Text, nullable=True)
+    study_type = Column(String, default="deep") # deep, practice
+    reflection = Column(Text, nullable=True)
+    effectiveness_rating = Column(Integer, nullable=True) # 1-5
+    
     # Relationships
     reviews = relationship("StudyReview", back_populates="session", cascade="all, delete-orphan")
 
@@ -142,6 +148,15 @@ class UserSettings(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, unique=True, index=True, default="default_user")
     
+    # Email for notifications
+    email = Column(String, nullable=True)
+    resend_api_key = Column(String, nullable=True) # User-provided API key
+    
+    # Streak tracking
+    current_streak = Column(Integer, default=0)
+    longest_streak = Column(Integer, default=0)
+    last_activity_date = Column(DateTime, nullable=True)
+    
     # SRS Settings
     target_retention = Column(Float, default=0.9)  # 0.7 - 0.97
     daily_new_limit = Column(Integer, default=20)  # Max new cards per day
@@ -149,6 +164,11 @@ class UserSettings(Base):
     # Focus Timer Settings (Pomodoro)
     focus_duration = Column(Integer, default=25)   # Minutes
     break_duration = Column(Integer, default=5)    # Minutes
+    
+    # Notification preferences
+    email_daily_reminder = Column(Boolean, default=True)
+    email_streak_alert = Column(Boolean, default=True)
+    email_weekly_digest = Column(Boolean, default=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -163,6 +183,7 @@ class Curriculum(Base):
     id = Column(String, primary_key=True, index=True) # UUID
     user_id = Column(String, index=True, default="default_user")
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    goal_id = Column(String, ForeignKey("goals.id"), nullable=True)
     
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
@@ -177,6 +198,7 @@ class Curriculum(Base):
     # Relationships
     modules = relationship("CurriculumModule", back_populates="curriculum", cascade="all, delete-orphan")
     document = relationship("Document")
+    goal = relationship("Goal", back_populates="curriculums")
 
 
 class CurriculumModule(Base):
@@ -204,3 +226,60 @@ class CurriculumModule(Base):
     # Relationships
     curriculum = relationship("Curriculum", back_populates="modules")
 
+
+class Goal(Base):
+    """
+    A user's learning or life goal with tracking.
+    Goals are the central organizing principle of the app.
+    """
+    __tablename__ = "goals"
+    
+    id = Column(String, primary_key=True, index=True)  # UUID
+    user_id = Column(String, index=True, default="default_user")
+    
+    title = Column(String, nullable=False)  # "Learn Machine Learning"
+    description = Column(Text, nullable=True)
+    domain = Column(String, default="learning")  # learning, health, career, project
+    
+    # Time targets
+    target_hours = Column(Float, default=100.0)  # Total hours to complete
+    logged_hours = Column(Float, default=0.0)  # Hours logged so far
+    
+    # Deadline & Priority
+    deadline = Column(DateTime, nullable=True)
+    priority = Column(Integer, default=1)  # 1=high, 2=medium, 3=low
+    
+    # Status
+    status = Column(String, default="active")  # active, paused, completed, archived
+    
+    # Agent settings
+    email_reminders = Column(Boolean, default=True)
+    reminder_frequency = Column(String, default="daily")  # daily, weekly, none
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    focus_sessions = relationship("FocusSession", back_populates="goal", cascade="all, delete-orphan")
+    curriculums = relationship("Curriculum", back_populates="goal")
+
+
+class FocusSession(Base):
+    """
+    A timed focus session attributed to a goal.
+    """
+    __tablename__ = "focus_sessions"
+    
+    id = Column(String, primary_key=True, index=True)  # UUID
+    goal_id = Column(String, ForeignKey("goals.id"), nullable=True)
+    user_id = Column(String, index=True, default="default_user")
+    
+    start_time = Column(DateTime, default=datetime.utcnow)
+    end_time = Column(DateTime, nullable=True)
+    duration_minutes = Column(Integer, default=0)
+    
+    session_type = Column(String, default="focus")  # focus, break
+    notes = Column(Text, nullable=True)
+    
+    # Relationships
+    goal = relationship("Goal", back_populates="focus_sessions")
