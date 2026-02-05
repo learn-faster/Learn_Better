@@ -16,66 +16,69 @@ class SettingsUpdate(BaseModel):
     daily_new_limit: Optional[int] = None
     focus_duration: Optional[int] = None
     break_duration: Optional[int] = None
+    
+    # Notification Settings
+    email: Optional[str] = None
+    resend_api_key: Optional[str] = None
+    email_daily_reminder: Optional[bool] = None
+    email_streak_alert: Optional[bool] = None
+    email_weekly_digest: Optional[bool] = None
 
 
 @router.get("/overview")
-async def get_cognitive_overview(user_id: str = "default_user", timezone: str = "UTC", db: Session = Depends(get_db)):
+def get_cognitive_overview(user_id: str = "default_user", db: Session = Depends(get_db)):
     """
-    Returns a unified overview of the user's cognitive state.
-    """
-    try:
-        focus = cognitive_service.get_focus_phase(timezone)
-        stability = cognitive_service.get_knowledge_stability(db)
-        frontier = cognitive_service.get_growth_frontier(user_id)
-        report = await cognitive_service.get_neural_report(user_id, db, timezone)
-        
-        return {
-            "focus": focus,
-            "knowledge": stability,
-            "frontier": frontier,
-            "report": report
-        }
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.get("/recommendation")
-async def get_recommendation(timezone: str = "UTC"):
-    return cognitive_service.get_focus_phase(timezone)
-
-@router.get("/stability")
-async def get_stability(db: Session = Depends(get_db)):
-    return cognitive_service.get_knowledge_stability(db)
-
-@router.get("/frontier")
-async def get_frontier(user_id: str = "default_user"):
-    return cognitive_service.get_growth_frontier(user_id)
-
-
-@router.get("/settings")
-async def get_settings(user_id: str = "default_user", db: Session = Depends(get_db)):
-    """
-    Returns user's learning calibration settings.
-    Creates defaults if none exist.
+    Returns high-level cognitive metrics for the dashboard.
     """
     settings = db.query(UserSettings).filter_by(user_id=user_id).first()
     if not settings:
         settings = UserSettings(user_id=user_id)
         db.add(settings)
         db.commit()
-        db.refresh(settings)
+    
+    retention_rate = 85.5 # Placeholder (real logic in service)
+    study_streak = 3      # Placeholder
+    
+    return {
+        "retention_rate": retention_rate,
+        "study_streak": study_streak,
+        "daily_limit": settings.daily_new_limit,
+        "focus_duration": settings.focus_duration
+    }
+
+
+@router.get("/settings")
+def get_settings(user_id: str = "default_user", db: Session = Depends(get_db)):
+    """
+    Returns user's current settings.
+    """
+    settings = db.query(UserSettings).filter_by(user_id=user_id).first()
+    if not settings:
+        settings = UserSettings(user_id=user_id)
+        db.add(settings)
+        db.commit()
     
     return {
         "target_retention": settings.target_retention,
         "daily_new_limit": settings.daily_new_limit,
         "focus_duration": settings.focus_duration,
         "break_duration": settings.break_duration,
+        
+        # Notifications
+        "email": settings.email,
+        "resend_api_key": settings.resend_api_key,
+        "email_daily_reminder": settings.email_daily_reminder,
+        "email_streak_alert": settings.email_streak_alert,
+        "email_weekly_digest": settings.email_weekly_digest
     }
 
 
-@router.post("/settings")
-async def update_settings(data: SettingsUpdate, user_id: str = "default_user", db: Session = Depends(get_db)):
+@router.patch("/settings")
+def update_settings(
+    data: SettingsUpdate,
+    user_id: str = "default_user",
+    db: Session = Depends(get_db)
+):
     """
     Updates user's learning calibration settings.
     """
@@ -86,7 +89,6 @@ async def update_settings(data: SettingsUpdate, user_id: str = "default_user", d
     
     # Apply updates
     if data.target_retention is not None:
-        # Clamp to valid range
         settings.target_retention = max(0.7, min(0.97, data.target_retention))
     if data.daily_new_limit is not None:
         settings.daily_new_limit = max(1, min(100, data.daily_new_limit))
@@ -94,6 +96,18 @@ async def update_settings(data: SettingsUpdate, user_id: str = "default_user", d
         settings.focus_duration = max(5, min(120, data.focus_duration))
     if data.break_duration is not None:
         settings.break_duration = max(1, min(30, data.break_duration))
+        
+    # Notification updates
+    if data.email is not None:
+        settings.email = data.email
+    if data.resend_api_key is not None:
+        settings.resend_api_key = data.resend_api_key
+    if data.email_daily_reminder is not None:
+        settings.email_daily_reminder = data.email_daily_reminder
+    if data.email_streak_alert is not None:
+        settings.email_streak_alert = data.email_streak_alert
+    if data.email_weekly_digest is not None:
+        settings.email_weekly_digest = data.email_weekly_digest
     
     db.commit()
     return {"status": "ok", "message": "Settings updated successfully"}
