@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Plus, BookOpen, Clock, ChevronRight, GraduationCap, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
+import { Plus, BookOpen, Clock, ChevronRight, GraduationCap, ArrowRight, Sparkles, AlertCircle, BrainCircuit } from 'lucide-react';
+
 import curriculumService from '../services/curriculum';
 import api from '../services/api';
 
@@ -91,73 +92,83 @@ const CurriculumList = () => {
     };
 
     return (
-        <div className="min-h-screen bg-gray-50 font-sans text-gray-900 relative overflow-hidden">
-            {/* Ambient Background */}
-            <div className="absolute top-0 left-0 w-full h-[500px] bg-gradient-to-b from-blue-50 to-transparent pointer-events-none" />
-            <div className="absolute top-[-100px] right-[-100px] w-[500px] h-[500px] bg-purple-100 rounded-full blur-[100px] opacity-50 pointer-events-none" />
-            <div className="absolute top-[200px] left-[-100px] w-[300px] h-[300px] bg-blue-100 rounded-full blur-[80px] opacity-40 pointer-events-none" />
+        <div className="min-h-screen bg-dark-950 font-sans text-slate-200 relative overflow-hidden">
+            {/* Ambient Background Effects */}
+            <div className="universe-stars">
+                <div className="star-layer-1" />
+                <div className="star-layer-2" />
+            </div>
+            <div className="absolute top-0 left-0 w-full h-[600px] bg-gradient-to-b from-primary-950/20 to-transparent pointer-events-none" />
+            <div className="absolute top-[-10% ] right-[-10% ] w-[60%] h-[60%] bg-primary-600/10 rounded-full blur-[120px] pointer-events-none animate-pulse-slow" />
+            <div className="absolute bottom-0 left-0 w-full h-1/2 bg-gradient-to-t from-dark-950 to-transparent z-0 pointer-events-none" />
 
-            <div className="max-w-7xl mx-auto px-6 py-12 relative z-10">
+            <div className="max-w-7xl mx-auto px-6 py-16 relative z-10">
 
-                {/* Header */}
-                <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-16 gap-6">
-                    <div>
+                {/* Header Section */}
+                <header className="flex flex-col md:flex-row justify-between items-start md:items-end mb-20 gap-8">
+                    <div className="space-y-4">
                         <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="flex items-center gap-2 text-blue-600 font-bold tracking-wider uppercase text-sm mb-2"
+                            initial={{ opacity: 0, x: -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary-500/10 border border-primary-500/20 text-primary-400 font-bold tracking-wider uppercase text-[10px]"
                         >
-                            <Sparkles className="w-4 h-4" /> AI Powered Learning
+                            <Sparkles className="w-3 h-3" /> Cognitive Architect
                         </motion.div>
                         <motion.h1
-                            initial={{ x: -20, opacity: 0 }}
-                            animate={{ x: 0, opacity: 1 }}
-                            className="text-5xl font-extrabold text-gray-900 tracking-tight mb-4"
+                            initial={{ y: 20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
+                            className="text-6xl font-black text-white tracking-tighter leading-tight"
                         >
-                            Your Curriculum
+                            Neural <span className="text-primary-500">Pathways</span>
                         </motion.h1>
                         <motion.p
-                            initial={{ x: -20, opacity: 0 }}
-                            animate={{ x: 0, opacity: 1 }}
+                            initial={{ y: 20, opacity: 0 }}
+                            animate={{ y: 0, opacity: 1 }}
                             transition={{ delay: 0.1 }}
-                            className="text-xl text-gray-500 max-w-2xl leading-relaxed"
+                            className="text-lg text-slate-400 max-w-2xl leading-relaxed font-medium"
                         >
-                            Generate structured learning paths for any topic, track your progress, and master new skills with AI-guided lessons.
+                            Design your proprietary knowledge structures. AI-orchestrated learning paths engineered for maximum retention and top-down mastery.
                         </motion.p>
                     </div>
                     <motion.button
-                        whileHover={{ scale: 1.05 }}
+                        whileHover={{ scale: 1.05, boxShadow: "0 0 20px rgba(139, 92, 246, 0.4)" }}
                         whileTap={{ scale: 0.95 }}
                         onClick={() => setIsCreating(true)}
-                        className="flex items-center gap-3 bg-gray-900 text-white px-8 py-4 rounded-2xl font-bold shadow-xl hover:shadow-2xl hover:bg-gray-800 transition-all group"
+                        className="group relative flex items-center gap-3 bg-white text-dark-950 px-10 py-5 rounded-[2rem] font-black shadow-2xl transition-all overflow-hidden"
                     >
-                        <Plus className="w-5 h-5 group-hover:rotate-90 transition-transform" />
-                        Create New Path
+                        <div className="absolute inset-0 bg-gradient-to-r from-primary-400 to-indigo-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <span className="relative z-10 flex items-center gap-2 group-hover:text-white transition-colors">
+                            <Plus className="w-6 h-6" /> Create New Pathway
+                        </span>
                     </motion.button>
                 </header>
 
-                {/* Content Grid */}
+                {/* Main Content Area */}
                 {loading ? (
-                    <div className="flex flex-col items-center justify-center py-32 space-y-4 text-gray-400">
-                        <div className="animate-spin rounded-full h-12 w-12 border-4 border-gray-200 border-t-blue-600"></div>
-                        <p>Loading your paths...</p>
+                    <div className="flex flex-col items-center justify-center py-40 space-y-6">
+                        <div className="relative w-24 h-24">
+                            <div className="absolute inset-0 border-4 border-white/5 rounded-full" />
+                            <div className="absolute inset-0 border-4 border-primary-500 rounded-full border-t-transparent animate-spin" />
+                            <BrainCircuit className="absolute inset-0 m-auto w-8 h-8 text-primary-400 animate-pulse" />
+                        </div>
+                        <p className="text-primary-400 font-bold uppercase tracking-[0.3em] text-[10px]">Mapping Synapses...</p>
                     </div>
                 ) : curriculums.length === 0 ? (
                     <motion.div
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        className="text-center py-32 bg-white rounded-[2rem] border border-dashed border-gray-300"
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="text-center py-32 glass-morphism rounded-[3rem] border border-white/5"
                     >
-                        <div className="w-20 h-20 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-6">
-                            <GraduationCap className="w-10 h-10 text-gray-400" />
+                        <div className="w-24 h-24 bg-white/5 rounded-3xl flex items-center justify-center mx-auto mb-8 rotate-12 group-hover:rotate-0 transition-transform">
+                            <GraduationCap className="w-12 h-12 text-slate-600" />
                         </div>
-                        <h3 className="text-2xl font-bold text-gray-900 mb-2">No learning paths yet</h3>
-                        <p className="text-gray-500 mb-8 max-w-md mx-auto">Start your journey by creating a new curriculum for any topic you want to learn.</p>
+                        <h3 className="text-3xl font-black text-white mb-4">The Void of Knowledge</h3>
+                        <p className="text-slate-400 mb-10 max-w-md mx-auto text-lg leading-relaxed">No active pathways detected. Start your cognitive expansion today.</p>
                         <button
                             onClick={() => setIsCreating(true)}
-                            className="text-blue-600 font-bold hover:underline"
+                            className="text-primary-400 font-black flex items-center gap-2 mx-auto hover:gap-4 transition-all uppercase tracking-widest text-sm"
                         >
-                            Create your first path &rarr;
+                            Initialize First Path <ArrowRight className="w-5 h-5" />
                         </button>
                     </motion.div>
                 ) : (
@@ -165,7 +176,7 @@ const CurriculumList = () => {
                         variants={containerVariants}
                         initial="hidden"
                         animate="visible"
-                        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8"
+                        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
                     >
                         {curriculums.map((curr) => (
                             <CurriculumCard key={curr.id} curr={curr} navigate={navigate} variants={itemVariants} />
@@ -174,7 +185,7 @@ const CurriculumList = () => {
                 )}
             </div>
 
-            {/* Create Modal */}
+            {/* Premium Create Modal */}
             <CreateModal
                 isOpen={isCreating}
                 onClose={() => setIsCreating(false)}
@@ -189,6 +200,7 @@ const CurriculumList = () => {
             />
         </div>
     );
+
 };
 
 // Sub-component for individual card to keep main clean
@@ -198,47 +210,60 @@ const CurriculumCard = ({ curr, navigate, variants }) => {
     return (
         <motion.div
             variants={variants}
-            whileHover={{ y: -8, scale: 1.02 }}
+            whileHover={{ y: -10, scale: 1.02 }}
             onClick={() => navigate(`/curriculum/${curr.id}`)}
-            className="group relative bg-white rounded-[2rem] p-8 shadow-sm border border-gray-100 cursor-pointer overflow-hidden transition-all hover:shadow-2xl hover:border-blue-100"
+            className="group relative bg-dark-900/40 rounded-[2.5rem] p-10 shadow-2xl border border-white/5 cursor-pointer overflow-hidden transition-all hover:border-primary-500/30 hover:shadow-primary-500/10"
         >
+            {/* Ambient Card Background */}
             <div
-                className="absolute top-0 right-0 w-48 h-48 opacity-[0.03] rounded-bl-full transition-transform group-hover:scale-125 duration-700 pointer-events-none"
-                style={{ backgroundColor: curr.theme_color || '#000' }}
+                className="absolute top-0 right-0 w-64 h-64 opacity-10 rounded-bl-full transition-all group-hover:scale-150 group-hover:opacity-20 duration-1000 blur-3xl pointer-events-none"
+                style={{ backgroundColor: curr.theme_color || '#8b5cf6' }}
             />
 
             <div className="relative z-10 flex flex-col h-full">
-                <div className="flex justify-between items-start mb-6">
-                    <span className="text-5xl filter drop-shadow-sm">{curr.icon}</span>
-                    <span
-                        className={`text-xs font-bold px-3 py-1 rounded-full uppercase tracking-widest ${progress === 100 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+                <div className="flex justify-between items-start mb-8">
+                    <motion.span
+                        animate={{ rotate: [0, 10, -10, 0] }}
+                        transition={{ repeat: Infinity, duration: 4, ease: "easeInOut" }}
+                        className="text-6xl grayscale group-hover:grayscale-0 transition-all duration-500"
                     >
-                        {progress === 100 ? 'Completed' : 'In Progress'}
-                    </span>
+                        {curr.icon}
+                    </motion.span>
+                    <div className="flex flex-col items-end gap-1">
+                        <span className={`text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-widest border ${progress === 100
+                            ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                            : 'bg-primary-500/10 text-primary-400 border-primary-500/20'
+                            }`}>
+                            {progress === 100 ? 'Mastered' : 'Synapsing'}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
+                            {curr.modules?.length || 0} Modules
+                        </span>
+                    </div>
                 </div>
 
-                <h3 className="text-2xl font-bold mb-3 text-gray-900 group-hover:text-blue-600 transition-colors leading-tight">
+                <h3 className="text-3xl font-black mb-4 text-white group-hover:text-primary-400 transition-colors leading-[1.1] tracking-tight">
                     {curr.title}
                 </h3>
 
-                <p className="text-gray-500 text-sm line-clamp-2 mb-8 leading-relaxed">
-                    {curr.description || "A personalized learning path generated by AI."}
+                <p className="text-slate-400 text-sm line-clamp-2 mb-10 leading-relaxed font-medium">
+                    {curr.description || "Synthesizing specialized knowledge for cognitive acceleration."}
                 </p>
 
-                <div className="mt-auto">
-                    <div className="flex items-center justify-between text-sm font-semibold text-gray-400 mb-3">
-                        <span className="flex items-center gap-2">
-                            <BookOpen className="w-4 h-4" /> {curr.modules?.length || 0} Modules
-                        </span>
-                        <span>{progress}%</span>
+                <div className="mt-auto pt-6 border-t border-white/5">
+                    <div className="flex items-center justify-between text-[11px] font-black uppercase tracking-tighter text-slate-500 mb-3">
+                        <span>Path Mastery</span>
+                        <span className="text-white">{progress}%</span>
                     </div>
 
-                    <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                        <div
-                            className="h-full rounded-full transition-all duration-1000 ease-out"
+                    <div className="w-full bg-dark-800 h-1.5 rounded-full overflow-hidden">
+                        <motion.div
+                            initial={{ width: 0 }}
+                            animate={{ width: `${progress}%` }}
+                            transition={{ duration: 1.5, ease: "circOut" }}
+                            className="h-full rounded-full shadow-[0_0_15px_rgba(139,92,246,0.5)]"
                             style={{
-                                width: `${progress}%`,
-                                backgroundColor: curr.theme_color || '#3b82f6'
+                                backgroundColor: curr.theme_color || '#8b5cf6'
                             }}
                         />
                     </div>
@@ -247,6 +272,7 @@ const CurriculumCard = ({ curr, navigate, variants }) => {
         </motion.div>
     );
 };
+
 
 // Sub-component for Modal
 const CreateModal = ({ isOpen, onClose, step, errorMessage, onSubmit, newGoal, setNewGoal, selectedDoc, setSelectedDoc, documents }) => {
@@ -257,107 +283,115 @@ const CreateModal = ({ isOpen, onClose, step, errorMessage, onSubmit, newGoal, s
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
-                    className="fixed inset-0 bg-gray-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+                    className="fixed inset-0 bg-dark-950/80 backdrop-blur-xl z-50 flex items-center justify-center p-4"
                     onClick={() => step !== 'generating' && onClose()}
                 >
                     <motion.div
-                        initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                        initial={{ scale: 0.9, opacity: 0, y: 40 }}
                         animate={{ scale: 1, opacity: 1, y: 0 }}
-                        exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                        exit={{ scale: 0.9, opacity: 0, y: 40 }}
                         onClick={(e) => e.stopPropagation()}
-                        className="bg-white rounded-[2rem] w-full max-w-lg shadow-2xl relative overflow-hidden"
+                        className="bg-dark-900 border border-white/10 rounded-[3rem] w-full max-w-xl shadow-[0_0_100px_rgba(0,0,0,1)] relative overflow-hidden"
                     >
-                        <div className="p-8">
+                        {/* Modal Ambient Light */}
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-primary-500 to-transparent" />
+                        <div className="absolute -top-24 -right-24 w-48 h-48 bg-primary-600/20 rounded-full blur-3xl" />
+
+                        <div className="p-10 relative z-10">
                             {step === 'generating' ? (
-                                <div className="text-center py-12">
-                                    <div className="relative w-24 h-24 mx-auto mb-8">
-                                        <div className="absolute inset-0 border-4 border-gray-100 rounded-full"></div>
-                                        <div className="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
-                                        <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">🔮</div>
+                                <div className="text-center py-16">
+                                    <div className="relative w-32 h-32 mx-auto mb-10">
+                                        <div className="absolute inset-0 border-4 border-white/5 rounded-full" />
+                                        <div className="absolute inset-0 border-4 border-primary-500 rounded-full border-t-transparent animate-spin" />
+                                        <div className="absolute inset-0 flex items-center justify-center text-5xl">🔭</div>
                                     </div>
-                                    <h3 className="text-2xl font-bold mb-2 text-gray-900">Designing Curriculum...</h3>
-                                    <p className="text-gray-500">AI is researching "{newGoal}" and structuring your lessons.</p>
+                                    <h3 className="text-3xl font-black mb-4 text-white tracking-tight">Orchestrating Knowledge...</h3>
+                                    <p className="text-slate-400 text-lg uppercase tracking-[0.2em] text-[12px] font-bold">Recursive AI Decomposition for "{newGoal}"</p>
                                 </div>
                             ) : step === 'error' ? (
-                                <div className="text-center py-8">
-                                    <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                                        <AlertCircle className="w-8 h-8 text-red-500" />
+                                <div className="text-center py-10">
+                                    <div className="w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center mx-auto mb-6 border border-red-500/20">
+                                        <AlertCircle className="w-10 h-10 text-red-400" />
                                     </div>
-                                    <h3 className="text-xl font-bold text-gray-900 mb-2">Generation Failed</h3>
-                                    <p className="text-red-500 mb-6 bg-red-50 p-4 rounded-xl text-sm">{errorMessage}</p>
+                                    <h3 className="text-2xl font-black text-white mb-4 tracking-tight">System Interrupt</h3>
+                                    <p className="text-red-400 mb-10 bg-red-950/30 p-6 rounded-2xl text-sm border border-red-500/10 font-medium">{errorMessage}</p>
                                     <button
                                         onClick={onClose}
-                                        className="w-full py-3 rounded-xl bg-gray-100 font-bold text-gray-700 hover:bg-gray-200"
+                                        className="w-full py-5 rounded-2xl bg-white/5 font-black text-slate-300 hover:bg-white/10 transition-all uppercase tracking-widest text-xs"
                                     >
-                                        Close
+                                        Return to Nexus
                                     </button>
                                 </div>
                             ) : step === 'done' ? (
-                                <div className="text-center py-12">
-                                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 text-4xl">
+                                <div className="text-center py-16">
+                                    <motion.div
+                                        initial={{ scale: 0 }}
+                                        animate={{ scale: 1 }}
+                                        className="w-24 h-24 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-8 border border-emerald-500/30 text-emerald-400 text-5xl"
+                                    >
                                         ✓
-                                    </div>
-                                    <h3 className="text-2xl font-bold text-gray-900">Ready!</h3>
+                                    </motion.div>
+                                    <h3 className="text-3xl font-black text-white tracking-tight">Synapse Initialized</h3>
                                 </div>
                             ) : (
                                 <>
-                                    <div className="mb-8">
-                                        <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600 mb-4 shadow-sm">
-                                            <GraduationCap className="w-6 h-6" />
+                                    <div className="mb-10 text-center">
+                                        <div className="w-16 h-16 bg-primary-500/10 rounded-2xl flex items-center justify-center text-primary-400 mb-6 mx-auto border border-primary-500/20 shadow-lg shadow-primary-500/5">
+                                            <BrainCircuit className="w-8 h-8" />
                                         </div>
-                                        <h2 className="text-3xl font-bold text-gray-900">New Learning Goal</h2>
-                                        <p className="text-gray-500 mt-2">What do you want to master today?</p>
+                                        <h2 className="text-4xl font-black text-white tracking-tighter mb-2">Cognitive Blueprint</h2>
+                                        <p className="text-slate-500 font-bold uppercase tracking-widest text-[10px]">Define the parameters of your learning expansion</p>
                                     </div>
 
-                                    <form onSubmit={onSubmit}>
+                                    <form onSubmit={onSubmit} className="space-y-8">
                                         <div className="space-y-6">
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Topic or Skill</label>
+                                            <div className="space-y-3">
+                                                <label className="block text-[10px] font-black text-primary-400 uppercase tracking-[0.3em] ml-1">Learning Objective</label>
                                                 <input
                                                     type="text"
                                                     value={newGoal}
                                                     onChange={(e) => setNewGoal(e.target.value)}
-                                                    placeholder="e.g. Machine Learning, Italian Cooking, Calculus..."
-                                                    className="w-full px-5 py-4 rounded-xl border-2 border-gray-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-50 outline-none transition-all text-lg font-medium placeholder:font-normal"
+                                                    placeholder="Quantum Mechanics, Bio-hacking, French Literature..."
+                                                    className="w-full px-8 py-5 rounded-3xl bg-dark-950 border border-white/5 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 outline-none transition-all text-xl font-bold placeholder:text-slate-700 shadow-inner"
                                                     autoFocus
                                                     required
                                                 />
                                             </div>
 
-                                            <div>
-                                                <label className="block text-sm font-bold text-gray-700 mb-2 uppercase tracking-wide">Source Material (Optional)</label>
+                                            <div className="space-y-3">
+                                                <label className="block text-[10px] font-black text-primary-400 uppercase tracking-[0.3em] ml-1">Contextual Source (Recommended)</label>
                                                 <div className="relative">
                                                     <select
                                                         value={selectedDoc}
                                                         onChange={(e) => setSelectedDoc(e.target.value)}
-                                                        className="w-full px-5 py-4 rounded-xl border-2 border-gray-100 focus:border-blue-500 focus:ring-4 focus:ring-blue-50 outline-none transition-all bg-white appearance-none text-gray-700 font-medium"
+                                                        className="w-full px-8 py-5 rounded-3xl bg-dark-950 border border-white/5 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10 outline-none transition-all appearance-none text-slate-300 font-bold text-lg cursor-pointer"
                                                     >
-                                                        <option value="">Start from Scratch (AI Research)</option>
+                                                        <option value="">Cold Start (Global AI Context)</option>
                                                         {documents.map(doc => (
-                                                            <option key={doc.id} value={doc.id}>📄 {doc.title}</option>
+                                                            <option key={doc.id} value={doc.id}>DATA-NODE: {doc.title}</option>
                                                         ))}
                                                     </select>
-                                                    <div className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none text-gray-400">
-                                                        <ChevronRight className="w-5 h-5 rotate-90" />
+                                                    <div className="absolute right-8 top-1/2 -translate-y-1/2 pointer-events-none text-primary-500">
+                                                        <ChevronRight className="w-6 h-6 rotate-90" />
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div className="flex gap-4 mt-10">
+                                        <div className="flex gap-4 pt-4">
                                             <button
                                                 type="button"
                                                 onClick={onClose}
-                                                className="flex-1 px-6 py-4 rounded-xl border-2 border-gray-100 font-bold text-gray-600 hover:bg-gray-50 hover:border-gray-200 transition-all"
+                                                className="flex-1 px-8 py-5 rounded-3xl bg-white/5 border border-white/5 font-black text-slate-400 hover:bg-white/10 hover:text-white transition-all uppercase tracking-widest text-xs"
                                             >
-                                                Cancel
+                                                Abort
                                             </button>
                                             <button
                                                 type="submit"
                                                 disabled={!newGoal}
-                                                className="flex-[2] px-6 py-4 rounded-xl bg-blue-600 text-white font-bold shadow-lg shadow-blue-200 hover:bg-blue-700 hover:shadow-xl hover:shadow-blue-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                                                className="flex-[2] px-8 py-5 rounded-3xl bg-primary-500 text-white font-black shadow-2xl shadow-primary-500/20 hover:bg-primary-400 hover:shadow-primary-500/40 transition-all disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-3 uppercase tracking-widest text-xs"
                                             >
-                                                Generate Path <ArrowRight className="w-5 h-5" />
+                                                Deploy Path <ArrowRight className="w-5 h-5" />
                                             </button>
                                         </div>
                                     </form>
@@ -370,5 +404,6 @@ const CreateModal = ({ isOpen, onClose, step, errorMessage, onSubmit, newGoal, s
         </AnimatePresence>
     );
 };
+
 
 export default CurriculumList;

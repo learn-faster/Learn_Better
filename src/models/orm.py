@@ -46,6 +46,15 @@ class Document(Base):
     first_opened = Column(DateTime, nullable=True)
     completion_estimate = Column(Integer, nullable=True) # Estimated seconds
     reading_progress = Column(Float, default=0.0) # 0.0 to 1.0
+    
+    # Advanced Reading Metrics
+    reading_time_min = Column(Integer, nullable=True) # Minutes (range low)
+    reading_time_max = Column(Integer, nullable=True) # Minutes (range high)
+    reading_time_median = Column(Integer, nullable=True) # Minutes
+    word_count = Column(Integer, default=0)
+    difficulty_score = Column(Float, nullable=True) # Flesch-Kincaid
+    language = Column(String, nullable=True) # e.g. 'en'
+    scanned_prob = Column(Float, default=0.0) # Probability of being a scanned doc
 
     # Relationships
     folder = relationship("Folder", back_populates="documents")
@@ -121,3 +130,77 @@ class ActivityLog(Base):
     
     # Relationships
     document = relationship("Document", back_populates="activity_logs")
+
+
+class UserSettings(Base):
+    """
+    User-specific settings for learning calibration.
+    These settings directly impact SRS scheduling and focus timers.
+    """
+    __tablename__ = "user_settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(String, unique=True, index=True, default="default_user")
+    
+    # SRS Settings
+    target_retention = Column(Float, default=0.9)  # 0.7 - 0.97
+    daily_new_limit = Column(Integer, default=20)  # Max new cards per day
+    
+    # Focus Timer Settings (Pomodoro)
+    focus_duration = Column(Integer, default=25)   # Minutes
+    break_duration = Column(Integer, default=5)    # Minutes
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class Curriculum(Base):
+    """
+    A persistent learning path/curriculum for a specific goal.
+    """
+    __tablename__ = "curriculums"
+    
+    id = Column(String, primary_key=True, index=True) # UUID
+    user_id = Column(String, index=True, default="default_user")
+    document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
+    
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    target_concept = Column(String, nullable=True)
+    
+    status = Column(String, default="active") # active, completed, archvied
+    progress = Column(Float, default=0.0)
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    modules = relationship("CurriculumModule", back_populates="curriculum", cascade="all, delete-orphan")
+    document = relationship("Document")
+
+
+class CurriculumModule(Base):
+    """
+    An individual stage/step within a curriculum.
+    """
+    __tablename__ = "curriculum_modules"
+    
+    id = Column(String, primary_key=True, index=True) # UUID
+    curriculum_id = Column(String, ForeignKey("curriculums.id"))
+    
+    title = Column(String, nullable=False)
+    description = Column(Text, nullable=True)
+    module_type = Column(String, default="primer") # primer, reading, practice, srs
+    
+    order = Column(Integer, default=0)
+    is_completed = Column(Boolean, default=False)
+    
+    # Content can be a long markdown string or structured JSON (quiz etc)
+    content = Column(JSON, nullable=True)
+    estimated_time = Column(String, nullable=True) # e.g. "15 mins"
+    
+    completed_at = Column(DateTime, nullable=True)
+    
+    # Relationships
+    curriculum = relationship("Curriculum", back_populates="modules")
+

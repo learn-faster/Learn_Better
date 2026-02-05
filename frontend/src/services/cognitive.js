@@ -2,76 +2,50 @@ import api from './api';
 
 /**
  * Service for Cognitive/Metacognitive features.
- * NOTE: Backend endpoints for this feature are not yet implemented.
- * All functions return mock data until backend support is added.
  */
 
-const STUB_MESSAGE = 'Cognitive features are not yet available in the backend.';
-
-/**
- * @stub Returns mock recommendation data.
- */
-const getRecommendation = async () => {
-    console.warn(STUB_MESSAGE);
-    return {
-        current_phase: 'focus',
-        phase_name: 'Deep Focus',
-        next_phase: 'break',
-        next_phase_in: 25,
-        message: 'Backend cognitive endpoints not available'
-    };
+const getOverview = async (userId = 'default_user') => {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return api.get(`/cognitive/overview?user_id=${userId}&timezone=${timezone}`);
 };
 
-/**
- * @stub Returns empty gaps list.
- */
+const getRecommendation = async () => {
+    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    return api.get(`/cognitive/recommendation?timezone=${timezone}`);
+};
+
+const getStability = async () => {
+    return api.get('/cognitive/stability');
+};
+
+const getFrontier = async (userId = 'default_user') => {
+    return api.get(`/cognitive/frontier?user_id=${userId}`);
+};
+
 const getGaps = async () => {
-    console.warn(STUB_MESSAGE);
     return [];
 };
 
 /**
- * @stub No-op for logging gaps.
+ * Fetches user's learning calibration settings from the backend.
  */
-const logGap = async (gapData) => {
-    console.warn(STUB_MESSAGE);
-    return { id: 'stub', ...gapData };
+const getSettings = async (userId = 'default_user') => {
+    return api.get(`/cognitive/settings?user_id=${userId}`);
 };
 
 /**
- * @stub No-op for resolving gaps.
+ * Updates user's learning calibration settings.
  */
-const resolveGap = async (gapId) => {
-    console.warn(STUB_MESSAGE);
-    return { success: true };
-};
-
-/**
- * @stub Returns default settings.
- */
-const getSettings = async () => {
-    console.warn(STUB_MESSAGE);
-    return {
-        chronotype: 'intermediate',
-        use_fsrs: false,
-        focus_duration: 25,
-        break_duration: 5
-    };
-};
-
-/**
- * @stub No-op for updating settings.
- */
-const updateSettings = async (settings) => {
-    console.warn(STUB_MESSAGE);
-    return settings;
+const updateSettings = async (settings, userId = 'default_user') => {
+    return api.post(`/cognitive/settings?user_id=${userId}`, settings);
 };
 
 export default {
+    getOverview,
     getRecommendation,
+    getStability,
+    getFrontier,
     getGaps,
-    logGap,
-    resolveGap,
     getSettings,
     updateSettings
 };

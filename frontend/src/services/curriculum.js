@@ -2,71 +2,53 @@ import api from './api';
 
 /**
  * Service for managing Curriculums.
- * NOTE: Backend endpoints for this feature are not yet implemented.
- * All functions return mock data until backend support is added.
  */
 
-const STUB_MESSAGE = 'Curriculum features are not yet available in the backend.';
-
 /**
- * @stub Returns mock curriculum generation response.
+ * Generates a new curriculum from a goal and document.
  */
 const generateCurriculum = async (goal, documentId) => {
-    console.warn(STUB_MESSAGE);
-    return {
-        id: 'stub-curriculum',
-        goal: goal,
+    return api.post('/curriculum/generate', {
+        title: goal,
         document_id: documentId,
-        modules: [],
-        created_at: new Date().toISOString(),
-        message: 'Backend curriculum endpoints not available'
-    };
+        user_id: 'default_user'
+    });
 };
 
 /**
- * @stub Returns empty curriculum list.
+ * Fetches all curriculums for the user.
  */
 const getCurriculums = async () => {
-    console.warn(STUB_MESSAGE);
-    return [];
+    return api.get('/curriculum/');
 };
 
 /**
- * @stub Returns mock curriculum.
+ * Fetches a single curriculum by ID.
  */
 const getCurriculum = async (id) => {
-    console.warn(STUB_MESSAGE);
-    return {
-        id: id,
-        goal: 'Stub Curriculum',
-        modules: [],
-        progress: 0,
-        message: 'Backend curriculum endpoints not available'
-    };
+    return api.get(`/curriculum/${id}`);
 };
 
 /**
- * @stub No-op for updating curriculum.
+ * Stubbed: Curriculums are mostly immutable for now or updated via modules.
  */
 const updateCurriculum = async (id, data) => {
-    console.warn(STUB_MESSAGE);
-    return { id, ...data };
+    return data;
 };
 
 /**
- * @stub No-op for toggling module.
+ * Toggles a module's completion status.
  */
 const toggleModule = async (curriculumId, moduleId) => {
-    console.warn(STUB_MESSAGE);
-    return { id: moduleId, completed: true };
+    return api.post(`/curriculum/module/${moduleId}/toggle`);
 };
 
 /**
- * @stub No-op for generating module content.
+ * Stubbed: Module content is now generated at curriculum creation time.
+ * This can be used later for refreshing content.
  */
 const generateModuleContent = async (moduleId) => {
-    console.warn(STUB_MESSAGE);
-    return { id: moduleId, content: 'Content generation not available' };
+    return { id: moduleId };
 };
 
 export default {
@@ -77,3 +59,4 @@ export default {
     toggleModule,
     generateModuleContent
 };
+

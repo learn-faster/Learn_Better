@@ -24,6 +24,17 @@ class LLMService:
         self.provider = settings.llm_provider.lower()
         self.base_url = settings.ollama_base_url if self.provider == "ollama" else None
         self.model = settings.llm_model
+        
+        # Initialize API key based on provider
+        if self.provider == "openai":
+            self.api_key = settings.openai_api_key
+        elif self.provider == "groq":
+            self.api_key = settings.groq_api_key
+        elif self.provider == "openrouter":
+            self.api_key = settings.openrouter_api_key
+        else:
+            self.api_key = ""
+
         if settings.use_opik:
             configure()
 

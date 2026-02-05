@@ -3,7 +3,7 @@
 import json
 import logging
 import os
-from typing import List, Optional, Tuple, Any
+from typing import List, Optional, Tuple, Any, Dict
 from pydantic import ValidationError
 
 from dotenv import load_dotenv
@@ -30,36 +30,29 @@ class IngestionEngine:
     """
     
     DEFAULT_MODEL = "gpt-oss:20b-cloud"
-    EXTRACTION_PROMPT_TEMPLATE = """You are an expert educational content analyzer. Your task is to extract key learning concepts and their prerequisite relationships from the provided educational content.
+    EXTRACTION_PROMPT_TEMPLATE = """You are an expert educational content analyzer. Your task is to extract key learning concepts, their prerequisite relationships, and map them to the specific text chunks where they are defined.
 
-Analyze the following markdown content and extract:
-1. A list of key concepts (topics, skills, or ideas that a learner needs to understand)
-2. Prerequisite relationships between concepts (which concepts must be learned before others)
+Analyze the following NUMBERED text chunks and extract:
+1. A list of key concepts
+2. Prerequisite relationships
+3. **Concept Mappings**: Which chunk numbers (e.g., [1, 3]) contain the primary definition or explanation of the concept.
 
-For each prerequisite relationship, provide:
-- source_concept: The fundamental concept that must be learned first
-- target_concept: The advanced concept that requires the source
-- weight: A value between 0.0 and 1.0 indicating dependency strength (1.0 = absolutely required, 0.5 = helpful but not critical)
-- reasoning: A brief explanation of why the source concept is needed for the target
-
-Return your response as a JSON object with this exact structure:
+Return your response as a JSON object with this EXACT structure:
 {{
-    "concepts": ["concept1", "concept2", "concept3"],
+    "concepts": ["concept1", "concept2"],
     "prerequisites": [
         {{
             "source_concept": "concept1",
             "target_concept": "concept2",
             "weight": 0.8,
-            "reasoning": "Understanding concept1 is essential for grasping concept2"
+            "reasoning": "Explanation..."
         }}
-    ]
+    ],
+    "concept_mappings": {{
+        "concept1": [1, 2],
+        "concept2": [3]
+    }}
 }}
-
-IMPORTANT: 
-- Concept names should be clear, concise, and descriptive
-- Only include meaningful prerequisite relationships
-- Ensure all concepts mentioned in prerequisites are also in the concepts list
-- Return ONLY valid JSON, no additional text
 
 Content to analyze:
 
@@ -95,39 +88,47 @@ Content to analyze:
     
     MAX_EXTRACTION_CHARS = 50000  # Conservative limit for extraction windows
     
-    def _create_extraction_windows(self, markdown: str) -> List[str]:
+    def _create_chunked_windows(self, chunks: List[str]) -> List[Tuple[str, int, int]]:
         """
-        Split markdown into overlapping windows safely respecting paragraph boundaries.
+        Group individual chunks into context windows.
         
         Args:
-            markdown: Full markdown text
+            chunks: List of text content chunks
             
         Returns:
-            List of text windows safe for LLM context
+            List of Tuples: (formatted_window_text, start_index, end_index)
+            start_index and end_index are 0-based indices into the original chunks list.
         """
-        if len(markdown) <= self.MAX_EXTRACTION_CHARS:
-            return [markdown]
-            
         windows = []
-        paragraphs = markdown.split('\n\n')
-        current_window = []
-        current_size = 0
+        current_window_text = []
+        current_char_count = 0
+        current_start_idx = 0
         
-        for para in paragraphs:
-            para_len = len(para)
-            if current_size + para_len > self.MAX_EXTRACTION_CHARS and current_window:
-                # Window full, save it
-                windows.append('\n\n'.join(current_window))
-                # Start new window with some overlap (keep last paragraph)
-                overlap_para = current_window[-1]
-                current_window = [overlap_para, para]
-                current_size = len(overlap_para) + para_len
-            else:
-                current_window.append(para)
-                current_size += para_len
+        for i, chunk in enumerate(chunks):
+            # Format: [i] actual text
+            # We use 0-based index matching the list, but LLM might prefer 1-based. 
+            # Let's use 0-based in prompt for simplicity of mapping back, 
+            # or explicit labeling like [Chunk 0].
+            formatted_chunk = f"[Chunk {i}] {chunk}"
+            chunk_len = len(formatted_chunk)
+            
+            if current_char_count + chunk_len > self.MAX_EXTRACTION_CHARS and current_window_text:
+                # Close current window
+                window_content = "\n\n".join(current_window_text)
+                windows.append((window_content, current_start_idx, i - 1))
                 
-        if current_window:
-            windows.append('\n\n'.join(current_window))
+                # Start new window
+                current_window_text = [formatted_chunk]
+                current_char_count = chunk_len
+                current_start_idx = i
+            else:
+                current_window_text.append(formatted_chunk)
+                current_char_count += chunk_len
+        
+        # Add last window
+        if current_window_text:
+            window_content = "\n\n".join(current_window_text)
+            windows.append((window_content, current_start_idx, len(chunks) - 1))
             
         return windows
 
@@ -142,59 +143,65 @@ Content to analyze:
             Unified GraphSchema
         """
         if not schemas:
-            return GraphSchema(concepts=[], prerequisites=[])
+            return GraphSchema(concepts=[], prerequisites=[], concept_mappings={})
             
         all_concepts = set()
         prereqs_map = {}  # Key: (source, target), Value: PrerequisiteLink
+        merged_mappings = {} # Key: concept_name, Value: set of chunk_ids
         
         for schema in schemas:
             # Add concepts
             for concept in schema.concepts:
                 all_concepts.add(concept)
                 
-            # Add prerequisites, merging duplicates by keeping max weight
+            # Add prerequisites
             for prereq in schema.prerequisites:
                 key = (prereq.source_concept, prereq.target_concept)
                 if key in prereqs_map:
-                    # If duplicate, keep the one with higher confidence/weight
                     if prereq.weight > prereqs_map[key].weight:
                         prereqs_map[key] = prereq
                 else:
                     prereqs_map[key] = prereq
+            
+            # Merge mappings
+            if schema.concept_mappings:
+                for concept, indices in schema.concept_mappings.items():
+                    norm_concept = self._normalize_concept_name(concept)
+                    if norm_concept not in merged_mappings:
+                        merged_mappings[norm_concept] = set()
+                    merged_mappings[norm_concept].update(indices)
+
+        # Convert sets back to sorted lists
+        final_mappings = {k: sorted(list(v)) for k, v in merged_mappings.items()}
                     
         return GraphSchema(
             concepts=sorted(list(all_concepts)),
-            prerequisites=list(prereqs_map.values())
+            prerequisites=list(prereqs_map.values()),
+            concept_mappings=final_mappings
         )
 
-    async def extract_graph_structure(self, markdown: str) -> GraphSchema:
+    async def extract_graph_structure(self, content_chunks: List[str]) -> GraphSchema:
         """
-        Extract knowledge graph structure from markdown content using LLM.
-        Supports large documents by chunking content and merging results.
+        Extract knowledge graph structure from content chunks using LLM.
         
         Args:
-            markdown: Markdown content to analyze
+            content_chunks: List of text chunks
             
         Returns:
-            GraphSchema with extracted concepts and prerequisite relationships
-            
-        Raises:
-            ValueError: If LLM returns invalid JSON or extraction fails
-            ValidationError: If extracted data doesn't conform to GraphSchema
+            GraphSchema with extracted concepts, prerequisites, and chunk mappings
         """
-        if not markdown or not markdown.strip():
-            raise ValueError("Cannot extract graph structure from empty content")
+        if not content_chunks:
+            raise ValueError("Cannot extract graph from empty content chunks")
             
-        # Split content into context-safe windows
-        windows = self._create_extraction_windows(markdown)
+        # Create numbered windows
+        windows = self._create_chunked_windows(content_chunks)
         logger.info(f"Split document into {len(windows)} windows for extraction")
         
         schemas = []
         
-        for i, window_content in enumerate(windows):
-            logger.info(f"Processing extraction window {i+1}/{len(windows)} ({len(window_content)} chars)")
+        for i, (window_content, start_idx, end_idx) in enumerate(windows):
+            logger.info(f"Processing extraction window {i+1}/{len(windows)}")
             
-            # Prepare the prompt
             prompt = self.EXTRACTION_PROMPT_TEMPLATE.format(content=window_content)
             
             try:
@@ -203,34 +210,29 @@ Content to analyze:
                 from src.routers.ai import LLMConfig
                 from src.config import settings
 
-                # Create config override for extraction
                 config = LLMConfig(
                     provider=settings.llm_provider,
                     model=settings.extraction_model if settings.extraction_model else settings.llm_model,
                     base_url=settings.ollama_base_url
                 )
 
-                # Get completion from LLM Service
                 response_text = await llm_service.get_chat_completion(
                     messages=[{"role": "user", "content": prompt}],
                     response_format="json",
                     config=config
                 )
                 
-                # Parse JSON response
                 try:
                     data = json.loads(response_text)
                 except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse LLM response as JSON in window {i+1}: {response_text}")
-                    # Continue to next window instead of failing everything
+                    logger.error(f"Failed to parse LLM response in window {i+1}: {response_text}")
                     continue 
                 
-                # Ensure data is a dictionary
                 if not isinstance(data, dict):
                     logger.error(f"LLM response is not a JSON object in window {i+1}")
                     continue
                 
-                # Normalize concept names to lowercase
+                # Normalize concepts
                 if 'concepts' in data:
                     data['concepts'] = [self._normalize_concept_name(c) for c in data['concepts']]
                 
@@ -240,8 +242,22 @@ Content to analyze:
                             prereq['source_concept'] = self._normalize_concept_name(prereq['source_concept'])
                         if 'target_concept' in prereq:
                             prereq['target_concept'] = self._normalize_concept_name(prereq['target_concept'])
+
+                # Normalize mappings and adjust indices
+                # The LLM sees "Chunk 0" but that is relative to the start_idx of the window?
+                # Actually, our _create_chunked_windows formats it as `[Chunk {i}]` where {i} is the GLOBAL index
+                # So the LLM should return the global index if valid.
                 
-                # Validate with Pydantic schema
+                if 'concept_mappings' in data:
+                    normalized_mappings = {}
+                    for concept, indices in data['concept_mappings'].items():
+                        norm_c = self._normalize_concept_name(concept)
+                        # Filter indices to ensure they are valid for this document
+                        valid_indices = [idx for idx in indices if isinstance(idx, int) and 0 <= idx < len(content_chunks)]
+                        normalized_mappings[norm_c] = valid_indices
+                    data['concept_mappings'] = normalized_mappings
+                
+                # Validate schema
                 try:
                     # Auto-fix: Ensure all concepts in prerequisites are in concepts list
                     # This handles the "structural hallucination" we saw earlier
@@ -263,13 +279,13 @@ Content to analyze:
                     
             except Exception as e:
                 logger.error(f"Graph extraction failed for window {i+1}: {str(e)}")
-                # Continue processing other windows
                 continue
         
         if not schemas:
-            raise ValueError("Failed to extract valid graph structure from any window")
+            # Fallback: create empty schema if all windows failed
+            logger.warning("No valid schemas extracted, returning empty graph")
+            return GraphSchema(concepts=[], prerequisites=[], concept_mappings={})
             
-        # Merge all partial schemas
         final_schema = self._merge_schemas(schemas)
         logger.info(f"Merged {len(schemas)} partial schemas into final graph: {len(final_schema.concepts)} concepts")
         
@@ -376,50 +392,51 @@ Content to analyze:
     async def process_document_complete(self, doc_source: str, markdown: str, content_chunks: List, document_id: Optional[int] = None) -> Tuple[GraphSchema, List[int]]:
         """
         Complete document processing: extract graph structure and store both graph and vector data.
-        
-        Args:
-            doc_source: Source filename or URL
-            markdown: Full markdown content for graph extraction
-            content_chunks: List of content chunks (either strings or tuples from document processor)
-            document_id: Optional ID of the parent document
-            
-        Returns:
-            Tuple of (GraphSchema, list of chunk IDs)
-            
-        Raises:
-            ValueError: If processing fails at any stage
         """
         try:
-            # Extract graph structure from full markdown
-            schema = await self.extract_graph_structure(markdown)
+            # Prepare chunks
+            if content_chunks and isinstance(content_chunks[0], tuple):
+                # Document processor returns (content, concept_tag) tuples
+                final_chunks = [chunk[0] for chunk in content_chunks if chunk[0].strip()]
+            else:
+                final_chunks = [chunk for chunk in content_chunks if chunk.strip()]
+
+            # Extract graph structure from chunks
+            schema = await self.extract_graph_structure(final_chunks)
             
             # Store graph data in Neo4j with provenance
             self.store_graph_data(schema, document_id)
             
-            # Handle different chunk formats from document processor
-            if content_chunks and isinstance(content_chunks[0], tuple):
-                # Document processor returns (content, concept_tag) tuples
-                chunk_contents = [chunk[0] for chunk in content_chunks if chunk[0].strip()]
-                # Use extracted concepts for tagging since document processor concept tags might be empty
-                if schema.concepts:
-                    concept_tags = []
-                    concepts_cycle = schema.concepts * ((len(chunk_contents) // len(schema.concepts)) + 1)
-                    concept_tags = concepts_cycle[:len(chunk_contents)]
-                else:
-                    concept_tags = ["general"] * len(chunk_contents)
-            else:
-                # Simple list of content strings
-                chunk_contents = [chunk for chunk in content_chunks if chunk.strip()]
-                # Assign concept tags to chunks (simple strategy: distribute evenly)
-                if chunk_contents and schema.concepts:
-                    concept_tags = []
-                    concepts_cycle = schema.concepts * ((len(chunk_contents) // len(schema.concepts)) + 1)
-                    concept_tags = concepts_cycle[:len(chunk_contents)]
-                else:
-                    concept_tags = ["general"] * len(chunk_contents)
+            # Tag chunks based on semantic mapping
+            # Default to "general"
+            chunk_tags = ["general"] * len(final_chunks)
+            
+            # If we have mappings, apply them
+            if schema.concept_mappings:
+                # We need to handle 1 chunk having multiple tags? Vector storage usually supports 1 main tag.
+                # For now, let's just pick the last assigned tagging or "multi-tagged"?
+                # Vector storage schema likely expects a single string.
+                # Strategy: Map chunk index to list of concepts. Join with comma? Or just pick primary?
+                # Let's pick the concept with the *longest name* (heuristic for specificity) 
+                # or just the first one found.
+                
+                chunk_to_concepts = {}
+                for concept, indices in schema.concept_mappings.items():
+                    for idx in indices:
+                        if idx not in chunk_to_concepts:
+                            chunk_to_concepts[idx] = []
+                        chunk_to_concepts[idx].append(concept)
+                
+                for idx, concepts in chunk_to_concepts.items():
+                    if 0 <= idx < len(chunk_tags):
+                        # Use the most specific concept (longest name) or just the first
+                        # Let's use comma-separated for now if supported, else first
+                        # PostgreSQL vector storage column is 'concept_tag' (String)
+                        # Storing "Concept A, Concept B" allows partial matching if ILIKE used.
+                        chunk_tags[idx] = concepts[0] # Pick first for simplicity/stability
             
             # Store vector data in PostgreSQL
-            chunk_ids = await self.store_vector_data(doc_source, chunk_contents, concept_tags, document_id)
+            chunk_ids = await self.store_vector_data(doc_source, final_chunks, chunk_tags, document_id)
             
             logger.info(f"Complete document processing finished for '{doc_source}'")
             return schema, chunk_ids

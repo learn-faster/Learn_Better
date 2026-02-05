@@ -77,8 +77,17 @@ def migrate_documents_table():
         ("page_count", "INTEGER DEFAULT 0"),
         ("time_spent_reading", "INTEGER DEFAULT 0"),
         ("last_opened", "TIMESTAMP"),
+        ("first_opened", "TIMESTAMP"),
         ("completion_estimate", "INTEGER"),
-        ("reading_progress", "FLOAT DEFAULT 0.0")
+        ("completion_estimate", "INTEGER"),
+        ("reading_progress", "FLOAT DEFAULT 0.0"),
+        ("reading_time_min", "INTEGER"),
+        ("reading_time_max", "INTEGER"),
+        ("reading_time_median", "INTEGER"),
+        ("word_count", "INTEGER DEFAULT 0"),
+        ("difficulty_score", "FLOAT"),
+        ("language", "VARCHAR"),
+        ("scanned_prob", "FLOAT DEFAULT 0.0")
     ]
     
     for col_name, col_type in cols_to_add:

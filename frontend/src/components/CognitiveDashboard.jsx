@@ -1,22 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Settings } from 'lucide-react';
+import { Settings, Info, TrendingUp, AlertCircle, BrainCircuit } from 'lucide-react';
 import cognitiveService from '../services/cognitive';
+import FocusAura from './cognitive/FocusAura';
+import GrowthFrontier from './cognitive/GrowthFrontier';
+import StabilityMap from './cognitive/StabilityMap';
 import CognitiveSettingsModal from './CognitiveSettingsModal';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const CognitiveDashboard = () => {
-    const [recommendation, setRecommendation] = useState(null);
-    const [gaps, setGaps] = useState([]);
+    const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [showSettings, setShowSettings] = useState(false);
+    const [activeTab, setActiveTab] = useState('focus'); // 'focus', 'stability', 'frontier'
 
     const fetchData = React.useCallback(async () => {
         try {
-            const rec = await cognitiveService.getRecommendation();
-            setRecommendation(rec);
-            const gapList = await cognitiveService.getGaps();
-            setGaps(gapList);
+            const overview = await cognitiveService.getOverview();
+            setData(overview);
         } catch (error) {
-            console.error("Failed to fetch cognitive data", error);
+            console.error("Failed to fetch cognitive overview", error);
         } finally {
             setLoading(false);
         }
@@ -24,158 +26,178 @@ const CognitiveDashboard = () => {
 
     useEffect(() => {
         fetchData();
-
-        const handleGapUpdate = () => fetchData();
-        window.addEventListener('gap-logged', handleGapUpdate);
-        return () => window.removeEventListener('gap-logged', handleGapUpdate);
+        const interval = setInterval(fetchData, 60000); // Refresh every minute for focus state
+        return () => clearInterval(interval);
     }, [fetchData]);
 
-    const handleResolveGap = async (id) => {
-        try {
-            await cognitiveService.resolveGap(id);
-            setGaps(gaps.filter(g => g.id !== id));
-        } catch (error) {
-            console.error("Failed to resolve gap", error);
-        }
-    };
-
-    if (loading) return <div className="p-4 text-center">Loading Cognitive Insights...</div>;
+    if (loading) return (
+        <div className="flex items-center justify-center p-20">
+            <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+            >
+                <BrainCircuit className="w-8 h-8 text-primary-500 opacity-50" />
+            </motion.div>
+        </div>
+    );
 
     return (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 relative">
+        <div className="relative">
             <CognitiveSettingsModal
                 isOpen={showSettings}
                 onClose={() => setShowSettings(false)}
                 onUpdate={fetchData}
             />
 
-            {/* Refined Bio-Rhythm / Focus Phase Card */}
-            <div className="bg-dark-900 border border-white/5 rounded-3xl p-8 relative overflow-hidden group shadow-2xl">
-                {/* Subtle Grid Background */}
-                <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20" />
-                <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/80" />
+            {/* Header Content */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4 px-2">
+                <div>
+                    <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                        Neural Synthesis
+                        <span className="text-[10px] bg-primary-500/20 text-primary-400 px-2 py-0.5 rounded-full border border-primary-500/30">Alpha</span>
+                    </h3>
+                    <p className="text-dark-500 text-xs mt-1">Metacognitive metrics and knowledge growth tracking.</p>
+                </div>
 
-                <div className="relative z-10 flex flex-col h-full justify-between">
-                    <div>
-                        <div className="flex items-center justify-between mb-6">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-                                    <span className="text-xl">🧠</span>
-                                </div>
-                                <div>
-                                    <h2 className="text-sm font-bold text-white uppercase tracking-widest">Cognitive State</h2>
-                                    <p className="text-xs text-dark-400 font-medium">Real-time analysis</p>
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => setShowSettings(true)}
-                                className="p-2 hover:bg-white/5 rounded-xl text-dark-400 hover:text-white transition-colors border border-transparent hover:border-white/5"
+                <div className="flex bg-white/5 border border-white/5 p-1 rounded-xl">
+                    {['focus', 'stability', 'frontier'].map(tab => (
+                        <button
+                            key={tab}
+                            onClick={() => setActiveTab(tab)}
+                            className={`px-4 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider transition-all ${activeTab === tab ? 'bg-primary-500 text-white shadow-lg shadow-primary-500/20' : 'text-dark-400 hover:text-white'
+                                }`}
+                        >
+                            {tab}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Left Panel: Primary Metric / Visualization */}
+                <div className="lg:col-span-2 glass border-white/5 rounded-3xl p-8 relative overflow-hidden">
+                    <AnimatePresence mode="wait">
+                        {activeTab === 'focus' && (
+                            <motion.div
+                                key="focus"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="grid md:grid-cols-2 gap-8 items-center"
                             >
-                                <Settings className="w-5 h-5" />
-                            </button>
-                        </div>
-
-                        <div className="mb-8">
-                            <h3 className="text-4xl md:text-5xl font-black text-white tracking-tight mb-2">
-                                {recommendation?.current_phase?.name || "Calibrating..."}
-                            </h3>
-                            <div className="flex flex-wrap items-center gap-3">
-                                <span className="px-3 py-1 rounded-full bg-indigo-500 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-indigo-500/20">
-                                    {recommendation?.current_phase?.type || "Analysis"} Phase
-                                </span>
-                                <span className="text-dark-400 font-mono text-sm font-medium">
-                                    {recommendation?.current_phase?.start_time} — {recommendation?.current_phase?.end_time}
-                                </span>
-                            </div>
-                        </div>
-
-                        <div className="bg-white/5 border border-white/5 rounded-2xl p-6 backdrop-blur-sm">
-                            <div className="flex items-start gap-4">
-                                <div className="mt-1">
-                                    <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse shadow-[0_0_10px_rgba(74,222,128,0.5)]" />
-                                </div>
+                                <FocusAura focusData={data?.focus} />
                                 <div>
-                                    <h4 className="text-sm font-bold text-indigo-200 uppercase tracking-widest mb-1">Recommended Strategy</h4>
-                                    <p className="text-lg text-white font-medium leading-relaxed">
-                                        {recommendation?.current_phase?.action}
+                                    <h4 className="text-2xl font-black text-white mb-2">{data?.focus?.name}</h4>
+                                    <p className="text-dark-300 text-sm leading-relaxed mb-6">
+                                        {data?.focus?.reason}
                                     </p>
-                                    <p className="text-sm text-dark-400 mt-2 font-medium">
-                                        {recommendation?.current_phase?.reason}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="mt-8 pt-6 border-t border-white/5 flex items-center justify-between">
-                        <div>
-                            <span className="block text-[10px] font-bold text-dark-500 uppercase tracking-widest mb-1">Up Next</span>
-                            <span className="text-white font-bold">{recommendation?.next_phase?.name}</span>
-                        </div>
-                        <div className="text-right">
-                            <span className="block text-[10px] font-bold text-dark-500 uppercase tracking-widest mb-1">Starts At</span>
-                            <span className="font-mono text-indigo-300">{recommendation?.next_phase?.start_time}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Gap Journal - Notebook Style */}
-            <div className="bg-[#f0f0f0] text-gray-800 rounded-3xl p-1 shadow-2xl rotate-1 hover:rotate-0 transition-transform duration-500 relative flex flex-col min-h-[400px]">
-                {/* Notebook Binding */}
-                <div className="absolute left-4 top-0 bottom-0 w-8 border-r-2 border-dashed border-gray-300 z-10 hidden sm:block"></div>
-
-                <div className="h-full bg-white rounded-[20px] p-6 sm:pl-16 shadow-inner relative overflow-hidden flex flex-col">
-                    {/* Paper Lines Background */}
-                    <div className="absolute inset-0"
-                        style={{
-                            backgroundImage: 'linear-gradient(#e5e7eb 1px, transparent 1px)',
-                            backgroundSize: '100% 2rem',
-                            marginTop: '3.5rem'
-                        }}
-                    />
-
-                    <div className="relative z-10 flex justify-between items-end border-b-2 border-red-100 pb-2 mb-2">
-                        <div>
-                            <h2 className="text-2xl font-serif font-bold text-gray-900 italic tracking-tight">Gap Journal</h2>
-                            <p className="text-xs text-gray-500 font-mono">Date: {new Date().toLocaleDateString()}</p>
-                        </div>
-                        <div className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rotate-3 font-bold shadow-sm border border-yellow-200 handwritten">
-                            {gaps.length} Gaps Found
-                        </div>
-                    </div>
-
-                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 relative z-10">
-                        {gaps.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-48 space-y-4 opacity-50">
-                                <span className="text-4xl">✍️</span>
-                                <p className="font-handwritten text-xl text-gray-400 rotate-[-2deg]">Page is empty...</p>
-                                <p className="text-sm text-gray-400">Great understanding so far!</p>
-                            </div>
-                        ) : (
-                            <ul className="space-y-0 text-sm font-medium pt-1">
-                                {gaps.map((gap) => (
-                                    <li key={gap.id} className="group flex items-start justify-between min-h-[2rem] py-1 hover:bg-yellow-50/50 transition-colors">
-                                        <div className="flex gap-3 pt-1">
-                                            <span className="text-red-400 mt-1">•</span>
-                                            <p className="text-gray-700 font-serif leading-8 italic">{gap.description}</p>
+                                    <div className="bg-white/5 border border-white/5 p-4 rounded-2xl">
+                                        <div className="flex items-center gap-3 mb-2">
+                                            <TrendingUp className="w-4 h-4 text-primary-400" />
+                                            <span className="text-xs font-bold uppercase text-primary-400 tracking-widest">Recommended Strategy</span>
                                         </div>
-                                        <button
-                                            onClick={() => handleResolveGap(gap.id)}
-                                            className="opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-bold text-blue-600 underline decoration-wavy hover:text-blue-800 mt-2 mr-2"
-                                        >
-                                            RESOLVED
-                                        </button>
-                                    </li>
-                                ))}
-                            </ul>
+                                        <p className="text-white font-medium">{data?.focus?.action}</p>
+                                    </div>
+                                </div>
+                            </motion.div>
                         )}
-                    </div>
+
+                        {activeTab === 'stability' && (
+                            <motion.div
+                                key="stability"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                                className="grid md:grid-cols-2 gap-8 items-center"
+                            >
+                                <StabilityMap stabilityData={data?.knowledge} />
+                                <div>
+                                    <h4 className="text-2xl font-black text-white mb-2">Knowledge Stability</h4>
+                                    <div className="flex items-center gap-4 mb-6">
+                                        <div className="text-4xl font-black text-primary-400">{data?.knowledge?.global_stability}%</div>
+                                        <div className="h-1 flex-1 bg-white/5 rounded-full overflow-hidden">
+                                            <div className="h-full bg-primary-500" style={{ width: `${data?.knowledge?.global_stability}%` }} />
+                                        </div>
+                                    </div>
+                                    {data?.knowledge?.at_risk_concepts?.length > 0 && (
+                                        <div className="space-y-3">
+                                            <div className="flex items-center gap-2 text-amber-400 text-[10px] font-bold uppercase tracking-widest">
+                                                <AlertCircle className="w-3 h-3" /> Potential Decay Soon
+                                            </div>
+                                            {data?.knowledge?.at_risk_concepts.map(c => (
+                                                <div key={c.concept} className="flex justify-between items-center text-xs p-2 bg-white/5 rounded-lg border border-white/5">
+                                                    <span className="text-white capitalize">{c.concept}</span>
+                                                    <span className="text-amber-400/70 font-mono">{c.stability}%</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </motion.div>
+                        )}
+
+                        {activeTab === 'frontier' && (
+                            <motion.div
+                                key="frontier"
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: -10 }}
+                            >
+                                <div className="max-w-xl mx-auto">
+                                    <h4 className="text-2xl font-black text-white text-center mb-2">Your Growth Frontier</h4>
+                                    <p className="text-dark-500 text-sm text-center mb-8">Optimal next steps identified by your current graph mastery.</p>
+                                    <GrowthFrontier concepts={data?.frontier} onStartLesson={(name) => window.location.hash = `/practice#${name}`} />
+                                </div>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
 
-                {/* Notebook Cover Edge Effect */}
-                <div className="absolute inset-y-0 right-0 w-2 bg-gradient-to-l from-gray-300/20 to-transparent pointer-events-none rounded-r-3xl" />
+                {/* Right Panel: Insights / Quick Stats */}
+                <div className="lg:col-span-1 space-y-6">
+                    <div className="bg-gradient-to-br from-primary-600/20 to-indigo-600/20 rounded-3xl p-6 border border-primary-500/20 relative overflow-hidden group">
+                        <h4 className="text-sm font-bold text-white mb-1">Knowledge Entropy</h4>
+                        <p className="text-xs text-primary-200/50 mb-4">Complexity vs. Stability of your brain.</p>
+                        <div className="flex items-end gap-1 h-12">
+                            {[40, 60, 45, 70, 50, 80, 55, 65, 40, 50].map((h, i) => (
+                                <motion.div
+                                    key={i}
+                                    initial={{ height: 0 }}
+                                    animate={{ height: `${h}%` }}
+                                    transition={{ delay: i * 0.05 }}
+                                    className="flex-1 bg-primary-400/30 rounded-t-sm"
+                                />
+                            ))}
+                        </div>
+                        <BrainCircuit className="absolute top-[-10px] right-[-10px] w-24 h-24 text-white/5 group-hover:text-white/10 transition-colors" />
+                    </div>
+
+                    <div className="bg-dark-950/80 border border-primary-500/30 rounded-3xl p-6 shadow-[0_0_50px_rgba(139,92,246,0.1)] relative overflow-hidden">
+                        <div className="absolute top-0 right-0 p-3">
+                            <BrainCircuit className="w-4 h-4 text-primary-500/20" />
+                        </div>
+                        <h4 className="text-[10px] font-black text-primary-400 uppercase tracking-[0.2em] mb-4 flex items-center gap-2">
+                            Metacognitive Synthesis
+                        </h4>
+                        <div className="space-y-4 relative z-10">
+                            <p className="text-sm text-white leading-relaxed font-medium italic">
+                                "{data?.report || "Awaiting neural pattern synchronization..."}"
+                            </p>
+                            <div className="flex items-center gap-2 opacity-30">
+                                <div className="h-0.5 flex-1 bg-gradient-to-r from-primary-500 to-transparent" />
+                                <span className="text-[8px] font-bold uppercase tracking-widest">Authored by Neural-1</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
+
+            <button
+                onClick={() => setShowSettings(true)}
+                className="absolute top-4 right-4 p-2 hover:bg-white/5 rounded-xl text-dark-400 hover:text-white transition-colors"
+            >
+                <Settings className="w-5 h-5" />
+            </button>
         </div>
     );
 };

@@ -22,7 +22,9 @@ from src.ingestion.ingestion_engine import IngestionEngine
 from src.storage.document_store import DocumentStore
 from src.ingestion.youtube_utils import extract_video_id, fetch_transcript
 from src.dependencies import get_ingestion_engine, get_document_store
+from src.dependencies import get_ingestion_engine, get_document_store
 from src.config import settings
+from src.services.reading_time import reading_time_estimator
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -62,6 +64,18 @@ async def process_document_background(
             if document:
                 document.extracted_text = extracted_text
                 document.page_count = 0 # Placeholder
+                
+                # Analyze reading time
+                print(f"DEBUG: Analyzing reading time for {doc_id}...")
+                analysis = reading_time_estimator.analyze_document(file_path)
+                document.reading_time_min = analysis.get("reading_time_min")
+                document.reading_time_max = analysis.get("reading_time_max")
+                document.reading_time_median = analysis.get("reading_time_median")
+                document.word_count = analysis.get("word_count")
+                document.difficulty_score = analysis.get("difficulty_score")
+                document.language = analysis.get("language")
+                document.scanned_prob = analysis.get("scanned_prob")
+                
                 db.commit()
 
         except Exception as e:

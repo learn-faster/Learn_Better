@@ -1,7 +1,8 @@
 """Pydantic models for LearnFast Core Engine data structures."""
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Union
+
 from pydantic import BaseModel, Field
 
 from src.models.enums import FileType, CardType
@@ -21,6 +22,7 @@ class GraphSchema(BaseModel):
     
     concepts: List[str] = Field(..., description="List of extracted concepts")
     prerequisites: List[PrerequisiteLink] = Field(..., description="Concept dependencies")
+    concept_mappings: Dict[str, List[int]] = Field({}, description="Mapping of concept name to list of chunk indices (0-based within the processed context)")
 
 
 class UserState(BaseModel):
@@ -112,6 +114,15 @@ class DocumentResponse(DocumentBase):
     first_opened: Optional[datetime] = None
     completion_estimate: Optional[int] = None
     page_count: int = 0
+    
+    # Advanced Metrics
+    reading_time_min: Optional[int] = None
+    reading_time_max: Optional[int] = None
+    reading_time_median: Optional[int] = None
+    word_count: int = 0
+    difficulty_score: Optional[float] = None
+    language: Optional[str] = None
+    scanned_prob: float = 0.0
 
     class Config:
         from_attributes = True
@@ -266,3 +277,50 @@ class ProgressUpdate(BaseModel):
     """Request for updating concept progress."""
     user_id: str
     concept_name: str
+
+
+
+# ========== Curriculum Schemas ==========
+
+class CurriculumModuleBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    module_type: str = "primer"
+    order: int = 0
+    estimated_time: Optional[str] = None
+
+
+class CurriculumModuleResponse(CurriculumModuleBase):
+    id: str
+    is_completed: bool
+    content: Optional[Any] = None
+
+    completed_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class CurriculumBase(BaseModel):
+    title: str
+    description: Optional[str] = None
+    target_concept: Optional[str] = None
+
+
+class CurriculumCreate(CurriculumBase):
+    document_id: Optional[int] = None
+    user_id: str = "default_user"
+
+
+class CurriculumResponse(CurriculumBase):
+    id: str
+    user_id: str
+    document_id: Optional[int] = None
+    status: str
+    progress: float
+    created_at: datetime
+    updated_at: datetime
+    modules: List[CurriculumModuleResponse] = []
+
+    class Config:
+        from_attributes = True

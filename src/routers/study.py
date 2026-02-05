@@ -80,13 +80,20 @@ def submit_review(
     # This is critical for correctly counting new vs review cards
     was_new_card = flashcard.repetitions == 0
     
-    # Calculate new SRS parameters
+    # Get user's target retention from settings
+    from src.models.orm import UserSettings
+    user_settings = db.query(UserSettings).filter_by(user_id="default_user").first()
+    target_retention = user_settings.target_retention if user_settings else 0.9
+    
+    # Calculate new SRS parameters with user's target retention
     new_ease_factor, new_interval, new_repetitions, next_review_date = srs_service.calculate_next_review(
         ease_factor=flashcard.ease_factor,
         interval=flashcard.interval,
         repetitions=flashcard.repetitions,
-        rating=review.rating
+        rating=review.rating,
+        target_retention=target_retention
     )
+
     
     # Update flashcard
     flashcard.ease_factor = new_ease_factor

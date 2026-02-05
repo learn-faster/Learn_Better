@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { FaPlay, FaPause, FaStop, FaCoffee, FaCheck, FaLightbulb } from 'react-icons/fa';
 import GapJournal from './GapJournal';
 import studyService from '../services/study';
+import cognitiveService from '../services/cognitive';
 import { META_STAGES, REFLECTIVE_PROMPTS, EFFECTIVENESS_RATINGS } from '../constants/metacognition';
 
 const SmartTimer = () => {
     // Timer state
-    const [timeLeft, setTimeLeft] = useState(45 * 60);
+    const [timeLeft, setTimeLeft] = useState(25 * 60);
     const [isActive, setIsActive] = useState(false);
     const [mode, setMode] = useState('WORK'); // WORK, BREAK
     const [studyType, setStudyType] = useState('semantic'); // semantic, procedural
@@ -25,25 +26,45 @@ const SmartTimer = () => {
     const [effectivenessRating, setEffectivenessRating] = useState(3);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Initial durations
+    // User-configurable durations (loaded from settings)
+    const [focusDuration, setFocusDuration] = useState(25);
+    const [breakDuration, setBreakDuration] = useState(5);
+
+    // Load user settings on mount
+    useEffect(() => {
+        const loadSettings = async () => {
+            try {
+                const settings = await cognitiveService.getSettings();
+                setFocusDuration(settings.focus_duration || 25);
+                setBreakDuration(settings.break_duration || 5);
+                setTimeLeft((settings.focus_duration || 25) * 60);
+            } catch (error) {
+                console.error("Failed to load timer settings:", error);
+            }
+        };
+        loadSettings();
+    }, []);
+
+    // Durations based on study type and user settings
     const durations = {
         semantic: {
-            work: 45 * 60,
-            break: 10 * 60,
+            work: focusDuration * 60,
+            break: breakDuration * 60,
             label: "Concept Absorption",
             subtitle: "Deep understanding & mental models",
             color: "indigo",
             protocol: "Wakeful Rest (No Phone!)"
         },
         procedural: {
-            work: 25 * 60,
-            break: 5 * 60,
+            work: Math.round(focusDuration * 0.6) * 60, // Shorter for procedural
+            break: breakDuration * 60,
             label: "Reflex Refinement",
             subtitle: "Problem solving & flow state",
             color: "emerald",
             protocol: "Micro-Break (Movement!)"
         }
     };
+
 
     const toggleTimer = () => setIsActive(!isActive);
 
