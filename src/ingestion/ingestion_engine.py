@@ -67,6 +67,8 @@ Content to analyze:
         """
         self.vector_storage = VectorStorage()
         self.document_processor = DocumentProcessor()
+        from .binder import MultimodalBinder
+        self.multimodal_binder = MultimodalBinder()
     
     def _normalize_concept_name(self, name: Any) -> str:
         """
@@ -448,26 +450,20 @@ Content to analyze:
     async def process_document(self, file_path: str, document_id: Optional[int] = None) -> Tuple[GraphSchema, List[int]]:
         """
         Process a document file (PDF, DOCX, etc.) from start to finish.
-        
-        1. Convert file to markdown
-        2. Chunk content
-        3. Extract knowledge graph
-        4. Store graph and vector data
-        
-        Args:
-            file_path: Path to document file
-            document_id: Optional ID of the document (if pre-saved)
-            
-        Returns:
-            Tuple of (GraphSchema, list of chunk IDs)
         """
         try:
-            # 1. Convert to markdown
-            markdown = self.document_processor.convert_to_markdown(file_path)
+            # 1. Convert to markdown and extract multimodal metadata
+            markdown, image_metadata = self.document_processor.convert_to_markdown(file_path)
             
+            # 1.1 Bind images to database if document_id exists
+            if document_id and image_metadata:
+                from src.database.orm import SessionLocal
+                with SessionLocal() as db:
+                    self.multimodal_binder.bind_images(document_id, image_metadata, db)
+                    # Trigger AI captioning (optional background task, for now sync)
+                    await self.multimodal_binder.caption_images(document_id, db)
+
             # 2. Chunk content
-            # Note: We don't have concepts yet for tagging, so we pass empty tag
-            # The store logic will handle tagging based on extracted concepts
             chunks = self.document_processor.chunk_content(markdown)
             
             # 3 & 4. Complete processing
@@ -543,21 +539,19 @@ Content to analyze:
     async def process_document_scoped(self, file_path: str, document_id: int) -> Dict[str, Any]:
         """
         Process a document using document-scoped graph storage.
-        
-        This method creates isolated concept namespaces per document while
-        maintaining a global semantic index for cross-document discovery.
-        
-        Args:
-            file_path: Path to document file
-            document_id: The document ID for scoping
-            
-        Returns:
-            Dict with processing stats and graph info
         """
         try:
-            # 1. Convert to markdown
-            markdown = self.document_processor.convert_to_markdown(file_path)
+            # 1. Convert to markdown and extract multimodal metadata
+            markdown, image_metadata = self.document_processor.convert_to_markdown(file_path)
             
+            # 1.1 Bind images to database
+            if image_metadata:
+                from src.database.orm import SessionLocal
+                with SessionLocal() as db:
+                    self.multimodal_binder.bind_images(document_id, image_metadata, db)
+                    # Trigger AI captioning
+                    await self.multimodal_binder.caption_images(document_id, db)
+
             # 2. Chunk content
             chunks = self.document_processor.chunk_content(markdown)
             

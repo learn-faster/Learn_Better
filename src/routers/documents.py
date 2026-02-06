@@ -57,7 +57,7 @@ async def process_document_background(
         try:
             if file_type == FileType.PDF or os.path.exists(file_path):
                 print(f"DEBUG: File exists at {file_path}, attempting conversion...")
-                extracted_text = document_processor.convert_to_markdown(file_path)
+                extracted_text, image_metadata = document_processor.convert_to_markdown(file_path)
                 print(f"DEBUG: Extraction complete. Text length: {len(extracted_text) if extracted_text else 0}")
                 if not extracted_text:
                     logging.warning(f"Empty extraction for {doc_id} - file might be image-only or corrupted")
@@ -98,6 +98,14 @@ async def process_document_background(
                 print(f"DEBUG: Triggering IngestionEngine for document {doc_id}...")
                 chunks = document_processor.chunk_content(extracted_text)
                 print(f"DEBUG: Created {len(chunks)} chunks from document {doc_id}")
+                
+                # Bind images if any (multimodal phase 1)
+                if image_metadata:
+                    from .binder import MultimodalBinder
+                    binder = MultimodalBinder()
+                    binder.bind_images(doc_id, image_metadata, db)
+                    await binder.caption_images(doc_id, db)
+
                 await ingestion_engine.process_document_complete(
                     doc_source=os.path.basename(file_path),
                     markdown=extracted_text,
@@ -431,3 +439,24 @@ async def delete_document(
     except Exception as e:
         logger.error(f"Failed to delete document {document_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal deletion failure")
+
+
+from src.models.orm import DocumentImage
+
+@router.get("/{document_id}/images")
+def get_document_images(document_id: int, db: Session = Depends(get_db)):
+    """
+    Returns a list of all extracted images (diagrams, charts) for a document.
+    These are populated during the multimodal ingestion phase.
+    """
+    images = db.query(DocumentImage).filter(DocumentImage.document_id == document_id).all()
+    
+    return [
+        {
+            "id": img.id,
+            "file_path": img.file_path,
+            "caption": img.caption,
+            "page_number": img.page_number
+        }
+        for img in images
+    ]

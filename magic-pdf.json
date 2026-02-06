@@ -1,0 +1,9 @@
+{
+    "models-dir": "D:/mineru_models",
+    "device-mode": "cuda",
+    "table-config": {
+        "model": "rapid_table",
+        "is_enable": true,
+        "max_time": 400
+    }
+}
