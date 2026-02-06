@@ -70,6 +70,18 @@ const Documents = () => {
         fetchFolders();
     }, [fetchDocuments, fetchFolders]);
 
+    // Prevent background scrolling when modals are open
+    useEffect(() => {
+        if (isUploadOpen || showFolderModal) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = 'unset';
+        }
+        return () => {
+            document.body.style.overflow = 'unset';
+        };
+    }, [isUploadOpen, showFolderModal]);
+
     // Polling effect: Check for processing documents every 3 seconds
     useEffect(() => {
         const hasProcessingDocs = documents.some(d => d.status === 'processing' || d.status === 'pending');

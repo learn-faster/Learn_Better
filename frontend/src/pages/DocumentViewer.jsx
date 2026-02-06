@@ -39,6 +39,7 @@ import api from '../services/api';
 import useTimerStore from '../stores/useTimerStore';
 import { useTimer } from '../hooks/useTimer';
 import FlashcardCreator from '../components/flashcards/FlashcardCreator';
+import ImageGallery from '../components/documents/ImageGallery';
 import { Document, Page, pdfjs } from 'react-pdf';
 import ReactMarkdown from 'react-markdown';
 
@@ -631,6 +632,9 @@ const DocumentViewer = () => {
                                     setExternalFront={setFlashcardFront}
                                     setExternalBack={setFlashcardBack}
                                 />
+
+                                {/* Visual Assets Gallery */}
+                                <ImageGallery documentId={id} />
 
                                 {studyDoc?.extracted_text && (
                                     <div className="bg-white/5 rounded-2xl p-5 border border-white/5 group hover:border-white/10 transition-colors">
