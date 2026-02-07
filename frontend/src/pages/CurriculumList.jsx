@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
-import { Plus, BookOpen, Clock, ChevronRight, GraduationCap, ArrowRight, Sparkles, AlertCircle, BrainCircuit } from 'lucide-react';
+import { Plus, BookOpen, Clock, ChevronRight, GraduationCap, ArrowRight, Sparkles, AlertCircle, BrainCircuit, Trash2 } from 'lucide-react';
 
 import curriculumService from '../services/curriculum';
 import api from '../services/api';
@@ -74,6 +74,19 @@ const CurriculumList = () => {
             console.error("Failed to create", error);
             setCreatingStep('error');
             setErrorMessage(typeof error === 'string' ? error : "Something went wrong. Please check your backend connection.");
+        }
+    };
+
+    const handleDeleteCurriculum = async (id, e) => {
+        e.stopPropagation();
+        if (!window.confirm("Are you sure you want to delete this learning pathway? This cannot be undone.")) return;
+
+        try {
+            await curriculumService.deleteCurriculum(id);
+            setCurriculums(prev => prev.filter(c => c.id !== id));
+        } catch (error) {
+            console.error("Failed to delete curriculum", error);
+            alert("Failed to delete curriculum. Please try again.");
         }
     };
 
@@ -179,7 +192,13 @@ const CurriculumList = () => {
                         className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10"
                     >
                         {curriculums.map((curr) => (
-                            <CurriculumCard key={curr.id} curr={curr} navigate={navigate} variants={itemVariants} />
+                            <CurriculumCard
+                                key={curr.id}
+                                curr={curr}
+                                navigate={navigate}
+                                variants={itemVariants}
+                                onDelete={(e) => handleDeleteCurriculum(curr.id, e)}
+                            />
                         ))}
                     </motion.div>
                 )}
@@ -204,7 +223,7 @@ const CurriculumList = () => {
 };
 
 // Sub-component for individual card to keep main clean
-const CurriculumCard = ({ curr, navigate, variants }) => {
+const CurriculumCard = ({ curr, navigate, variants, onDelete }) => {
     const progress = Math.round((curr.modules?.filter(m => m.is_completed).length / (curr.modules?.length || 1)) * 100);
 
     return (
@@ -239,6 +258,13 @@ const CurriculumCard = ({ curr, navigate, variants }) => {
                         <span className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
                             {curr.modules?.length || 0} Modules
                         </span>
+                        <button
+                            onClick={onDelete}
+                            className="p-1.5 mt-2 rounded-lg bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-all border border-red-500/10 opacity-0 group-hover:opacity-100"
+                            title="Delete Pathway"
+                        >
+                            <Trash2 className="w-3 h-3" />
+                        </button>
                     </div>
                 </div>
 

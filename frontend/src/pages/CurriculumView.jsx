@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CheckCircle, Circle, Clock, Book, Play, HelpCircle, Trophy, RefreshCw, X, Search, Sparkles, AlertCircle, ArrowRight, BrainCircuit, BookOpen, Heart, Flame, Lock, Crown } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Circle, Clock, Book, Play, HelpCircle, Trophy, RefreshCw, X, Search, Sparkles, AlertCircle, ArrowRight, BrainCircuit, BookOpen, Heart, Flame, Lock, Crown, Trash2 } from 'lucide-react';
 
 
 import ReactMarkdown from 'react-markdown';
@@ -40,8 +40,21 @@ const CurriculumView = () => {
     const handleModuleUpdate = (updatedModule) => {
         setCurriculum(prev => ({
             ...prev,
-            modules: prev.modules.map(m => m.id === updatedModule.id ? updatedModule : m)
+            modules: (prev.modules || []).map(m => m.id === updatedModule.id ? updatedModule : m)
         }));
+    };
+
+    const handleDeleteModule = async (moduleId) => {
+        if (!window.confirm("Delete this module?")) return;
+        try {
+            await curriculumService.deleteModule(moduleId);
+            setCurriculum(prev => ({
+                ...prev,
+                modules: prev.modules.filter(m => m.id !== moduleId)
+            }));
+        } catch (error) {
+            console.error("Failed to delete module", error);
+        }
     };
 
     if (loading) return (
@@ -117,22 +130,30 @@ const CurriculumView = () => {
                         transition={{ duration: 1.5, ease: "circOut" }}
                     />
 
-                    {curriculum.modules.map((module, index) => {
-                        const isLocked = index > 0 && !curriculum.modules[index - 1].is_completed && !module.is_completed;
-                        const isActive = !module.is_completed && (index === 0 || curriculum.modules[index - 1].is_completed);
+                    {curriculum.modules && curriculum.modules.length > 0 ? (
+                        curriculum.modules.map((module, index) => {
+                            const isLocked = index > 0 && !curriculum.modules[index - 1].is_completed && !module.is_completed;
+                            const isActive = !module.is_completed && (index === 0 || curriculum.modules[index - 1].is_completed);
 
-                        return (
-                            <PathNode
-                                key={module.id}
-                                module={module}
-                                index={index}
-                                isLocked={isLocked}
-                                isActive={isActive}
-                                themeColor={curriculum.theme_color}
-                                onOpen={() => !isLocked && setActiveModule(module)}
-                            />
-                        );
-                    })}
+                            return (
+                                <PathNode
+                                    key={module.id}
+                                    module={module}
+                                    index={index}
+                                    isLocked={isLocked}
+                                    isActive={isActive}
+                                    themeColor={curriculum.theme_color}
+                                    onOpen={() => !isLocked && setActiveModule(module)}
+                                    onDelete={() => handleDeleteModule(module.id)}
+                                />
+                            );
+                        })
+                    ) : (
+                        <div className="flex flex-col items-center gap-4 py-12">
+                            <Sparkles className="w-12 h-12 text-slate-700" />
+                            <p className="text-slate-500 font-medium">No path modules found.</p>
+                        </div>
+                    )}
                 </div>
             </main>
 
@@ -157,7 +178,7 @@ const CurriculumView = () => {
 // ============================================================================
 // PATH NODE COMPONENT (Duolingo-Style Circular Node)
 // ============================================================================
-const PathNode = ({ module, index, isLocked, isActive, themeColor, onOpen }) => {
+const PathNode = ({ module, index, isLocked, isActive, themeColor, onOpen, onDelete }) => {
     const isCompleted = module.is_completed;
     const isEven = index % 2 === 0;
 
@@ -178,6 +199,17 @@ const PathNode = ({ module, index, isLocked, isActive, themeColor, onOpen }) => 
                     Start
                 </motion.div>
             )}
+
+            {/* Utility Buttons Container */}
+            <div className="absolute -right-12 top-0 flex flex-col gap-2">
+                <button
+                    onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                    className="p-2 rounded-xl bg-dark-800/50 hover:bg-red-500/20 text-slate-600 hover:text-red-400 transition-all border border-white/5 opacity-0 group-hover:opacity-100"
+                    title="Delete Module"
+                >
+                    <Trash2 className="w-4 h-4" />
+                </button>
+            </div>
 
             {/* The Node Button */}
             <button
@@ -223,12 +255,19 @@ const PathNode = ({ module, index, isLocked, isActive, themeColor, onOpen }) => 
             </p>
 
             {/* Practice Button for Completed */}
-            {isCompleted && (
+            {isCompleted ? (
                 <button
                     onClick={onOpen}
                     className="mt-2 text-[10px] font-black uppercase tracking-widest text-emerald-400 hover:text-emerald-300 transition-colors"
                 >
                     Practice
+                </button>
+            ) : !isLocked && (
+                <button
+                    onClick={onOpen}
+                    className={`mt-2 text-[10px] font-black uppercase tracking-widest transition-colors ${isActive ? 'text-emerald-400 animate-pulse' : 'text-slate-500'}`}
+                >
+                    Start Session
                 </button>
             )}
         </motion.div>
@@ -331,16 +370,11 @@ const StudySession = ({ module, curriculumId, hearts, setHearts, streak, onClose
     const [correctCount, setCorrectCount] = useState(0);
     const [showComplete, setShowComplete] = useState(false);
 
-    useEffect(() => {
-        if (!module.content) {
-            handleGenerate();
-        }
-    }, [module.id]);
-
     const handleGenerate = async () => {
         setStatus('generating');
         try {
             const data = await curriculumService.generateModuleContent(curriculumId, module.id);
+            // The service now returns the module object, and data.content is the generated content
             setContent(data.content);
             setStatus('ready');
         } catch (err) {
@@ -348,6 +382,12 @@ const StudySession = ({ module, curriculumId, hearts, setHearts, streak, onClose
             setStatus('error');
         }
     };
+
+    useEffect(() => {
+        if (!module.content) {
+            handleGenerate();
+        }
+    }, [module.id]);
 
     // Parse content into flashcard items
     const getItems = () => {

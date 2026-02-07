@@ -7,7 +7,7 @@ from src.models.orm import Curriculum, CurriculumModule, Document, UserSettings
 from src.models.schemas import LLMConfig
 from src.services.llm_service import llm_service
 from src.path_resolution.path_resolver import PathResolver
-from src.services.prompts import ENHANCED_CURRICULUM_PROMPT_TEMPLATE
+from src.services.prompts import ENHANCED_CURRICULUM_PROMPT_TEMPLATE, MODULE_CONTENT_PROMPT_TEMPLATE
 
 class CurriculumService:
     """
@@ -16,6 +16,75 @@ class CurriculumService:
     
     def __init__(self):
         self.path_resolver = PathResolver()
+
+    async def generate_module_content(
+        self,
+        db: Session,
+        module_id: str,
+        config: Optional[LLMConfig] = None
+    ) -> Optional[CurriculumModule]:
+        """
+        Generates content for a specific module if it's missing.
+        """
+        module = db.query(CurriculumModule).filter(CurriculumModule.id == module_id).first()
+        if not module:
+            return None
+        
+        if module.content and len(str(module.content)) > 100:
+            return module
+            
+        curriculum = module.curriculum
+        
+        # 0. Get User Configuration
+        if not config:
+            user_settings = db.query(UserSettings).filter(UserSettings.user_id == curriculum.user_id).first()
+            if user_settings and user_settings.llm_config:
+                try:
+                    cc = user_settings.llm_config.get("curriculum", {})
+                    gc = user_settings.llm_config.get("global", {})
+                    stored_config = cc if cc.get("provider") else gc
+                    if stored_config and stored_config.get("provider"):
+                        clean_config = {k: v for k, v in stored_config.items() if v}
+                        if clean_config:
+                            config = LLMConfig(**clean_config)
+                except Exception as e:
+                    print(f"Error parsing user LLM config: {e}")
+        
+        # 1. Gather Context
+        text_context = ""
+        if curriculum.document_id:
+            doc = db.query(Document).filter(Document.id == curriculum.document_id).first()
+            if doc:
+                text_context = doc.extracted_text or ""
+
+        # 2. LLM Generation
+        prompt = MODULE_CONTENT_PROMPT_TEMPLATE.format(
+            goal=curriculum.target_concept or curriculum.title,
+            module_title=module.title,
+            module_description=module.description or "",
+            module_type=module.module_type,
+            text=text_context[:15000] # Slightly more context for single module
+        )
+
+        raw_content = await llm_service._get_completion(
+            prompt,
+            system_prompt="You are a JSON-speaking elite learning architect.",
+            config=config
+        )
+        
+        # Try to parse as JSON if it's a practice/srs module
+        if module.module_type in ['practice', 'srs', 'quiz', 'flashcards']:
+            try:
+                content_data = llm_service._extract_and_parse_json(raw_content)
+                module.content = content_data
+            except:
+                module.content = raw_content
+        else:
+            module.content = raw_content
+
+        db.commit()
+        db.refresh(module)
+        return module
 
     async def generate_curriculum(
         self, 
@@ -119,6 +188,17 @@ class CurriculumService:
     def get_curriculum(self, db: Session, curriculum_id: str) -> Optional[Curriculum]:
         return db.query(Curriculum).filter(Curriculum.id == curriculum_id).first()
 
+    def delete_curriculum(self, db: Session, curriculum_id: str) -> bool:
+        curriculum = db.query(Curriculum).filter(Curriculum.id == curriculum_id).first()
+        if not curriculum:
+            return False
+        
+        # Delete modules first (though CASCADE should handle it if set up)
+        db.query(CurriculumModule).filter(CurriculumModule.curriculum_id == curriculum_id).delete()
+        db.delete(curriculum)
+        db.commit()
+        return True
+
     def toggle_module_completion(self, db: Session, module_id: str) -> Optional[CurriculumModule]:
         module = db.query(CurriculumModule).filter(CurriculumModule.id == module_id).first()
         if not module:
@@ -145,5 +225,14 @@ class CurriculumService:
         db.commit()
         db.refresh(module)
         return module
+
+    def delete_module(self, db: Session, module_id: str) -> bool:
+        module = db.query(CurriculumModule).filter(CurriculumModule.id == module_id).first()
+        if not module:
+            return False
+        
+        db.delete(module)
+        db.commit()
+        return True
 
 curriculum_service = CurriculumService()

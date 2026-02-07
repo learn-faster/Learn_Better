@@ -41,9 +41,30 @@ def get_curriculum(curriculum_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Curriculum not found")
     return curriculum
 
+@router.delete("/{curriculum_id}")
+def delete_curriculum(curriculum_id: str, db: Session = Depends(get_db)):
+    success = curriculum_service.delete_curriculum(db, curriculum_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Curriculum not found")
+    return {"status": "success"}
+
+@router.post("/module/{module_id}/generate", response_model=CurriculumModuleResponse)
+async def generate_module_content(module_id: str, db: Session = Depends(get_db)):
+    module = await curriculum_service.generate_module_content(db, module_id)
+    if not module:
+        raise HTTPException(status_code=404, detail="Module not found")
+    return module
+
 @router.post("/module/{module_id}/toggle", response_model=CurriculumModuleResponse)
 def toggle_module(module_id: str, db: Session = Depends(get_db)):
     module = curriculum_service.toggle_module_completion(db, module_id)
     if not module:
         raise HTTPException(status_code=404, detail="Module not found")
     return module
+
+@router.delete("/module/{module_id}")
+def delete_module(module_id: str, db: Session = Depends(get_db)):
+    success = curriculum_service.delete_module(db, module_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Module not found")
+    return {"status": "success"}

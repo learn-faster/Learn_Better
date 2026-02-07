@@ -271,16 +271,53 @@ class LLMService:
         # Attempt to parse
         try:
             return json.loads(text)
+
         except json.JSONDecodeError as e:
             # Last ditch effort: if single quotes were used instead of double quotes
-            # This is risky but often fixes LLM "JSON"
+            # or if the JSON is over-escaped (e.g. \"key\": \"value\")
             try:
+                # 1. Try resolving escaped quotes content
+                # This fixes {\"key\": \"value\"} -> {"key": "value"}
+                # AND handles newlines if present
+                if '\\"' in text or '\\n' in text:
+                    text_unescaped = text.replace('\\"', '"').replace('\\n', '\n')
+                    return json.loads(text_unescaped)
+                
+                # 2. Try single quotes fix
                 # Replace 'key': with "key":
                 text_fixed = re.sub(r"'(\w+)':", r'"\1":', text)
                 # Replace : 'value' with : "value"
                 text_fixed = re.sub(r":\s*'([^']*)'", r': "\1"', text_fixed)
                 return json.loads(text_fixed)
             except Exception:
+                # 3. Last ditch: try full unescape
+                try:
+                    # This handles \t, \r, etc.
+                    # Use a safe way to unescape without executing code
+                    text_decoded = bytes(text, "utf-8").decode("unicode_escape")
+                    return json.loads(text_decoded)
+                except:
+                   pass
+
+                # 4. Fallback: If it looks like a valid markdown response, wrap it in a JSON structure
+                # This prevents crashes when the model ignores JSON instructions but gives good content
+                if text.strip().startswith('#') or 'module' in text.lower():
+                    print("DEBUG: LLM returned raw markdown. Wrapping in fallback JSON.")
+                    return {
+                        "title": "Generated Curriculum",
+                        "description": "Content generated from your request.",
+                        "estimated_total_time": "30 mins",
+                        "modules": [
+                            {
+                                "title": "Overview",
+                                "description": "Key concepts and summary",
+                                "module_type": "PRIMER",
+                                "content": text,
+                                "estimated_time": "15 mins"
+                            }
+                        ]
+                    }
+
                 # Re-raise original error with additional context if possible
                 raise json.JSONDecodeError(
                     f"Failed to parse LLM response as JSON. Original error: {e.msg}\nRaw Text Preview: {text[:200]}...",

@@ -83,7 +83,9 @@ Generate a structured curriculum with 4-7 modules. Each module MUST have one of 
 - `PRACTICE`: Active recall via quizzes or self-explanation prompts.
 - `SRS`: Unlocking specific flashcards for long-term retention.
 
-Output a valid JSON object:
+IMPORTANT: The output must be a valid JSON object. Do not include markdown formatting outside the JSON string values.
+
+Output format:
 {{
   "title": "Path Title",
   "description": "Executive summary of the learning journey",
@@ -93,7 +95,7 @@ Output a valid JSON object:
       "title": "Module Title",
       "description": "Why this module is next",
       "module_type": "PRIMER | READING | PRACTICE | SRS",
-      "content": "For PRIMER/READING, providing a substantial markdown text. For PRACTICE, provide a JSON list of questions.",
+      "content": "Content for this module. For PRIMER/READING, this can be a markdown string. For PRACTICE/SRS, this can be a JSON string of questions/cards.",
       "estimated_time": "e.g., 15 mins"
     }}
   ]
@@ -116,4 +118,23 @@ Output format:
     {{"from": "Source Concept ID", "to": "Target Concept ID", "relationship": "Relationship Type"}}
   ]
 }}
+"""
+
+MODULE_CONTENT_PROMPT_TEMPLATE = """
+You are an expert tutor. Your task is to generate high-quality learning content for a specific module in a curriculum.
+
+Goal: {goal}
+Module Title: {module_title}
+Module Description: {module_description}
+Module Type: {module_type}
+
+Context/Source Material:
+{text}
+
+Based on the module type, generate the following:
+- If `PRIMER` or `READING`: Provide a substantial, well-formatted markdown text explaining the concepts.
+- If `PRACTICE`: Provide a JSON list of 5-10 multiple-choice questions or active recall prompts. Each should have a "question", "options" (for MCQ), "correct_answer", and "explanation".
+- If `SRS`: Provide a JSON list of 5-10 flashcards. Each should have a "front" and "back".
+
+Output only the content itself. If it's JSON, ensure it's valid JSON.
 """

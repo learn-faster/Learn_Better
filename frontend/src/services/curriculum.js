@@ -44,11 +44,24 @@ const toggleModule = async (curriculumId, moduleId) => {
 };
 
 /**
- * Stubbed: Module content is now generated at curriculum creation time.
- * This can be used later for refreshing content.
+ * Generates/refreshes module content.
  */
-const generateModuleContent = async (moduleId) => {
-    return { id: moduleId };
+const generateModuleContent = async (curriculumId, moduleId) => {
+    return api.post(`/curriculum/module/${moduleId}/generate`);
+};
+
+/**
+ * Deletes a module.
+ */
+const deleteModule = async (moduleId) => {
+    return api.delete(`/curriculum/module/${moduleId}`);
+};
+
+/**
+ * Deletes a curriculum.
+ */
+const deleteCurriculum = async (id) => {
+    return api.delete(`/curriculum/${id}`);
 };
 
 export default {
@@ -57,6 +70,8 @@ export default {
     getCurriculum,
     updateCurriculum,
     toggleModule,
-    generateModuleContent
+    generateModuleContent,
+    deleteModule,
+    deleteCurriculum
 };
 
