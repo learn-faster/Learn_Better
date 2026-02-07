@@ -61,20 +61,32 @@ const Settings = ({ isOpen, onClose }) => {
     const handleSave = async () => {
         setIsSaving(true);
 
-        // Save AI Settings
+        const llmConfig = {
+            provider,
+            api_key: apiKey,
+            model
+        };
+
+        // Only include base_url for Ollama providers
+        if (provider === 'ollama' || provider === 'ollama_cloud') {
+            llmConfig.base_url = ollamaUrl;
+        }
+
+        // Save AI Settings to local storage for frontend use
         localStorage.setItem('llm_provider', provider);
         localStorage.setItem('llm_api_key', apiKey);
         localStorage.setItem('ollama_base_url', ollamaUrl);
         localStorage.setItem('llm_model', model);
 
-        // Save Notification Settings
+        // Save Notification & AI Settings to backend
         try {
             await api.patch('/cognitive/settings', {
                 email,
                 resend_api_key: resendApiKey,
                 email_daily_reminder: notifyDaily,
                 email_streak_alert: notifyStreak,
-                email_weekly_digest: notifyDigest
+                email_weekly_digest: notifyDigest,
+                llm_config: { global: llmConfig } // Persist global config to backend
             });
             onClose();
         } catch (err) {
@@ -148,12 +160,14 @@ const Settings = ({ isOpen, onClose }) => {
                                             if (p === 'openai') setModel('gpt-3.5-turbo');
                                             else if (p === 'groq') setModel('qwen/qwen3-32b');
                                             else if (p === 'ollama') setModel('llama3');
+                                            else if (p === 'ollama_cloud') setModel('llama3');
                                         }}
                                         className="w-full bg-dark-800 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary-500 transition-colors"
                                     >
                                         <option value="openai">OpenAI</option>
                                         <option value="groq">Groq</option>
                                         <option value="ollama">Ollama (Local)</option>
+                                        <option value="ollama_cloud">Ollama (Cloud)</option>
                                     </select>
                                 </div>
 
@@ -166,21 +180,21 @@ const Settings = ({ isOpen, onClose }) => {
                                                 type="password"
                                                 value={apiKey}
                                                 onChange={(e) => setApiKey(e.target.value)}
-                                                placeholder={`Enter ${provider} API Key`}
+                                                placeholder={`Enter ${provider === 'ollama_cloud' ? 'Ollama' : provider} API Key`}
                                                 className="w-full bg-dark-800 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white focus:outline-none focus:border-primary-500 transition-colors"
                                             />
                                         </div>
                                     </div>
                                 )}
 
-                                {provider === 'ollama' && (
+                                {(provider === 'ollama' || provider === 'ollama_cloud') && (
                                     <div>
                                         <label className="block text-sm font-medium text-dark-300 mb-2">Base URL</label>
                                         <input
                                             type="text"
                                             value={ollamaUrl}
                                             onChange={(e) => setOllamaUrl(e.target.value)}
-                                            placeholder="http://localhost:11434"
+                                            placeholder={provider === 'ollama' ? "http://localhost:11434" : "https://api.ollama.com"}
                                             className="w-full bg-dark-800 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary-500 transition-colors"
                                         />
                                     </div>

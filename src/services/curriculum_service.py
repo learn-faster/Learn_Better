@@ -3,7 +3,8 @@ from datetime import datetime
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from src.models.orm import Curriculum, CurriculumModule, Document
+from src.models.orm import Curriculum, CurriculumModule, Document, UserSettings
+from src.models.schemas import LLMConfig
 from src.services.llm_service import llm_service
 from src.path_resolution.path_resolver import PathResolver
 from src.services.prompts import ENHANCED_CURRICULUM_PROMPT_TEMPLATE
@@ -21,11 +22,32 @@ class CurriculumService:
         db: Session, 
         goal: str, 
         user_id: str = "default_user", 
-        document_id: Optional[int] = None
+        document_id: Optional[int] = None,
+        config: Optional[LLMConfig] = None
     ) -> Curriculum:
         """
         Generates a multi-stage curriculum using LLM and Knowledge Graph context.
         """
+        # 0. Get User Configuration
+        if not config:
+            user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+            if user_settings and user_settings.llm_config:
+                try:
+                    # Use curriculum specific if it has a provider, otherwise global
+                    cc = user_settings.llm_config.get("curriculum", {})
+                    gc = user_settings.llm_config.get("global", {})
+                    
+                    stored_config = cc if cc.get("provider") else gc
+                        
+                    if stored_config and stored_config.get("provider"):
+                        # Filter out empty values
+                        clean_config = {k: v for k, v in stored_config.items() if v}
+                        if clean_config:
+                            config = LLMConfig(**clean_config)
+                except Exception as e:
+                    print(f"Error parsing user LLM config: {e}")
+        llm_config = config
+
         # 1. Gather Context
         text_context = ""
         doc_filename = None
@@ -55,9 +77,11 @@ class CurriculumService:
 
         raw_path = await llm_service._get_completion(
             prompt, 
-            system_prompt="You are a JSON-speaking elite learning architect."
+            system_prompt="You are a JSON-speaking elite learning architect.",
+            config=llm_config
         )
         path_data = llm_service._extract_and_parse_json(raw_path)
+
 
         # 4. Persistence
         curriculum_id = str(uuid.uuid4())

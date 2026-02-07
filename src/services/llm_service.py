@@ -35,44 +35,62 @@ class LLMService:
         else:
             self.api_key = ""
 
-        if settings.use_opik:
-            configure()
+        # Opik disabled temporarily to debug connection issues
+        # if settings.use_opik:
+        #     try:
+        #         configure()
+        #     except Exception as e:
+        #         print(f"Warning: Opik configuration failed: {e}")
 
-        # Create HTTP client with timeout
-        timeout = httpx.Timeout(60.0, connect=10.0)
+        # Create HTTP client with robust timeout (5 minutes for slow LLMs like Ollama)
+        # trust_env=True is critical for users behind proxies/VPNs
+        # Re-using a single client is better for performance and prevents resource leaks
+        timeout = httpx.Timeout(300.0, connect=30.0)
+        self.http_client = httpx.AsyncClient(timeout=timeout, trust_env=True)
         
         if self.provider == "openai":
             self.client = AsyncOpenAI(
                 api_key=self.api_key,
-                http_client=httpx.AsyncClient(timeout=timeout, trust_env=False)
+                http_client=self.http_client
             )
         elif self.provider == "groq":
              # Groq uses OpenAI-compatible client
             self.client = AsyncOpenAI(
-                base_url="https://api.groq.com/openai/v1/",
+                base_url="https://api.groq.com/openai/v1",
                 api_key=self.api_key,
-                http_client=httpx.AsyncClient(timeout=timeout, trust_env=False)
+                http_client=self.http_client
             )
         elif self.provider == "openrouter":
             # OpenRouter uses OpenAI-compatible API
             self.client = AsyncOpenAI(
                 base_url="https://openrouter.ai/api/v1",
                 api_key=self.api_key,
-                http_client=httpx.AsyncClient(timeout=timeout, trust_env=False)
+                http_client=self.http_client
             )
         elif self.provider == "ollama":
              # Ollama also has an OpenAI compatible endpoint
             self.client = AsyncOpenAI(
-                base_url=f"{self.base_url}/v1",
+                base_url=f"{self.base_url.rstrip('/')}/v1" if self.base_url else "http://localhost:11434/v1",
                 api_key="ollama", # required but unused
-                http_client=httpx.AsyncClient(timeout=timeout, trust_env=False)
+                http_client=self.http_client
             )
         else:
-            raise ValueError(f"Unsupported LLM provider: {self.provider}")
+            # Fallback to OpenAI if provider unknown to avoid crash
+            self.client = AsyncOpenAI(
+                api_key=self.api_key,
+                http_client=self.http_client
+            )
+
+
+    async def close(self):
+        """Closes the underlying HTTP client."""
+        await self.http_client.aclose()
+
 
     def _get_client_for_config(self, config):
         """
         Creates a temporary AsyncOpenAI client based on overrides.
+        Note: Reuses self.http_client to avoid resource leaks.
         
         Args:
             config: An optional Pydantic model containing provider-specific overrides.
@@ -83,37 +101,49 @@ class LLMService:
         if not config:
             return self.client, self.model
 
-        provider = config.provider.lower()
-        api_key = config.api_key
-        base_url = config.base_url
-        model = config.model or self.model
+        # Support both objects (Pydantic) and dictionaries
+        provider = (getattr(config, 'provider', None) or (config.get('provider') if isinstance(config, dict) else 'openai')).lower()
+        api_key = getattr(config, 'api_key', None) or (config.get('api_key') if isinstance(config, dict) else None)
+        base_url = getattr(config, 'base_url', None) or (config.get('base_url') if isinstance(config, dict) else None)
+        model = getattr(config, 'model', None) or (config.get('model') if isinstance(config, dict) else self.model) or self.model
 
-        if provider == "openai":
-            return AsyncOpenAI(
-                api_key=api_key or self.api_key,
-                http_client=httpx.AsyncClient(trust_env=False)
-            ), model
-        elif provider == "groq":
-            return AsyncOpenAI(
-                base_url="https://api.groq.com/openai/v1/",
-                api_key=api_key or settings.groq_api_key,
-                http_client=httpx.AsyncClient(trust_env=False)
-            ), model
-        elif provider == "openrouter":
-            return AsyncOpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=api_key or settings.openrouter_api_key,
-                http_client=httpx.AsyncClient(trust_env=False)
-            ), model
-        elif provider == "ollama":
-             return AsyncOpenAI(
-                base_url=f"{base_url or settings.ollama_base_url}/v1",
-                api_key="ollama",
-                http_client=httpx.AsyncClient(trust_env=False)
-            ), model
-        else:
-             # Fallback to default
-             return self.client, self.model
+        # Determine effective base_url
+        effective_base_url = base_url
+        if not effective_base_url:
+            if provider == "groq":
+                effective_base_url = "https://api.groq.com/openai/v1"
+            elif provider == "openrouter":
+                effective_base_url = "https://openrouter.ai/api/v1"
+            elif provider == "ollama":
+                effective_base_url = f"{settings.ollama_base_url.rstrip('/')}/v1"
+            elif provider == "ollama_cloud":
+                # For ollama cloud, we expect the base_url to be provided from settings or config
+                # Fallback to a common default if not provided
+                effective_base_url = base_url or "https://api.ollama.com/v1"
+            # OpenAI default is handled by AsyncOpenAI internally if base_url is None
+        
+        if effective_base_url:
+            effective_base_url = effective_base_url.rstrip('/')
+
+        # Determine effective api_key
+        effective_api_key = api_key
+        if not effective_api_key:
+            if provider == "openai":
+                effective_api_key = settings.openai_api_key
+            elif provider == "groq":
+                effective_api_key = settings.groq_api_key
+            elif provider == "openrouter":
+                effective_api_key = settings.openrouter_api_key
+            elif provider == "ollama":
+                effective_api_key = "ollama"
+
+        return AsyncOpenAI(
+            base_url=effective_base_url,
+            api_key=effective_api_key or "sk-no-key", # Dummy key if none to avoid validation error
+            http_client=self.http_client
+        ), model
+
+
 
     @track
     async def get_chat_completion(self, messages: list[dict], response_format: str = None, config=None) -> str:
@@ -132,9 +162,16 @@ class LLMService:
                 messages=messages,
                 response_format=api_response_format
             )
+            
             return response.choices[0].message.content
         except Exception as e:
-            print(f"LLM Chat Error: {e}")
+            print(f"LLM Chat Error: {type(e).__name__}: {e}")
+            # Log more details if it's an OpenAI API error
+            if hasattr(e, 'response'):
+                try:
+                    print(f"DEBUG: Error Response Body: {e.response.text}", flush=True)
+                except:
+                    pass
             raise e
 
     @track

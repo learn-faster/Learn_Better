@@ -351,6 +351,16 @@ class ProgressUpdate(BaseModel):
 
 
 
+# ========== Configuration Schemas ==========
+
+class LLMConfig(BaseModel):
+    """Configuration for LLM provider overrides."""
+    provider: str = "openai"
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+
+
 # ========== Curriculum Schemas ==========
 
 class CurriculumModuleBase(BaseModel):
@@ -380,6 +390,7 @@ class CurriculumBase(BaseModel):
 class CurriculumCreate(CurriculumBase):
     document_id: Optional[int] = None
     user_id: str = "default_user"
+    llm_config: Optional[LLMConfig] = None
 
 
 class CurriculumResponse(CurriculumBase):
@@ -471,3 +482,4 @@ class FocusSessionResponse(BaseModel):
     notes: Optional[str] = None
 
     model_config = ConfigDict(from_attributes=True)
+
