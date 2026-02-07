@@ -23,6 +23,7 @@ class SettingsUpdate(BaseModel):
     email_daily_reminder: Optional[bool] = None
     email_streak_alert: Optional[bool] = None
     email_weekly_digest: Optional[bool] = None
+    llm_config: Optional[Dict[str, Any]] = None
 
 
 @router.get("/overview")
@@ -69,7 +70,10 @@ def get_settings(user_id: str = "default_user", db: Session = Depends(get_db)):
         "resend_api_key": settings.resend_api_key,
         "email_daily_reminder": settings.email_daily_reminder,
         "email_streak_alert": settings.email_streak_alert,
-        "email_weekly_digest": settings.email_weekly_digest
+        "email_weekly_digest": settings.email_weekly_digest,
+        
+        # AI Config
+        "llm_config": settings.llm_config
     }
 
 
@@ -108,6 +112,17 @@ def update_settings(
         settings.email_streak_alert = data.email_streak_alert
     if data.email_weekly_digest is not None:
         settings.email_weekly_digest = data.email_weekly_digest
+    
+    # AI Config update
+    if data.llm_config is not None:
+        # Merge if exists or set new
+        if settings.llm_config is None:
+            settings.llm_config = data.llm_config
+        else:
+            # Shallow merge
+            new_config = dict(settings.llm_config)
+            new_config.update(data.llm_config)
+            settings.llm_config = new_config
     
     db.commit()
     return {"status": "ok", "message": "Settings updated successfully"}

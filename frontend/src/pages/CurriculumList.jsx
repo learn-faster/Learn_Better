@@ -54,7 +54,7 @@ const CurriculumList = () => {
         try {
             // Hard timeout to prevent infinite spinner
             const timeoutPromise = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error("Request timed out. Please try again.")), 30000)
+                setTimeout(() => reject(new Error("Request timed out. Please try again.")), 300000)
             );
 
             const requestPromise = curriculumService.generateCurriculum(newGoal, selectedDoc || null);

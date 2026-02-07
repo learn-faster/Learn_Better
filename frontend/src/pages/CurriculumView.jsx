@@ -1,11 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, CheckCircle, Circle, Clock, Book, Play, HelpCircle, Trophy, RefreshCw, X, Search, Sparkles, AlertCircle, ArrowRight, BrainCircuit, BookOpen } from 'lucide-react';
+import { ArrowLeft, CheckCircle, Circle, Clock, Book, Play, HelpCircle, Trophy, RefreshCw, X, Search, Sparkles, AlertCircle, ArrowRight, BrainCircuit, BookOpen, Heart, Flame, Lock, Crown } from 'lucide-react';
 
 
 import ReactMarkdown from 'react-markdown';
 import curriculumService from '../services/curriculum';
+
+// ============================================================================
+// THE COGNITIVE QUEST - GAMIFIED CURRICULUM VIEW
+// ============================================================================
 
 const CurriculumView = () => {
     const { id } = useParams();
@@ -13,6 +17,10 @@ const CurriculumView = () => {
     const [curriculum, setCurriculum] = useState(null);
     const [loading, setLoading] = useState(true);
     const [activeModule, setActiveModule] = useState(null);
+
+    // Gamification State (MVP: in-memory, could be persisted later)
+    const [hearts, setHearts] = useState(5);
+    const [streak, setStreak] = useState(3);
 
     useEffect(() => {
         fetchCurriculum();
@@ -36,128 +44,106 @@ const CurriculumView = () => {
         }));
     };
 
-    if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900"></div></div>;
-    if (!curriculum) return <div className="p-8">Curriculum not found</div>;
+    if (loading) return (
+        <div className="min-h-screen bg-dark-950 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+                <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary-400">Loading Quest...</p>
+            </div>
+        </div>
+    );
+
+    if (!curriculum) return <div className="min-h-screen bg-dark-950 flex items-center justify-center text-white">Curriculum not found</div>;
 
     const progress = Math.round((curriculum.modules.filter(m => m.is_completed).length / curriculum.modules.length) * 100);
 
     return (
-        <div className="min-h-screen bg-dark-950 font-sans text-slate-200 relative overflow-hidden">
-            {/* Ambient Background Effects */}
-            <div className="universe-stars">
-                <div className="star-layer-1" />
-                <div className="star-layer-2" />
-            </div>
+        <div className="min-h-screen bg-gradient-to-b from-emerald-950/20 via-dark-950 to-dark-950 font-sans text-slate-200 relative overflow-x-hidden">
 
-            {/* Dynamic Hero Glow */}
-            <div
-                className="absolute top-0 left-0 w-full h-[600px] opacity-10 transition-colors duration-1000 ease-in-out blur-[120px] pointer-events-none"
-                style={{ backgroundColor: curriculum.theme_color || '#8b5cf6' }}
-            />
-
-            <main className="relative z-10 max-w-5xl mx-auto px-6 pt-16 pb-32">
+            {/* ===== HUD (Heads-Up Display) ===== */}
+            <header className="fixed top-0 left-0 right-0 z-50 p-4 flex items-center justify-between max-w-3xl mx-auto">
                 <button
                     onClick={() => navigate('/curriculum')}
-                    className="flex items-center gap-2 text-slate-500 hover:text-white mb-16 group transition-all font-bold uppercase tracking-widest text-[10px]"
+                    className="p-3 rounded-2xl bg-dark-900/80 backdrop-blur-xl border border-white/10 text-slate-400 hover:text-white transition-all"
                 >
-                    <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-1" /> Back to Nexus
+                    <X className="w-5 h-5" />
                 </button>
 
-                <div className="flex flex-col md:flex-row items-center md:items-end justify-between mb-24 gap-10">
-                    <div className="text-center md:text-left">
-                        <motion.div
-                            initial={{ scale: 0, rotate: -20 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            className="text-8xl mb-6 filter drop-shadow-[0_0_30px_rgba(255,255,255,0.2)]"
-                        >
-                            {curriculum.icon}
-                        </motion.div>
-                        <motion.h1
-                            initial={{ y: 20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            className="text-6xl font-black text-white mb-4 tracking-tighter leading-tight"
-                        >
-                            {curriculum.title}
-                        </motion.h1>
-                        <p className="text-slate-400 text-xl max-w-2xl leading-relaxed font-medium">
-                            {curriculum.description || "Synthesizing specialized knowledge for cognitive acceleration."}
-                        </p>
-                    </div>
-
-                    <div className="bg-dark-900/60 p-8 rounded-[2.5rem] border border-white/5 shadow-2xl backdrop-blur-xl flex flex-col items-center">
-                        <div className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] mb-4">Neural Integration</div>
-                        <div className="relative w-24 h-24">
-                            <svg className="w-full h-full rotate-[-90deg]">
-                                <circle cx="48" cy="48" r="40" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="8" />
-                                <motion.circle
-                                    cx="48" cy="48" r="40" fill="none"
-                                    stroke={curriculum.theme_color || '#8b5cf6'}
-                                    strokeWidth="8"
-                                    strokeDasharray="251.2"
-                                    initial={{ strokeDashoffset: 251.2 }}
-                                    animate={{ strokeDashoffset: 251.2 - (progress / 100) * 251.2 }}
-                                    transition={{ duration: 2, ease: "circOut" }}
-                                    strokeLinecap="round"
-                                />
-                            </svg>
-                            <div className="absolute inset-0 flex items-center justify-center font-black text-2xl text-white">
-                                {progress}<span className="text-[10px] text-slate-500 mt-1">%</span>
-                            </div>
-                        </div>
-                    </div>
+                {/* Progress Bar */}
+                <div className="flex-1 mx-6 h-3 bg-dark-800 rounded-full overflow-hidden border border-white/5">
+                    <motion.div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progress}%` }}
+                        transition={{ duration: 1, ease: "circOut" }}
+                    />
                 </div>
 
-                {/* Immersive Pathway Layout */}
-                <div className="relative px-4">
-                    {/* Glowing Neural Path Link */}
-                    <div className="absolute left-[39px] top-10 w-2 h-[calc(100%-80px)] hidden md:block">
-                        <div className="w-full h-full bg-white/5 rounded-full relative overflow-hidden">
-                            <motion.div
-                                className="absolute top-0 left-0 w-full rounded-full shadow-[0_0_20px_rgba(139,92,246,0.5)]"
-                                style={{
-                                    height: `${progress}%`,
-                                    backgroundColor: curriculum.theme_color || '#8b5cf6'
-                                }}
-                                initial={{ height: 0 }}
-                                animate={{ height: `${progress}%` }}
-                                transition={{ duration: 2, ease: "circOut" }}
-                            />
-                            {/* Animated Pulse on the path */}
-                            <motion.div
-                                className="absolute left-0 w-full h-20 opacity-30 blur-sm"
-                                style={{ backgroundColor: curriculum.theme_color || '#ffffff' }}
-                                animate={{ top: ["-10%", "110%"] }}
-                                transition={{ repeat: Infinity, duration: 3, ease: "linear" }}
-                            />
-                        </div>
-                    </div>
+                {/* Hearts */}
+                <div className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-dark-900/80 backdrop-blur-xl border border-white/10">
+                    <Heart className="w-5 h-5 text-red-500 fill-red-500" />
+                    <span className="font-black text-white">{hearts}</span>
+                </div>
 
-                    <div className="space-y-16">
-                        {curriculum.modules.map((module, index) => {
-                            const isLocked = index > 0 && !curriculum.modules[index - 1].is_completed && !module.is_completed;
-                            const isActive = !module.is_completed && (index === 0 || curriculum.modules[index - 1].is_completed);
+                {/* Streak */}
+                <div className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-dark-900/80 backdrop-blur-xl border border-white/10 ml-2">
+                    <Flame className="w-5 h-5 text-orange-500" />
+                    <span className="font-black text-white">{streak}</span>
+                </div>
+            </header>
 
-                            return (
-                                <ModuleCard
-                                    key={module.id}
-                                    module={module}
-                                    index={index}
-                                    isLocked={isLocked}
-                                    isActive={isActive}
-                                    themeColor={curriculum.theme_color}
-                                    onOpen={() => setActiveModule(module)}
-                                />
-                            );
-                        })}
-                    </div>
+            {/* ===== THE PATH ===== */}
+            <main className="relative z-10 pt-28 pb-32 flex flex-col items-center">
+
+                {/* Title Section */}
+                <motion.div
+                    initial={{ y: -20, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="text-center mb-16"
+                >
+                    <span className="text-6xl mb-4 block">{curriculum.icon}</span>
+                    <h1 className="text-3xl font-black text-white tracking-tight mb-2">{curriculum.title}</h1>
+                    <p className="text-slate-500 text-sm max-w-xs mx-auto">{curriculum.description || "Master this path to unlock new knowledge."}</p>
+                </motion.div>
+
+                {/* Path Container */}
+                <div className="relative flex flex-col items-center gap-0">
+                    {/* The Connecting Path Line */}
+                    <div className="absolute top-0 bottom-0 w-1 bg-dark-800 rounded-full z-0" />
+                    <motion.div
+                        className="absolute top-0 w-1 bg-gradient-to-b from-emerald-500 to-emerald-400 rounded-full z-0"
+                        initial={{ height: 0 }}
+                        animate={{ height: `${progress}%` }}
+                        transition={{ duration: 1.5, ease: "circOut" }}
+                    />
+
+                    {curriculum.modules.map((module, index) => {
+                        const isLocked = index > 0 && !curriculum.modules[index - 1].is_completed && !module.is_completed;
+                        const isActive = !module.is_completed && (index === 0 || curriculum.modules[index - 1].is_completed);
+
+                        return (
+                            <PathNode
+                                key={module.id}
+                                module={module}
+                                index={index}
+                                isLocked={isLocked}
+                                isActive={isActive}
+                                themeColor={curriculum.theme_color}
+                                onOpen={() => !isLocked && setActiveModule(module)}
+                            />
+                        );
+                    })}
                 </div>
             </main>
 
             <AnimatePresence>
                 {activeModule && (
-                    <ModulePlayer
+                    <StudySession
                         module={activeModule}
                         curriculumId={id}
+                        hearts={hearts}
+                        setHearts={setHearts}
+                        streak={streak}
                         onClose={() => setActiveModule(null)}
                         onUpdate={handleModuleUpdate}
                     />
@@ -167,6 +153,88 @@ const CurriculumView = () => {
     );
 
 };
+
+// ============================================================================
+// PATH NODE COMPONENT (Duolingo-Style Circular Node)
+// ============================================================================
+const PathNode = ({ module, index, isLocked, isActive, themeColor, onOpen }) => {
+    const isCompleted = module.is_completed;
+    const isEven = index % 2 === 0;
+
+    return (
+        <motion.div
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ delay: index * 0.1 + 0.2, type: "spring", stiffness: 200 }}
+            className={`relative z-10 flex flex-col items-center py-6 ${isEven ? 'mr-20' : 'ml-20'}`}
+        >
+            {/* START Label for Active Node */}
+            {isActive && (
+                <motion.div
+                    initial={{ y: 10, opacity: 0 }}
+                    animate={{ y: 0, opacity: 1 }}
+                    className="absolute -top-2 px-4 py-1.5 bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-full shadow-lg shadow-emerald-500/30 z-20"
+                >
+                    Start
+                </motion.div>
+            )}
+
+            {/* The Node Button */}
+            <button
+                onClick={onOpen}
+                disabled={isLocked}
+                className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 border-4 shadow-2xl group
+                    ${isCompleted
+                        ? 'bg-gradient-to-br from-amber-400 to-amber-500 border-amber-300 scale-100'
+                        : isActive
+                            ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 border-emerald-400 scale-110 ring-8 ring-emerald-500/20'
+                            : isLocked
+                                ? 'bg-dark-800 border-dark-700 grayscale cursor-not-allowed'
+                                : 'bg-dark-800 border-dark-600'
+                    }
+                `}
+            >
+                {/* Pulsing Glow for Active */}
+                {isActive && (
+                    <motion.div
+                        className="absolute inset-0 rounded-full bg-emerald-400"
+                        animate={{ scale: [1, 1.3, 1], opacity: [0.3, 0, 0.3] }}
+                        transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                    />
+                )}
+
+                {/* Icon/Number */}
+                <div className="relative z-10">
+                    {isLocked ? (
+                        <Lock className="w-6 h-6 text-dark-500" />
+                    ) : isCompleted ? (
+                        <Crown className="w-8 h-8 text-amber-900" />
+                    ) : (
+                        <span className="text-2xl font-black text-white">{index + 1}</span>
+                    )}
+                </div>
+            </button>
+
+            {/* Module Title */}
+            <p className={`mt-4 text-sm font-bold text-center max-w-[120px] leading-tight
+                ${isLocked ? 'text-dark-600' : isActive ? 'text-white' : 'text-slate-400'}
+            `}>
+                {module.title}
+            </p>
+
+            {/* Practice Button for Completed */}
+            {isCompleted && (
+                <button
+                    onClick={onOpen}
+                    className="mt-2 text-[10px] font-black uppercase tracking-widest text-emerald-400 hover:text-emerald-300 transition-colors"
+                >
+                    Practice
+                </button>
+            )}
+        </motion.div>
+    );
+};
+
 
 const ModuleCard = ({ module, index, isLocked, isActive, themeColor, onOpen }) => {
     return (
@@ -250,12 +318,18 @@ const ModuleCard = ({ module, index, isLocked, isActive, themeColor, onOpen }) =
     );
 };
 
-
-const ModulePlayer = ({ module, curriculumId, onClose, onUpdate }) => {
+// ============================================================================
+// STUDY SESSION COMPONENT (The Core Gamified Loop)
+// ============================================================================
+const StudySession = ({ module, curriculumId, hearts, setHearts, streak, onClose, onUpdate }) => {
     const [status, setStatus] = useState(module.content ? 'ready' : 'pending');
     const [content, setContent] = useState(module.content);
     const [error, setError] = useState(null);
     const [step, setStep] = useState(0);
+    const [showAnswer, setShowAnswer] = useState(false);
+    const [feedback, setFeedback] = useState(null); // 'correct' | 'incorrect' | null
+    const [correctCount, setCorrectCount] = useState(0);
+    const [showComplete, setShowComplete] = useState(false);
 
     useEffect(() => {
         if (!module.content) {
@@ -275,14 +349,60 @@ const ModulePlayer = ({ module, curriculumId, onClose, onUpdate }) => {
         }
     };
 
+    // Parse content into flashcard items
+    const getItems = () => {
+        let parsedContent = content;
+        if (typeof content === 'string' && (content.trim().startsWith('[') || content.trim().startsWith('{'))) {
+            try { parsedContent = JSON.parse(content); } catch (e) { /* ignore */ }
+        }
+        return Array.isArray(parsedContent) ? parsedContent : (parsedContent?.questions || parsedContent?.cards || parsedContent?.steps || []);
+    };
+
+    const items = getItems();
+    const currentItem = items[step];
+    const totalItems = items.length;
+    const progress = totalItems > 0 ? ((step + 1) / totalItems) * 100 : 0;
+
+    const handleGotIt = () => {
+        setFeedback('correct');
+        setCorrectCount(prev => prev + 1);
+        setTimeout(() => {
+            setFeedback(null);
+            setShowAnswer(false);
+            if (step < totalItems - 1) {
+                setStep(prev => prev + 1);
+            } else {
+                handleFinish();
+            }
+        }, 800);
+    };
+
+    const handleMissedIt = () => {
+        setFeedback('incorrect');
+        setHearts(prev => Math.max(0, prev - 1));
+        setTimeout(() => {
+            setFeedback(null);
+            setShowAnswer(false);
+            if (step < totalItems - 1) {
+                setStep(prev => prev + 1);
+            } else {
+                handleFinish();
+            }
+        }, 1000);
+    };
+
+    const handleFinish = () => {
+        setShowComplete(true);
+    };
+
     const handleComplete = async () => {
         setStatus('completing');
         try {
             await curriculumService.toggleModule(module.id);
-            onUpdate(module.id, true);
+            onUpdate({ ...module, is_completed: true });
             onClose();
         } catch (err) {
-            setError("Failed to sync progress with Nexus.");
+            setError("Failed to sync progress.");
             setStatus('error');
         }
     };
@@ -292,143 +412,193 @@ const ModulePlayer = ({ module, curriculumId, onClose, onUpdate }) => {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] bg-dark-950 flex items-center justify-center p-0 md:p-10 lg:p-20 overflow-hidden"
+            className="fixed inset-0 z-[100] bg-gradient-to-b from-dark-900 to-dark-950 flex flex-col overflow-hidden"
         >
-            {/* Immersive Background */}
-            <div className="absolute inset-0 z-0 overflow-hidden">
-                <div className="universe-stars" />
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full h-full bg-primary-600/5 blur-[150px] rounded-full animate-pulse-slow" />
-            </div>
+            {/* ===== TOP BAR ===== */}
+            <header className="p-4 flex items-center gap-4 border-b border-white/5 bg-dark-900/80 backdrop-blur-xl">
+                <button
+                    onClick={onClose}
+                    className="p-3 rounded-2xl hover:bg-white/10 text-slate-400 hover:text-white transition-all"
+                >
+                    <X className="w-6 h-6" />
+                </button>
 
-            <motion.div
-                layoutId={`module-${module.id}`}
-                className="relative z-10 w-full h-full bg-dark-900/60 backdrop-blur-3xl border border-white/5 rounded-none md:rounded-[3rem] shadow-[0_0_100px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden"
-            >
-                {/* Header with Progress */}
-                <header className="p-8 border-b border-white/5 flex items-center justify-between bg-dark-900/40">
-                    <div className="flex items-center gap-6">
-                        <button
-                            onClick={onClose}
-                            className="p-3 rounded-2xl hover:bg-white/5 text-slate-500 hover:text-white transition-all border border-white/5"
-                        >
-                            <X className="w-6 h-6" />
-                        </button>
-                        <div className="flex flex-col">
-                            <span className="text-[10px] font-black tracking-[0.3em] text-primary-400 uppercase mb-1">Session Protocol</span>
-                            <h2 className="text-xl font-black text-white tracking-tight">{module.title}</h2>
-                        </div>
-                    </div>
-                    {status === 'ready' && Array.isArray(content) && content.length > 1 && (
-                        <div className="flex items-center gap-4">
-                            <div className="hidden md:flex bg-dark-950 rounded-full h-1.5 w-32 overflow-hidden border border-white/5">
-                                <motion.div
-                                    className="h-full bg-primary-500"
-                                    animate={{ width: `${((step + 1) / content.length) * 100}%` }}
-                                />
-                            </div>
-                            <span className="text-[10px] font-black text-slate-500 tracking-widest">{step + 1} / {content.length}</span>
-                        </div>
-                    )}
-                </header>
-
-                {/* Content Area */}
-                <div className="flex-1 overflow-y-auto custom-scrollbar p-8 md:p-16 lg:p-24 relative">
-                    <AnimatePresence mode="wait">
-                        {status === 'generating' ? (
-                            <motion.div
-                                key="generating"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                exit={{ opacity: 0, y: -20 }}
-                                className="flex flex-col items-center justify-center h-full space-y-10"
-                            >
-                                <div className="relative w-32 h-32">
-                                    <div className="absolute inset-0 border-4 border-white/5 rounded-full" />
-                                    <div className="absolute inset-0 border-4 border-primary-500 rounded-full border-t-transparent animate-spin" />
-                                    <Sparkles className="absolute inset-0 m-auto w-10 h-10 text-primary-400 animate-pulse" />
-                                </div>
-                                <div className="text-center">
-                                    <h3 className="text-3xl font-black text-white mb-4">Synthesizing Content</h3>
-                                    <p className="text-slate-500 font-medium uppercase tracking-[0.2em] text-xs">Accessing specialized knowledge structures...</p>
-                                </div>
-                            </motion.div>
-                        ) : status === 'error' ? (
-                            <motion.div
-                                key="error"
-                                initial={{ opacity: 0 }}
-                                animate={{ opacity: 1 }}
-                                className="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto"
-                            >
-                                <div className="w-20 h-20 bg-red-500/10 rounded-3xl flex items-center justify-center mb-8 border border-red-500/20">
-                                    <AlertCircle className="w-10 h-10 text-red-400" />
-                                </div>
-                                <h3 className="text-2xl font-black text-white mb-4">Neural Link Severed</h3>
-                                <p className="text-red-400/80 bg-red-950/20 p-6 rounded-2xl border border-red-500/10 mb-10">{error}</p>
-                                <button
-                                    onClick={handleGenerate}
-                                    className="btn-primary w-full py-5 rounded-2xl text-[12px] font-black uppercase tracking-widest"
-                                >
-                                    Re-establish Connection
-                                </button>
-                            </motion.div>
-                        ) : (
-                            <motion.div
-                                key="content"
-                                initial={{ opacity: 0, y: 20 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className="max-w-4xl mx-auto"
-                            >
-                                <ContentRenderer
-                                    type={module.module_type}
-                                    content={content}
-                                    step={step}
-                                    setStep={setStep}
-                                />
-                            </motion.div>
-                        )}
-                    </AnimatePresence>
+                {/* Progress Bar */}
+                <div className="flex-1 h-3 bg-dark-800 rounded-full overflow-hidden">
+                    <motion.div
+                        className="h-full bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-full"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${progress}%` }}
+                        transition={{ duration: 0.5, ease: "easeOut" }}
+                    />
                 </div>
 
-                {/* Footer Controls */}
-                {status === 'ready' && (
-                    <footer className="p-8 border-t border-white/5 bg-dark-900/40 flex items-center justify-between">
-                        <button
-                            onClick={onClose}
-                            className="px-8 py-4 rounded-2xl bg-white/5 text-slate-400 hover:text-white transition-all font-black text-[10px] uppercase tracking-widest border border-white/5"
+                {/* Hearts */}
+                <div className="flex items-center gap-1.5 px-4 py-2 rounded-2xl bg-dark-800 border border-white/5">
+                    <Heart className="w-5 h-5 text-red-500 fill-red-500" />
+                    <span className="font-black text-white">{hearts}</span>
+                </div>
+            </header>
+
+            {/* ===== MAIN CONTENT AREA ===== */}
+            <div className="flex-1 flex flex-col items-center justify-center p-6 overflow-y-auto">
+                <AnimatePresence mode="wait">
+                    {status === 'generating' ? (
+                        <motion.div
+                            key="generating"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            className="flex flex-col items-center justify-center space-y-6"
                         >
-                            Suspend Session
-                        </button>
+                            <div className="w-20 h-20 border-4 border-primary-500 border-t-transparent rounded-full animate-spin" />
+                            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500">Generating content...</p>
+                        </motion.div>
+                    ) : status === 'error' ? (
+                        <motion.div
+                            key="error"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            className="flex flex-col items-center text-center max-w-sm"
+                        >
+                            <AlertCircle className="w-16 h-16 text-red-400 mb-6" />
+                            <h3 className="text-2xl font-black text-white mb-4">Oops!</h3>
+                            <p className="text-red-400/80 mb-6">{error}</p>
+                            <button onClick={handleGenerate} className="btn-primary px-8 py-3 rounded-xl">Retry</button>
+                        </motion.div>
+                    ) : currentItem ? (
+                        <motion.div
+                            key={step}
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ x: feedback === 'correct' ? 100 : feedback === 'incorrect' ? -100 : 0, opacity: 0 }}
+                            transition={{ duration: 0.3 }}
+                            className={`w-full max-w-2xl p-8 md:p-12 rounded-[2rem] border-2 transition-all shadow-2xl
+                                ${feedback === 'correct' ? 'bg-emerald-500/10 border-emerald-500' :
+                                    feedback === 'incorrect' ? 'bg-red-500/10 border-red-500 animate-shake' :
+                                        'bg-dark-800/50 border-white/10'}
+                            `}
+                        >
+                            {/* Question */}
+                            <div className="text-center mb-8">
+                                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-4">
+                                    Card {step + 1} of {totalItems}
+                                </p>
+                                <div className="text-2xl md:text-3xl font-bold text-white leading-tight">
+                                    <ReactMarkdown>{currentItem.front || currentItem.question}</ReactMarkdown>
+                                </div>
+                            </div>
 
-                        <div className="flex gap-4">
-                            {step > 0 && (
-                                <button
-                                    onClick={() => setStep(prev => prev - 1)}
-                                    className="px-8 py-4 rounded-2xl bg-white/5 text-white hover:bg-white/10 transition-all font-black"
-                                >
-                                    <ArrowLeft className="w-5 h-5" />
-                                </button>
-                            )}
+                            {/* Answer / Reveal */}
+                            <AnimatePresence mode="wait">
+                                {showAnswer ? (
+                                    <motion.div
+                                        key="answer"
+                                        initial={{ opacity: 0, y: 20 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className="text-center"
+                                    >
+                                        <div className="py-6 border-t border-white/10 mb-6">
+                                            <p className="text-lg text-emerald-300 font-medium leading-relaxed">
+                                                <ReactMarkdown>{currentItem.back || currentItem.answer || currentItem.correct_answer}</ReactMarkdown>
+                                            </p>
+                                        </div>
 
-                            {Array.isArray(content) && step < content.length - 1 ? (
-                                <button
-                                    onClick={() => setStep(prev => prev + 1)}
-                                    className="btn-primary px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-primary-500/20"
-                                >
-                                    Next Phase <ArrowRight className="w-4 h-4" />
-                                </button>
-                            ) : (
-                                <button
-                                    onClick={handleComplete}
-                                    disabled={status === 'completing'}
-                                    className="btn-primary px-12 py-4 rounded-2xl text-[10px] font-black uppercase tracking-widest"
-                                >
-                                    {status === 'completing' ? 'Syncing...' : 'Seal Mastery'} <CheckCircle className="w-4 h-4 ml-2" />
-                                </button>
-                            )}
-                        </div>
-                    </footer>
+                                        {/* Got it / Missed it Buttons */}
+                                        <div className="flex gap-4 justify-center">
+                                            <motion.button
+                                                whileHover={{ scale: 1.05 }}
+                                                whileTap={{ scale: 0.95 }}
+                                                onClick={handleMissedIt}
+                                                disabled={feedback !== null}
+                                                className="flex-1 max-w-[150px] py-4 rounded-2xl bg-red-500/20 border-2 border-red-500 text-red-300 font-black text-sm uppercase tracking-wide hover:bg-red-500 hover:text-white transition-all disabled:opacity-50"
+                                            >
+                                                Missed it
+                                            </motion.button>
+                                            <motion.button
+                                                whileHover={{ scale: 1.05 }}
+                                                whileTap={{ scale: 0.95 }}
+                                                onClick={handleGotIt}
+                                                disabled={feedback !== null}
+                                                className="flex-1 max-w-[150px] py-4 rounded-2xl bg-emerald-500/20 border-2 border-emerald-500 text-emerald-300 font-black text-sm uppercase tracking-wide hover:bg-emerald-500 hover:text-white transition-all disabled:opacity-50"
+                                            >
+                                                Got it!
+                                            </motion.button>
+                                        </div>
+                                    </motion.div>
+                                ) : (
+                                    <motion.div key="reveal" className="flex justify-center">
+                                        <motion.button
+                                            whileHover={{ scale: 1.05 }}
+                                            whileTap={{ scale: 0.95 }}
+                                            onClick={() => setShowAnswer(true)}
+                                            className="px-12 py-4 rounded-2xl bg-white text-dark-950 font-black uppercase tracking-widest text-sm shadow-lg hover:shadow-xl transition-all"
+                                        >
+                                            Reveal Answer
+                                        </motion.button>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </motion.div>
+                    ) : (
+                        <p className="text-slate-500">No cards available.</p>
+                    )}
+                </AnimatePresence>
+            </div>
+
+            {/* ===== LESSON COMPLETE MODAL ===== */}
+            <AnimatePresence>
+                {showComplete && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[150] bg-dark-950/95 backdrop-blur-xl flex items-center justify-center p-4"
+                    >
+                        <motion.div
+                            initial={{ scale: 0.8, y: 50 }}
+                            animate={{ scale: 1, y: 0 }}
+                            className="bg-gradient-to-br from-dark-800 to-dark-900 rounded-[2rem] p-10 md:p-16 text-center max-w-md w-full border border-white/10 shadow-2xl"
+                        >
+                            {/* Trophy Icon */}
+                            <motion.div
+                                initial={{ scale: 0 }}
+                                animate={{ scale: 1 }}
+                                transition={{ type: "spring", stiffness: 200, delay: 0.2 }}
+                                className="mx-auto w-24 h-24 bg-gradient-to-br from-amber-400 to-amber-500 rounded-full flex items-center justify-center mb-8 shadow-lg shadow-amber-500/30"
+                            >
+                                <Trophy className="w-12 h-12 text-amber-900" />
+                            </motion.div>
+
+                            <h2 className="text-3xl font-black text-white mb-2">Lesson Complete!</h2>
+                            <p className="text-slate-500 mb-8">Great work on this module.</p>
+
+                            {/* Stats */}
+                            <div className="flex justify-center gap-8 mb-10">
+                                <div className="text-center">
+                                    <p className="text-4xl font-black text-emerald-400">{Math.round((correctCount / totalItems) * 100)}%</p>
+                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Accuracy</p>
+                                </div>
+                                <div className="text-center">
+                                    <p className="text-4xl font-black text-primary-400">+{correctCount * 10}</p>
+                                    <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">XP</p>
+                                </div>
+                            </div>
+
+                            {/* Continue Button */}
+                            <motion.button
+                                whileHover={{ scale: 1.03 }}
+                                whileTap={{ scale: 0.97 }}
+                                onClick={handleComplete}
+                                disabled={status === 'completing'}
+                                className="w-full py-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-600 text-white font-black uppercase tracking-widest text-sm shadow-lg shadow-emerald-500/30 hover:shadow-xl transition-all disabled:opacity-50"
+                            >
+                                {status === 'completing' ? 'Saving...' : 'Continue'}
+                            </motion.button>
+                        </motion.div>
+                    </motion.div>
                 )}
-            </motion.div>
+            </AnimatePresence>
         </motion.div>
     );
 };

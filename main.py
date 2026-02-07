@@ -163,7 +163,7 @@ app.include_router(resources_router.router)
 app.include_router(goals_router.router)
 app.include_router(notifications_router.router)
 app.include_router(multidoc_graph_router.router)
-app.include_router(notebook_router)
+app.include_router(notebook_router, prefix="/api")
 
 
 # Mount static files

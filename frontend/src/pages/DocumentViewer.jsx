@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft,
@@ -140,6 +140,7 @@ const DocumentViewer = () => {
     const [flashcardBack, setFlashcardBack] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
     const flashcardCreatorRef = React.useRef(null);
+    const rightPanelRef = useRef(null);
 
     const { seconds } = useTimer(true);
     const {
@@ -277,6 +278,17 @@ const DocumentViewer = () => {
         }
     };
 
+    const toggleRightPanel = () => {
+        const panel = rightPanelRef.current;
+        if (panel) {
+            if (isRightPanelCollapsed) {
+                panel.expand();
+            } else {
+                panel.collapse();
+            }
+        }
+    };
+
     const handleExtractConcepts = async () => {
         setIsExtracting(true);
         try {
@@ -374,15 +386,7 @@ const DocumentViewer = () => {
                 </div>
             )}
 
-            {/* Top Fixed Progress Bar */}
-            <div className="fixed top-0 left-0 right-0 h-1 z-[110] bg-dark-950/20">
-                <motion.div
-                    className="h-full bg-gradient-to-r from-primary-600 via-primary-500 to-primary-400 shadow-[0_0_10px_rgba(244,63,94,0.6)]"
-                    initial={{ width: 0 }}
-                    animate={{ width: `${progress}%` }}
-                    transition={{ duration: 0.3 }}
-                />
-            </div>
+            {/* Top Fixed Progress Bar - Removed per user request */}
 
             {/* Header */}
             {!isFocusMode && (
@@ -443,6 +447,13 @@ const DocumentViewer = () => {
                                 title="Map Concepts (AI)"
                             >
                                 {isExtracting ? <Loader2 className="w-4.5 h-4.5 animate-spin" /> : <Network className="w-4.5 h-4.5" />}
+                            </button>
+                            <button
+                                onClick={toggleRightPanel}
+                                className="p-2.5 rounded-xl text-dark-400 hover:bg-white/5 hover:border-white/10 border border-transparent transition-all"
+                                title={isRightPanelCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+                            >
+                                {isRightPanelCollapsed ? <PanelRightOpen className="w-4.5 h-4.5" /> : <PanelRightClose className="w-4.5 h-4.5" />}
                             </button>
                             <button onClick={toggleFocusMode} className="p-2.5 rounded-xl text-dark-400 hover:bg-white/5 hover:border-white/10 border border-transparent transition-all" title="Focus Mode">
                                 <Maximize2 className="w-4.5 h-4.5" />
@@ -507,7 +518,15 @@ const DocumentViewer = () => {
                     </Separator>
 
                     {/* Right Panel: Open Notebook (Chat/Notes/Flashcards) */}
-                    <Panel defaultSize={40} minSize={20} collapsible={true} onCollapse={() => setIsRightPanelCollapsed(true)} onExpand={() => setIsRightPanelCollapsed(false)} className="bg-dark-900 border-l border-white/5">
+                    <Panel
+                        ref={rightPanelRef}
+                        defaultSize={40}
+                        minSize={20}
+                        collapsible={true}
+                        onCollapse={() => setIsRightPanelCollapsed(true)}
+                        onExpand={() => setIsRightPanelCollapsed(false)}
+                        className="bg-dark-900 border-l border-white/5"
+                    >
                         <div className="h-full flex flex-col">
                             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
                                 <div className="px-4 py-3 border-b border-white/5 bg-dark-900/80 backdrop-blur-sm">

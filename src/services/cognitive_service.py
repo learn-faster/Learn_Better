@@ -5,7 +5,8 @@ from datetime import datetime, time
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
-from src.models.orm import Flashcard, StudyReview
+from src.models.orm import Flashcard, StudyReview, UserSettings
+from src.models.schemas import LLMConfig
 from src.navigation.navigation_engine import NavigationEngine
 from src.services.llm_service import llm_service
 
@@ -156,6 +157,21 @@ class CognitiveService:
         if stability['total_concepts_tracked'] == 0:
             return f"Your neural workspace is in the calibration phase. Upload documentation or generate flashcards to initiate synaptic stability tracking during the next {focus['name']}."
 
+        # Get User LLM Config
+        llm_config = None
+        user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+        if user_settings and user_settings.llm_config:
+            try:
+                # Use 'global' or flat config
+                stored_config = user_settings.llm_config.get("global") or user_settings.llm_config
+                
+                if stored_config and "provider" in stored_config:
+                    clean_config = {k: v for k, v in stored_config.items() if v}
+                    if clean_config:
+                        llm_config = LLMConfig(**clean_config)
+            except Exception as e:
+                logger.warning(f"Error parsing user LLM config: {e}")
+
         prompt = f"""
         Role: Metacognitive Neurobiologist.
         Task: Provide a critical, data-driven insight for the user's learning dashboard.
@@ -173,13 +189,15 @@ class CognitiveService:
         try:
             report = await llm_service.get_chat_completion(
                 messages=[{"role": "system", "content": "You are a professional Metacognitive Neurobiologist. Your tone is clinical, authoritative, and direct."},
-                          {"role": "user", "content": prompt}]
+                          {"role": "user", "content": prompt}],
+                config=llm_config
             )
             # Strip "Insight: " if present
             clean_report = report.strip().strip('"')
             if clean_report.lower().startswith("insight:"):
                 clean_report = clean_report[len("insight:"):].strip()
             return clean_report
+
         except:
             return f"Synchronize your next high-load deep study with the {focus['name']} to mitigate potential decay in {stability['at_risk_concepts'][0]['concept'] if stability['at_risk_concepts'] else 'your graph'}."
 

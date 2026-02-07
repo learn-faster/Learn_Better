@@ -6,11 +6,11 @@ from sqlalchemy.orm import Session
 import traceback
 
 from src.database.orm import get_db
-from src.models.orm import Document
+from src.models.orm import Document, UserSettings
 from src.services.llm_service import llm_service
 from src.ingestion.document_processor import DocumentProcessor
 from src.path_resolution.path_resolver import PathResolver
-from src.models.schemas import LearningPath, PathRequest
+from src.models.schemas import LearningPath, PathRequest, LLMConfig
 from src.dependencies import get_path_resolver
 
 router = APIRouter(prefix="/api/ai", tags=["AI Generation"])
@@ -23,22 +23,11 @@ async def test_endpoint():
     return {"message": "AI Router is working"}
 
 
-class LLMConfig(BaseModel):
-    """Configuration overrides for LLM generation."""
-    provider: str = "openai"
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    model: Optional[str] = None
-
-
 class GenerateRequest(BaseModel):
     """Request schema for flashcard/question generation."""
     document_id: int 
     count: int = 5
     llm_config: Optional[LLMConfig] = None
-
-
-
 
 
 @router.post("/generate-flashcards")
@@ -65,17 +54,23 @@ async def generate_flashcards(request: GenerateRequest, db: Session = Depends(ge
         
     try:
         # Fetch user settings for LLM config overrides
-        from src.models.orm import UserSettings
         user_settings = db.query(UserSettings).filter(UserSettings.user_id == "default_user").first()
         
         # Merge request config with stored config (priority to request if provided, else stored)
-        # For now, we just use stored config if request config is empty
         config = request.llm_config
         if not config and user_settings and user_settings.llm_config:
             # Parse stored JSON into LLMConfig object
+            # Check for nested structure first
             stored_config = user_settings.llm_config.get("flashcards") or user_settings.llm_config.get("global")
+            
+            # Fallback to flat structure if nested keys missing but provider exists
+            if not stored_config and "provider" in user_settings.llm_config:
+                stored_config = user_settings.llm_config
+                
             if stored_config:
-                config = LLMConfig(**stored_config)
+                # Filter out empty keys
+                clean_config = {k: v for k, v in stored_config.items() if v}
+                config = LLMConfig(**clean_config)
 
         flashcards = await llm_service.generate_flashcards(text, request.count, config)
         return flashcards
@@ -106,14 +101,20 @@ async def generate_questions(request: GenerateRequest, db: Session = Depends(get
 
     try:
         # Fetch user settings for LLM config
-        from src.models.orm import UserSettings
         user_settings = db.query(UserSettings).filter(UserSettings.user_id == "default_user").first()
         
         config = request.llm_config
         if not config and user_settings and user_settings.llm_config:
+            # Check for nested structure first
             stored_config = user_settings.llm_config.get("quiz") or user_settings.llm_config.get("global")
+            
+            # Fallback to flat structure
+            if not stored_config and "provider" in user_settings.llm_config:
+                stored_config = user_settings.llm_config
+                
             if stored_config:
-                config = LLMConfig(**stored_config)
+                clean_config = {k: v for k, v in stored_config.items() if v}
+                config = LLMConfig(**clean_config)
 
         questions = await llm_service.generate_questions(text, request.count, config)
         return questions
@@ -184,14 +185,20 @@ async def generate_learning_path(
     try:
         # Mapping target_concept to 'goal' for LLM
         # Fetch user settings for LLM config
-        from src.models.orm import UserSettings
         user_settings = db.query(UserSettings).filter(UserSettings.user_id == "default_user").first()
         
         config = None
         if user_settings and user_settings.llm_config:
+            # Check for nested structure first
             stored_config = user_settings.llm_config.get("curriculum") or user_settings.llm_config.get("global")
+            
+            # Fallback to flat structure
+            if not stored_config and "provider" in user_settings.llm_config:
+                stored_config = user_settings.llm_config
+                
             if stored_config:
-                config = LLMConfig(**stored_config)
+                clean_config = {k: v for k, v in stored_config.items() if v}
+                config = LLMConfig(**clean_config)
 
         path = await llm_service.generate_learning_path(text, request.target_concept, config=config)
         return path
@@ -245,8 +252,24 @@ async def extract_concepts(request: GenerateRequest, db: Session = Depends(get_d
         )
 
     try:
+        # Fetch user settings for LLM config
+        user_settings = db.query(UserSettings).filter(UserSettings.user_id == "default_user").first()
+        
+        config = request.llm_config
+        if not config and user_settings and user_settings.llm_config:
+            # Check for nested structure first
+            stored_config = user_settings.llm_config.get("extraction") or user_settings.llm_config.get("global")
+            
+            # Fallback to flat structure
+            if not stored_config and "provider" in user_settings.llm_config:
+                stored_config = user_settings.llm_config
+                
+            if stored_config:
+                clean_config = {k: v for k, v in stored_config.items() if v}
+                config = LLMConfig(**clean_config)
+
         # Extract structured data
-        extraction = await llm_service.extract_concepts(text, request.llm_config)
+        extraction = await llm_service.extract_concepts(text, config)
         
         # TODO: In a real implementation, we would save these to the knowledge graph (Neo4j/Graph Storage)
         # For now, we return the extraction results to the frontend to demonstrate the feature works.

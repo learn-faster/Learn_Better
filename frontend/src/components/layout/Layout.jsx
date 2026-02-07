@@ -15,7 +15,7 @@ const Layout = () => {
             <AbstractBackground />
 
             <Navbar onOpenSettings={() => setShowSettings(true)} />
-            <main className={`relative z-10 flex-1 transition-all duration-300 ${isDocumentViewer ? 'ml-0 md:ml-20 p-0' : 'ml-20 md:ml-64 p-4 md:p-8'} animate-fade-in`}>
+            <main className={`relative z-10 flex-1 transition-all duration-300 ml-20 md:ml-64 ${isDocumentViewer ? 'p-0' : 'p-4 md:p-8'} animate-fade-in`}>
                 <div className={`${isDocumentViewer ? 'w-full min-h-screen' : 'max-w-7xl mx-auto min-h-[calc(100vh-4rem)]'}`}>
                     <Outlet context={{ openSettings: () => setShowSettings(true) }} />
                 </div>

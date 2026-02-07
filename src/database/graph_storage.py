@@ -60,6 +60,20 @@ class GraphStorage:
                 "FOR ()-[r:COMPLETED]-() ON (r.finished_at)"
             )
             
+            # Schema Nudge: Mention properties/labels that cause warnings if not present (Neo4j 5.x)
+            # This "teaches" the metadata about these elements even when the DB is empty.
+            # We create dummy nodes/rels and then immediately delete ALL of them (including the User).
+            self.connection.execute_write_query(
+                """
+                MERGE (n:__SchemaNudge__ {id: 'nudge'})
+                ON CREATE SET n.description = ''
+                MERGE (u:User {uid: '__nudge__'})
+                MERGE (u)-[:IN_PROGRESS]->(n)
+                MERGE (u)-[:COMPLETED]->(n)
+                DETACH DELETE n, u
+                """
+            )
+            
             logger.info("Neo4j constraints and indexes initialized successfully")
             return True
             

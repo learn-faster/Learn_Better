@@ -21,7 +21,8 @@ async def generate_curriculum(
             db, 
             goal=request.title, # Using title as the goal if target_concept not specific
             user_id=request.user_id,
-            document_id=request.document_id
+            document_id=request.document_id,
+            config=request.llm_config
         )
         return curriculum
     except Exception as e:
