@@ -41,7 +41,12 @@ from src.routers import (
 )
 
 # Import Open Notebook components
-from on_api.router_main import router as notebook_router, init_surrealdb
+try:
+    from on_api.router_main import router as notebook_router, init_surrealdb
+    HAS_OPEN_NOTEBOOK = True
+except ImportError:
+    logger.warning("on_api not found. Open Notebook integration disabled.")
+    HAS_OPEN_NOTEBOOK = False
 
 
 # Configure logging
@@ -71,11 +76,12 @@ async def lifespan(app: FastAPI):
         logger.error("Failed to initialize databases")
     
     # Initialize Open Notebook (SurrealDB)
-    try:
-        await init_surrealdb()
-    except Exception as e:
-        logger.error(f"Failed to initialize Open Notebook: {e}")
-        # Continue execution, but Open Notebook features might fail
+    if HAS_OPEN_NOTEBOOK:
+        try:
+            await init_surrealdb()
+        except Exception as e:
+            logger.error(f"Failed to initialize Open Notebook: {e}")
+            # Continue execution, but Open Notebook features might fail
     
     # Initialize components
     ingestion_engine = IngestionEngine()
@@ -162,7 +168,8 @@ app.include_router(resources_router.router)
 app.include_router(goals_router.router)
 app.include_router(notifications_router.router)
 app.include_router(multidoc_graph_router.router)
-app.include_router(notebook_router)
+if HAS_OPEN_NOTEBOOK:
+    app.include_router(notebook_router)
 
 
 # Mount static files
