@@ -56,57 +56,39 @@ export async function getConfig() {
  * Fetch configuration from the API or use defaults.
  */
 async function fetchConfig() {
-  const isDev = process.env.NODE_ENV === 'development'
+  // Use Vite environment variable
+  const isDev = import.meta.env.DEV
 
   if (isDev) {
     console.log('🔧 [Config] Starting configuration detection...')
     console.log('🔧 [Config] Build time:', BUILD_TIME)
   }
 
-  // STEP 1: Try to get runtime config from Next.js server-side endpoint
-  // This allows API_URL to be set at runtime (not baked into build)
-  // Note: Endpoint is at /config (not /api/config) to avoid reverse proxy conflicts
-  let runtimeApiUrl = null
+  // STEP 1: Runtime config from server (Skipped for Vite/SPA serving)
+  let runtimeApiUrl = null;
+  /* 
+  // This is for Next.js server-side runtime config, not applicable for Vite SPA
   try {
-    if (isDev) console.log('🔧 [Config] Attempting to fetch runtime config from /config endpoint...')
-    const runtimeResponse = await fetch('/config', {
-      cache: 'no-store',
-    })
-    if (runtimeResponse.ok) {
-      const runtimeData = await runtimeResponse.json()
-      runtimeApiUrl = runtimeData.apiUrl
-      // Treat empty string as "not set" to allow fallback to env var or default
-      if (runtimeApiUrl === '') {
-        runtimeApiUrl = null
-      }
-      if (isDev) console.log('✅ [Config] Runtime API URL from server:', runtimeApiUrl)
-    } else {
-      if (isDev) console.log('⚠️ [Config] Runtime config endpoint returned status:', runtimeResponse.status)
-    }
-  } catch (error) {
-    if (isDev) console.log('⚠️ [Config] Could not fetch runtime config:', error)
-  }
+     ...
+  } catch (error) { ... } 
+  */
 
-  // STEP 2: Fallback to build-time environment variable
-  const envApiUrl = process.env.NEXT_PUBLIC_API_URL
-  if (isDev) console.log('🔧 [Config] NEXT_PUBLIC_API_URL from build:', envApiUrl || '(not set)')
+  // STEP 2: Fallback to build-time environment variable (Vite style)
+  const envApiUrl = import.meta.env.VITE_API_URL
+  if (isDev) console.log('🔧 [Config] VITE_API_URL from build:', envApiUrl || '(not set)')
 
-  // STEP 3: Smart default - prefer relative path to use Next.js Rewrites
-  // This avoids CORS issues and port mapping complexities by proxying through Next.js
+  // STEP 3: Smart default - prefer relative path to use Vite Proxy
   const defaultApiUrl = ''
 
   if (typeof window !== 'undefined' && isDev) {
-    console.log('🔧 [Config] Using relative path (rewrites) as default')
+    console.log('🔧 [Config] Using relative path (proxy) as default')
   }
 
   // Priority: Runtime config > Build-time env var > Smart default
-  // Note: runtimeApiUrl must be checked against null explicitly as empty string might be valid if intended (though we treat '' as null above)
   const baseUrl = runtimeApiUrl !== null && runtimeApiUrl !== undefined ? runtimeApiUrl : (envApiUrl || defaultApiUrl)
+
   if (isDev) {
     console.log('🔧 [Config] Final base URL to try:', baseUrl)
-    console.log('🔧 [Config] Selection priority: runtime=' + (runtimeApiUrl ? '✅' : '❌') +
-      ', build-time=' + (envApiUrl ? '✅' : '❌') +
-      ', smart-default=' + (!runtimeApiUrl && !envApiUrl ? '✅' : '❌'))
   }
 
   try {
