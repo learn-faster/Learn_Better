@@ -20,10 +20,12 @@ import {
     FileCode,
     Sparkles,
     Network,
-    FolderInput
+    FolderInput,
+    RotateCcw,
+    RefreshCw
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
-import Card from '../components/ui/Card';
+import { Card } from '../components/ui/card';
 import FileUpload from '../components/documents/FileUpload';
 import { motion, AnimatePresence } from 'framer-motion';
 import useDocumentStore from '../stores/useDocumentStore';
@@ -433,21 +435,39 @@ const Documents = () => {
 
                                             {/* Top Actions HUD */}
                                             <div className="flex justify-between items-start mb-4 relative z-20 w-full">
-                                                <div className={`p-3 rounded-2xl ${doc.status === 'completed' ? 'bg-primary-500/20 text-primary-400' :
+                                                <div className={`p-3 rounded-2xl ${doc.status === 'completed' || doc.status === 'success' ? 'bg-green-500/20 text-green-400' :
                                                     doc.status === 'extracted' ? 'bg-cyan-500/20 text-cyan-400' :
-                                                        doc.status === 'ingesting' ? 'bg-amber-500/20 text-amber-400' :
+                                                        (doc.status === 'ingesting' || doc.status === 'processing') ? 'bg-primary-500/20 text-primary-400' :
                                                             doc.status === 'failed' ? 'bg-red-500/20 text-red-400' :
                                                                 'bg-white/5 text-dark-400'
                                                     }`}>
-                                                    {doc.file_type === 'pdf' ? (
+                                                    {(doc.file_type?.toLowerCase() === 'pdf' || (doc.filename && doc.filename.toLowerCase().endsWith('.pdf'))) ? (
                                                         <FileText className="w-6 h-6" />
-                                                    ) : (
+                                                    ) : doc.file_type?.toLowerCase() === 'link' ? (
+                                                        <Globe className="w-6 h-6" />
+                                                    ) : (doc.file_type?.toLowerCase() === 'markdown' || doc.file_type?.toLowerCase() === 'text') ? (
                                                         <FileCode className="w-6 h-6" />
+                                                    ) : (
+                                                        <ImageIcon className="w-6 h-6" />
                                                     )}
                                                 </div>
                                                 <div className="flex gap-2">
+                                                    {/* Reprocess Button for Failed or No-Text Docs */}
+                                                    {(doc.status === 'failed' || (doc.status === 'extracted' && !doc.extracted_text)) && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                handleReprocess(doc.id);
+                                                            }}
+                                                            className="p-3 bg-red-500/10 hover:bg-red-500/20 rounded-2xl text-red-400 transition-colors border border-red-500/20 shadow-lg backdrop-blur-sm"
+                                                            title="Reprocess Extraction"
+                                                        >
+                                                            <RotateCcw className="w-4 h-4" />
+                                                        </button>
+                                                    )}
+
                                                     {/* Synthesize Button for Extracted/Ready Docs */}
-                                                    {(doc.status === 'extracted' || doc.status === 'ready_for_synthesis') && (
+                                                    {(doc.status === 'extracted' || doc.status === 'ready_for_synthesis') && doc.extracted_text && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -574,10 +594,18 @@ const Documents = () => {
                                                             {doc.file_type} Unit
                                                         </span>
                                                     </div>
-                                                    {doc.status !== 'completed' && doc.status !== 'success' && (
+                                                    {doc.status !== 'completed' && doc.status !== 'success' && doc.status !== 'extracted' && (
                                                         <div className="flex items-center gap-2">
                                                             <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
-                                                            <span className="text-[10px] font-black text-primary-500 uppercase tracking-widest">Processing</span>
+                                                            <span className="text-[10px] font-black text-primary-500 uppercase tracking-widest">
+                                                                {doc.status === 'ingesting' ? 'Ingesting' : 'Processing'}
+                                                            </span>
+                                                        </div>
+                                                    )}
+                                                    {doc.status === 'extracted' && (
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                                                            <span className="text-[10px] font-black text-cyan-400 uppercase tracking-widest">Text Extracted</span>
                                                         </div>
                                                     )}
                                                 </div>
@@ -638,14 +666,42 @@ const Documents = () => {
                                             className="group flex items-center gap-8 p-6 rounded-3xl bg-dark-900/40 border border-white/5 hover:border-white/10 hover:bg-dark-900/60 transition-all duration-300 relative overflow-hidden shadow-lg"
                                         >
                                             {/* Subtle Glow */}
-                                            <div className="absolute left-0 top-0 w-1 h-full bg-primary-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            <div className="flex items-center gap-2">
+                                                {/* List View Reprocess Button */}
+                                                {(doc.status === 'failed' || (doc.status === 'extracted' && !doc.extracted_text)) && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleReprocess(doc.id);
+                                                        }}
+                                                        className="p-2 bg-red-500/10 hover:bg-red-500/20 rounded-xl text-red-400 transition-colors border border-red-500/20"
+                                                        title="Reprocess Extraction"
+                                                    >
+                                                        <RefreshCw className="w-4 h-4" />
+                                                    </button>
+                                                )}
+
+                                                {/* List View Synthesize Button */}
+                                                {(doc.status === 'extracted' || doc.status === 'ready_for_synthesis') && doc.extracted_text && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleSynthesize(doc.id);
+                                                        }}
+                                                        className="p-2 bg-cyan-500/10 hover:bg-cyan-500/20 rounded-xl text-cyan-400 transition-colors border border-cyan-500/20"
+                                                        title="Synthesize Knowledge Graph"
+                                                    >
+                                                        <Network className="w-4 h-4" />
+                                                    </button>
+                                                )}
+                                            </div>
 
                                             <div className="p-4 rounded-xl bg-dark-950 border border-white/5 shrink-0 shadow-lg group-hover:border-white/10 transition-colors">
-                                                {doc.file_type === 'pdf' ? (
+                                                {(doc.file_type?.toLowerCase() === 'pdf' || (doc.filename && doc.filename.toLowerCase().endsWith('.pdf'))) ? (
                                                     <FileText className="w-8 h-8 text-primary-400" />
-                                                ) : doc.file_type === 'link' ? (
+                                                ) : doc.file_type?.toLowerCase() === 'link' ? (
                                                     <Globe className="w-8 h-8 text-cyan-400" />
-                                                ) : (doc.file_type === 'markdown' || doc.file_type === 'text') ? (
+                                                ) : (doc.file_type?.toLowerCase() === 'markdown' || doc.file_type?.toLowerCase() === 'text') ? (
                                                     <FileCode className="w-8 h-8 text-amber-400" />
                                                 ) : (
                                                     <ImageIcon className="w-8 h-8 text-fuchsia-400" />

@@ -1,53 +1,92 @@
-import React from 'react';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
+import * as React from "react"
 
-/**
- * Utility for merging Tailwind classes with proper conflict resolution.
- * @param  {...any} inputs - Class names or arrays/objects of classes.
- * @returns {string} The merged class string.
- */
-function cn(...inputs) {
-    return twMerge(clsx(inputs));
+import { cn } from "@/lib/utils"
+
+function Card({ className, ...props }) {
+    return (
+        <div
+            data-slot="card"
+            className={cn(
+                "bg-card text-card-foreground flex flex-col gap-6 rounded-xl border py-6 shadow-sm",
+                className
+            )}
+            {...props}
+        />
+    )
 }
 
-/**
- * Reusable Premium Card Component.
- * 
- * Provides a standardized container with optional header, icon, and action slots.
- * Follows the 'glass' and 'premium' aesthetic of the application.
- * 
- * @param {Object} props - Component properties.
- * @param {React.ReactNode} props.children - Interior content of the card.
- * @param {string} [props.className] - Additional CSS classes.
- * @param {string} [props.title] - Bold header text.
- * @param {string} [props.subtitle] - Muted secondary text.
- * @param {React.ElementType} [props.icon] - Lucide icon component.
- * @param {React.ReactNode} [props.action] - Component/Button to display on the right side of the header.
- * @returns {JSX.Element} The rendered card component.
- */
-const Card = ({ children, className, title, subtitle, icon: Icon, action }) => {
+function CardHeader({ className, ...props }) {
     return (
-        <div className={cn("card-premium", className)}>
-            {(title || Icon || action) && (
-                <div className="flex items-center justify-between mb-6">
-                    <div className="flex items-center gap-3">
-                        {Icon && (
-                            <div className="w-10 h-10 rounded-xl bg-primary-500/10 flex items-center justify-center border border-primary-500/20">
-                                <Icon className="w-5 h-5 text-primary-400" />
-                            </div>
-                        )}
-                        <div>
-                            {title && <h3 className="text-lg font-bold text-white tracking-tight">{title}</h3>}
-                            {subtitle && <p className="text-sm text-dark-400">{subtitle}</p>}
-                        </div>
-                    </div>
-                    {action && <div>{action}</div>}
-                </div>
+        <div
+            data-slot="card-header"
+            className={cn(
+                "@container/card-header grid auto-rows-min grid-rows-[auto_auto] items-start gap-1.5 px-6 has-data-[slot=card-action]:grid-cols-[1fr_auto] [.border-b]:pb-6",
+                className
             )}
-            {children}
-        </div>
-    );
-};
+            {...props}
+        />
+    )
+}
 
-export default Card;
+function CardTitle({ className, ...props }) {
+    return (
+        <div
+            data-slot="card-title"
+            className={cn("leading-none font-semibold", className)}
+            {...props}
+        />
+    )
+}
+
+function CardDescription({ className, ...props }) {
+    return (
+        <div
+            data-slot="card-description"
+            className={cn("text-muted-foreground text-sm", className)}
+            {...props}
+        />
+    )
+}
+
+function CardAction({ className, ...props }) {
+    return (
+        <div
+            data-slot="card-action"
+            className={cn(
+                "col-start-2 row-span-2 row-start-1 self-start justify-self-end",
+                className
+            )}
+            {...props}
+        />
+    )
+}
+
+function CardContent({ className, ...props }) {
+    return (
+        <div
+            data-slot="card-content"
+            className={cn("px-6", className)}
+            {...props}
+        />
+    )
+}
+
+function CardFooter({ className, ...props }) {
+    return (
+        <div
+            data-slot="card-footer"
+            className={cn("flex items-center px-6 [.border-t]:pt-6", className)}
+            {...props}
+        />
+    )
+}
+
+export {
+    Card,
+    CardHeader,
+    CardFooter,
+    CardTitle,
+    CardAction,
+    CardDescription,
+    CardContent,
+}

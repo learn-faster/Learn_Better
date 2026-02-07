@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings as SettingsIcon, Save, X, Bot, Key, Bell, Mail } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import Card from './ui/Card';
+import { Card } from './ui/card';
 import api from '../services/api';
 
 /**

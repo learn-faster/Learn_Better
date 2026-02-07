@@ -26,7 +26,7 @@ import ConceptService from '../services/concepts';
 import ResourceService from '../services/resources';
 import useTimerStore from '../stores/useTimerStore';
 import useDocumentStore from '../stores/useDocumentStore';
-import Card from '../components/ui/Card';
+import { Card } from '../components/ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
 
 /**

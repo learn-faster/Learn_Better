@@ -13,7 +13,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import useFlashcardStore from '../stores/useFlashcardStore';
 import useStudyStore from '../stores/useStudyStore';
 import StudyCard from '../components/study/StudyCard';
-import Card from '../components/ui/Card';
+import { Card } from '../components/ui/card';
 import StudyTimer from '../components/ui/Timer';
 
 /**

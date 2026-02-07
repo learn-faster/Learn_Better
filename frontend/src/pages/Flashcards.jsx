@@ -10,7 +10,7 @@ import {
     Calendar
 } from 'lucide-react';
 import useFlashcardStore from '../stores/useFlashcardStore';
-import Card from '../components/ui/Card';
+import { Card } from '../components/ui/card';
 import FlashcardCreator from '../components/flashcards/FlashcardCreator';
 
 /**

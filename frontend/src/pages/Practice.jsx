@@ -19,7 +19,7 @@ import useFlashcardStore from '../stores/useFlashcardStore';
 import useStudyStore from '../stores/useStudyStore';
 import Flashcards from './Flashcards';
 import Study from './Study';
-import Card from '../components/ui/Card';
+import { Card } from '../components/ui/card';
 
 /**
  * Combined Practice Hub.

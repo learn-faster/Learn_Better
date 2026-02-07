@@ -29,7 +29,7 @@ import {
     Filler
 } from 'chart.js';
 import { Line, Bar, Pie, Doughnut } from 'react-chartjs-2';
-import Card from '../components/ui/Card';
+import { Card } from '../components/ui/card';
 import api from '../services/api';
 import ForgettingCurve from '../components/analytics/ForgettingCurve';
 import LearningVelocity from '../components/analytics/LearningVelocity';
