@@ -13,15 +13,25 @@ else
 	DOCKER_CMD = $(DOCKER_COMPOSE)
 endif
 
-.PHONY: help backend frontend both docker-up docker-down
+.PHONY: help setup db-init backend frontend both docker-up docker-down
 
 help:
 	@echo "Available targets:"
+	@echo "  make setup        - Copy .env.example to .env and install deps"
+	@echo "  make db-init      - Initialize ORM tables"
 	@echo "  make backend      - Start the FastAPI backend"
 	@echo "  make frontend     - Start the Vite frontend"
 	@echo "  make both         - Start both frontend and backend"
 	@echo "  make docker-up    - Start Docker services (default ENV=windows, use ENV=wsl for WSL)"
 	@echo "  make docker-down  - Stop Docker services"
+
+setup:
+	if [ ! -f .env ]; then cp .env.example .env; fi
+	uv sync
+	cd $(FRONTEND_DIR) && npm install
+
+db-init:
+	uv run python -c "from src.database.init_db import initialize_orm_tables; print(initialize_orm_tables())"
 
 backend:
 	uv run uvicorn main:app --reload --port $(BACKEND_PORT)
