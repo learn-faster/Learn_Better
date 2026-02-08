@@ -1,9 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MessageSquare, Sparkles, Settings as SettingsIcon, Wrench, ClipboardCheck, X, ChevronUp } from 'lucide-react';
+import { MessageSquare, Sparkles, Settings as SettingsIcon, X, ChevronUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import AgentChat from './AgentChat';
 import AgentOnboarding from './AgentOnboarding';
-import AgentTools from './AgentTools';
 import AgentSettings from './AgentSettings';
 import AgentWelcome from './AgentWelcome';
 import { agentApi } from '../../services/agent';
@@ -139,20 +138,20 @@ const AgentDock = () => {
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 30 }}
-            className="fixed bottom-20 right-6 z-[110] w-[400px] max-w-[92vw] h-[72vh] rounded-3xl bg-dark-950/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col agent-dock-panel"
+            className="fixed bottom-20 right-6 z-[110] w-[440px] md:w-[460px] max-w-[94vw] h-[76vh] rounded-[28px] bg-dark-950/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col agent-dock-panel"
           >
-            <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white">
+            <div className="px-5 py-4 border-b border-white/5 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
                   <MessageSquare className="w-4 h-4" />
                 </div>
                 <div>
-                  <p className="text-sm font-semibold text-white">Goal Agent</p>
-                  <div className="flex items-center gap-2 mt-0.5">
+                  <p className="text-sm font-semibold text-white tracking-wide">Goal Agent</p>
+                  <div className="flex flex-wrap items-center gap-2 mt-1">
                     {badges.map((b, idx) => (
                       <span
                         key={idx}
-                        className={`text-[10px] px-2 py-0.5 rounded-full ${b.ok ? 'bg-emerald-500/20 text-emerald-200' : 'bg-amber-500/20 text-amber-200'}`}
+                        className={`text-[10px] px-2 py-1 rounded-full ${b.ok ? 'bg-emerald-500/15 text-emerald-200' : 'bg-amber-500/15 text-amber-200'}`}
                       >
                         {b.label}
                       </span>
@@ -165,10 +164,9 @@ const AgentDock = () => {
               </button>
             </div>
 
-            <div className="px-3 py-2 border-b border-white/5 flex gap-2">
+            <div className="px-5 py-3 border-b border-white/5 flex gap-2">
               <TabButton label="Chat" icon={MessageSquare} active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} />
               <TabButton label="Onboarding" icon={Sparkles} active={activeTab === 'onboarding'} onClick={() => setActiveTab('onboarding')} />
-              <TabButton label="Tools" icon={Wrench} active={activeTab === 'tools'} onClick={() => setActiveTab('tools')} />
               <TabButton label="Settings" icon={SettingsIcon} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
             </div>
 
@@ -177,11 +175,10 @@ const AgentDock = () => {
               {activeTab === 'onboarding' && (
                 <AgentOnboarding onComplete={handleOnboardingComplete} onOpenSettings={() => setActiveTab('settings')} />
               )}
-              {activeTab === 'tools' && <AgentTools status={status} />}
               {activeTab === 'settings' && <AgentSettings onSaved={refreshStatus} />}
             </div>
 
-            <div className="px-4 py-2 border-t border-white/5 flex items-center justify-between text-[10px] text-dark-500">
+            <div className="px-5 py-3 border-t border-white/5 flex items-center justify-between text-[10px] text-dark-500">
               <span>Guardrails: Soft domain</span>
               <button onClick={startOnboarding} className="text-primary-300 hover:text-primary-200">Rerun onboarding</button>
             </div>
@@ -195,7 +192,7 @@ const AgentDock = () => {
 const TabButton = ({ label, icon: Icon, active, onClick }) => (
   <button
     onClick={onClick}
-    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${active ? 'bg-primary-500/20 text-primary-300' : 'text-dark-400 hover:text-white hover:bg-white/5'}`}
+    className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-colors ${active ? 'bg-primary-500/20 text-primary-200 border border-primary-500/30' : 'text-dark-400 hover:text-white hover:bg-white/5 border border-transparent'}`}
   >
     <Icon className="w-3.5 h-3.5" />
     {label}

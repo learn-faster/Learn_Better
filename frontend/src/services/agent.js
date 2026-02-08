@@ -13,5 +13,6 @@ export const agentApi = {
   fitbitRefresh: () => api.post('/fitbit/refresh'),
   history: () => api.get('/goals/agent/history'),
   negotiateSummary: () => api.get('/goals/agent/negotiation-summary'),
-  emailLogs: (params) => api.get('/goals/agent/email/logs', { params })
+  emailLogs: (params) => api.get('/goals/agent/email/logs', { params }),
+  saveDailyPlanEntry: (payload) => api.post('/goals/daily-plan/entries', payload)
 };

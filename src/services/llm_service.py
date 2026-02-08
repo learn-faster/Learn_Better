@@ -347,17 +347,44 @@ class LLMService:
         Returns a client configured for embeddings based on settings.embedding_provider.
         """
         provider = settings.embedding_provider.lower()
-        
+        api_key = settings.embedding_api_key or ""
+        base_url = settings.embedding_base_url
+
         if provider == "openai":
+            effective_key = api_key or settings.openai_api_key
+            if not effective_key:
+                raise ValueError("OpenAI embedding provider selected but OPENAI_API_KEY is missing.")
             return AsyncOpenAI(
-                api_key=settings.openai_api_key,
-                http_client=httpx.AsyncClient(trust_env=False)
+                api_key=effective_key,
+                http_client=httpx.AsyncClient(trust_env=True)
             )
         elif provider == "ollama":
-             return AsyncOpenAI(
-                base_url=f"{settings.ollama_base_url}/v1",
+            return AsyncOpenAI(
+                base_url=f"{(base_url or settings.ollama_base_url).rstrip('/')}/v1",
                 api_key="ollama",
-                http_client=httpx.AsyncClient(trust_env=False)
+                http_client=httpx.AsyncClient(trust_env=True)
+            )
+        elif provider in {"openrouter", "together", "fireworks", "mistral", "deepseek", "perplexity", "huggingface", "custom"}:
+            default_base = {
+                "openrouter": "https://openrouter.ai/api/v1",
+                "together": "https://api.together.xyz/v1",
+                "fireworks": "https://api.fireworks.ai/inference/v1",
+                "mistral": "https://api.mistral.ai/v1",
+                "deepseek": "https://api.deepseek.com/v1",
+                "perplexity": "https://api.perplexity.ai",
+                "huggingface": None,
+                "custom": None
+            }.get(provider)
+
+            effective_base = (base_url or default_base)
+            if not effective_base:
+                raise ValueError(f"{provider} embedding provider requires a base_url.")
+            if not api_key:
+                raise ValueError(f"{provider} embedding provider requires an API key.")
+            return AsyncOpenAI(
+                base_url=effective_base.rstrip('/'),
+                api_key=api_key,
+                http_client=httpx.AsyncClient(trust_env=True)
             )
         else:
             # Fallback to default client if same provider, or raise

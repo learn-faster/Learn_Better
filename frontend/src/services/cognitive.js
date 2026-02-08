@@ -37,7 +37,7 @@ const getSettings = async (userId = 'default_user') => {
  * Updates user's learning calibration settings.
  */
 const updateSettings = async (settings, userId = 'default_user') => {
-    return api.post(`/cognitive/settings?user_id=${userId}`, settings);
+    return api.patch(`/cognitive/settings?user_id=${userId}`, settings);
 };
 
 export default {

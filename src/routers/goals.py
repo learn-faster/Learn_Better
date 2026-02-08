@@ -15,7 +15,7 @@ from src.models.orm import Goal, FocusSession, DailyPlanEntry, AgentEmailMessage
 from src.models.schemas import (
     GoalCreate, GoalUpdate, GoalResponse,
     FocusSessionCreate, FocusSessionEnd, FocusSessionResponse,
-    DailyPlanResponse, DailyPlanEntryUpdate, DailyPlanHistoryResponse
+    DailyPlanResponse, DailyPlanEntryUpdate, DailyPlanEntryCreate, DailyPlanHistoryResponse
 )
 
 router = APIRouter(prefix="/api/goals", tags=["goals"])
@@ -67,6 +67,40 @@ def update_daily_plan_entry(entry_id: str, payload: DailyPlanEntryUpdate, db: Se
     db.refresh(entry)
     return {
         "id": entry.id,
+        "completed": entry.completed,
+        "completed_at": entry.completed_at
+    }
+
+
+@router.post("/daily-plan/entries")
+def create_daily_plan_entry(
+    payload: DailyPlanEntryCreate,
+    db: Session = Depends(get_db),
+    user_id: str = "default_user"
+):
+    plan_date = payload.date or datetime.utcnow().date()
+    entry = DailyPlanEntry(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        date=plan_date,
+        title=payload.title,
+        item_type=payload.item_type,
+        goal_id=payload.goal_id,
+        planned_minutes=payload.duration_minutes,
+        completed=False,
+        notes=payload.notes
+    )
+    db.add(entry)
+    db.commit()
+    db.refresh(entry)
+    return {
+        "id": entry.id,
+        "date": entry.date,
+        "title": entry.title,
+        "item_type": entry.item_type,
+        "duration_minutes": entry.planned_minutes,
+        "goal_id": entry.goal_id,
+        "notes": entry.notes,
         "completed": entry.completed,
         "completed_at": entry.completed_at
     }

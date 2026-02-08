@@ -22,8 +22,8 @@ const features = [
 const AgentWelcome = ({ onStart, onSkip }) => {
   return (
     <div className="fixed inset-0 z-[130] bg-dark-950/95 backdrop-blur-2xl overflow-hidden">
-      <div className="absolute inset-0 universe-stars opacity-70" />
-      <div className="absolute inset-0 bg-gradient-to-br from-primary-500/10 via-transparent to-cyan-500/10" />
+      <div className="absolute inset-0 universe-stars opacity-80" />
+      <div className="absolute inset-0 bg-gradient-to-br from-primary-500/10 via-transparent to-cyan-500/15" />
 
       <div className="relative z-10 h-full w-full max-w-6xl mx-auto px-6 py-10 flex flex-col">
         <div className="flex items-center justify-between">

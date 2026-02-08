@@ -239,7 +239,9 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 os.makedirs("data/screenshots", exist_ok=True)
 app.mount("/screenshots", StaticFiles(directory="data/screenshots"), name="screenshots")
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads") # Mount uploads
-app.mount("/extracted_images", StaticFiles(directory="data/extracted_images"), name="extracted_images")  # Multimodal assets
+extracted_images_dir = "data/extracted_images"
+os.makedirs(extracted_images_dir, exist_ok=True)
+app.mount("/extracted_images", StaticFiles(directory=extracted_images_dir), name="extracted_images")  # Multimodal assets
 
 @app.get("/")
 async def root():

@@ -24,6 +24,10 @@ class SettingsUpdate(BaseModel):
     email_streak_alert: Optional[bool] = None
     email_weekly_digest: Optional[bool] = None
     llm_config: Optional[Dict[str, Any]] = None
+    embedding_provider: Optional[str] = None
+    embedding_model: Optional[str] = None
+    embedding_api_key: Optional[str] = None
+    embedding_base_url: Optional[str] = None
 
 
 @router.get("/overview")
@@ -73,7 +77,11 @@ def get_settings(user_id: str = "default_user", db: Session = Depends(get_db)):
         "email_weekly_digest": settings.email_weekly_digest,
         
         # AI Config
-        "llm_config": settings.llm_config
+        "llm_config": getattr(settings, "llm_config", None),
+        "embedding_provider": getattr(settings, "embedding_provider", None),
+        "embedding_model": getattr(settings, "embedding_model", None),
+        "embedding_api_key": getattr(settings, "embedding_api_key", ""),
+        "embedding_base_url": getattr(settings, "embedding_base_url", None)
     }
 
 
@@ -115,14 +123,33 @@ def update_settings(
     
     # AI Config update
     if data.llm_config is not None:
-        # Merge if exists or set new
-        if settings.llm_config is None:
-            settings.llm_config = data.llm_config
+        current_config = getattr(settings, "llm_config", None)
+        if current_config is None:
+            setattr(settings, "llm_config", data.llm_config)
         else:
-            # Shallow merge
-            new_config = dict(settings.llm_config)
+            new_config = dict(current_config)
             new_config.update(data.llm_config)
-            settings.llm_config = new_config
+            setattr(settings, "llm_config", new_config)
+
+    # Embedding configuration (global runtime settings)
+    if data.embedding_provider:
+        settings.embedding_provider = data.embedding_provider
+    if data.embedding_model:
+        settings.embedding_model = data.embedding_model
+    if data.embedding_api_key is not None:
+        settings.embedding_api_key = data.embedding_api_key
+    if data.embedding_base_url:
+        settings.embedding_base_url = data.embedding_base_url
+
+    # Store embedding config in user settings for visibility
+    if data.embedding_provider or data.embedding_model or data.embedding_base_url:
+        config = getattr(settings, "llm_config", None) or {}
+        config["embeddings"] = {
+            "provider": data.embedding_provider or config.get("embeddings", {}).get("provider"),
+            "model": data.embedding_model or config.get("embeddings", {}).get("model"),
+            "base_url": data.embedding_base_url or config.get("embeddings", {}).get("base_url")
+        }
+        setattr(settings, "llm_config", config)
     
     db.commit()
     return {"status": "ok", "message": "Settings updated successfully"}

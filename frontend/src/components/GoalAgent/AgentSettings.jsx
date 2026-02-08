@@ -113,7 +113,7 @@ const AgentSettings = ({ onClose, onSaved }) => {
   };
 
   return (
-    <div className="h-full overflow-y-auto px-4 py-4">
+    <div className="h-full overflow-y-auto px-5 py-5 custom-scrollbar">
       <div className="space-y-6">
         {error && (
           <div className="p-3 bg-red-500/10 text-red-300 text-sm rounded-lg border border-red-500/20">
@@ -127,6 +127,11 @@ const AgentSettings = ({ onClose, onSaved }) => {
           </div>
         ) : (
           <>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <p className="text-sm font-semibold text-white">Agent Configuration</p>
+              <p className="text-[11px] text-dark-400 mt-1">Tune how the agent reasons, connects to tools, and checks in.</p>
+            </div>
+
             <Section title="Guardrails" icon={ShieldCheck}>
               <div className="flex items-center justify-between">
                 <span className="text-sm text-dark-300">Mode</span>
@@ -193,7 +198,7 @@ const AgentSettings = ({ onClose, onSaved }) => {
                 <div className="mt-3 text-xs text-dark-500">Fitbit not connected. Use onboarding or Settings to connect.</div>
               )}
               {connected && (
-                <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-dark-300 space-y-2">
+                <div className="mt-3 rounded-2xl border border-white/10 bg-white/5 p-4 text-xs text-dark-300 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="flex items-center gap-2 text-primary-200">
                       <Sparkles className="w-3.5 h-3.5" /> Readiness
@@ -209,7 +214,7 @@ const AgentSettings = ({ onClose, onSaved }) => {
                   <button
                     onClick={handleRefreshFitbit}
                     disabled={refreshing}
-                    className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-primary-200"
+                    className="mt-2 inline-flex items-center gap-2 px-3 py-2 rounded-xl text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-primary-200"
                   >
                     {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
                     Refresh now
@@ -277,7 +282,7 @@ const AgentSettings = ({ onClose, onSaved }) => {
             <button
               onClick={handleSave}
               disabled={isSaving}
-              className="w-full py-2.5 bg-gradient-to-r from-primary-500 to-indigo-500 text-white rounded-lg hover:from-primary-400 hover:to-indigo-400 disabled:opacity-70 flex items-center justify-center gap-2 font-medium"
+              className="w-full py-3 bg-gradient-to-r from-primary-500 to-indigo-500 text-white rounded-2xl hover:from-primary-400 hover:to-indigo-400 disabled:opacity-70 flex items-center justify-center gap-2 font-medium"
             >
               {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
               Save Configuration

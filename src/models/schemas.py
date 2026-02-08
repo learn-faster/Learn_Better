@@ -889,6 +889,15 @@ class DailyPlanEntryUpdate(BaseModel):
     completed: bool = True
 
 
+class DailyPlanEntryCreate(BaseModel):
+    title: str
+    item_type: str = "study"
+    duration_minutes: int = 30
+    notes: Optional[str] = None
+    goal_id: Optional[str] = None
+    date: Optional[date] = None
+
+
 class DailyPlanHistoryItem(BaseModel):
     id: str
     date: date

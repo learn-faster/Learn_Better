@@ -114,6 +114,8 @@ class Settings(BaseSettings):
     embedding_provider: str = "ollama"  # openai, ollama
     embedding_model: str = "embeddinggemma:latest"
     ollama_embedding_model: Optional[str] = None  # Deprecated, alias for backward compat if needed
+    embedding_api_key: str = ""
+    embedding_base_url: Optional[str] = None
 
     # Granular Model Settings (Optional - overrides llm_model if set)
     extraction_model: Optional[str] = None

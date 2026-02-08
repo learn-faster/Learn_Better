@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Settings as SettingsIcon, Save, X, Bot, Key, Bell, Mail, BrainCircuit, Zap, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import api from '../services/api';
+import cognitiveService from '../services/cognitive';
 
 /**
  * Global Settings Drawer
@@ -19,6 +20,10 @@ const Settings = ({ isOpen, onClose }) => {
     const [apiKey, setApiKey] = useState('');
     const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
     const [model, setModel] = useState('qwen/qwen3-32b');
+    const [embeddingProvider, setEmbeddingProvider] = useState('ollama');
+    const [embeddingModel, setEmbeddingModel] = useState('embeddinggemma:latest');
+    const [embeddingApiKey, setEmbeddingApiKey] = useState('');
+    const [embeddingBaseUrl, setEmbeddingBaseUrl] = useState('http://localhost:11434');
 
     // Notification State
     const [email, setEmail] = useState('');
@@ -62,9 +67,10 @@ const Settings = ({ isOpen, onClose }) => {
 
         const fetchSettings = async () => {
             try {
-                const [settingsData, statusData] = await Promise.all([
+                const [settingsData, statusData, cognitiveData] = await Promise.all([
                     api.get('/goals/agent/settings'),
-                    api.get('/fitbit/status')
+                    api.get('/fitbit/status'),
+                    cognitiveService.getSettings()
                 ]);
 
                 if (settingsData.email) setEmail(settingsData.email);
@@ -84,6 +90,10 @@ const Settings = ({ isOpen, onClose }) => {
                 if (settingsData.fitbit_client_secret) setFitbitClientSecret(settingsData.fitbit_client_secret);
                 if (settingsData.fitbit_redirect_uri) setFitbitRedirectUri(settingsData.fitbit_redirect_uri);
                 setConnected(statusData.connected || false);
+                if (cognitiveData?.embedding_provider) setEmbeddingProvider(cognitiveData.embedding_provider);
+                if (cognitiveData?.embedding_model) setEmbeddingModel(cognitiveData.embedding_model);
+                if (cognitiveData?.embedding_api_key !== undefined) setEmbeddingApiKey(cognitiveData.embedding_api_key || '');
+                if (cognitiveData?.embedding_base_url) setEmbeddingBaseUrl(cognitiveData.embedding_base_url);
             } catch (err) {
                 console.error("Failed to load settings:", err);
             } finally {
@@ -154,6 +164,12 @@ const Settings = ({ isOpen, onClose }) => {
                 fitbit_client_secret: fitbitClientSecret,
                 fitbit_redirect_uri: fitbitRedirectUri,
                 llm_config: llmConfig
+            });
+            await cognitiveService.updateSettings({
+                embedding_provider: embeddingProvider,
+                embedding_model: embeddingModel,
+                embedding_api_key: embeddingApiKey,
+                embedding_base_url: embeddingBaseUrl
             });
             onClose?.();
         } catch (err) {
@@ -281,6 +297,53 @@ const Settings = ({ isOpen, onClose }) => {
                                                         placeholder="e.g. gpt-4o, llama3"
                                                         className={inputClass}
                                                     />
+                                                </SectionCard>
+
+                                                <SectionCard title="Embeddings" description="Configure the provider and model used for document ingestion.">
+                                                    <div className="space-y-3">
+                                                        <select
+                                                            value={embeddingProvider}
+                                                            onChange={(e) => setEmbeddingProvider(e.target.value)}
+                                                            className={inputClass}
+                                                        >
+                                                            <option value="openai">OpenAI</option>
+                                                            <option value="ollama">Ollama (Local)</option>
+                                                            <option value="openrouter">OpenRouter</option>
+                                                            <option value="together">Together</option>
+                                                            <option value="fireworks">Fireworks</option>
+                                                            <option value="mistral">Mistral</option>
+                                                            <option value="deepseek">DeepSeek</option>
+                                                            <option value="perplexity">Perplexity</option>
+                                                            <option value="huggingface">Hugging Face</option>
+                                                            <option value="custom">OpenAI-Compatible</option>
+                                                        </select>
+                                                        <input
+                                                            type="text"
+                                                            value={embeddingModel}
+                                                            onChange={(e) => setEmbeddingModel(e.target.value)}
+                                                            placeholder="e.g. text-embedding-3-large"
+                                                            className={inputClass}
+                                                        />
+                                                        {embeddingProvider !== 'ollama' && (
+                                                            <input
+                                                                type="password"
+                                                                value={embeddingApiKey}
+                                                                onChange={(e) => setEmbeddingApiKey(e.target.value)}
+                                                                placeholder="Embedding API key"
+                                                                className={inputClass}
+                                                            />
+                                                        )}
+                                                        {(embeddingProvider === 'ollama' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface','custom'].includes(embeddingProvider)) && (
+                                                            <input
+                                                                type="text"
+                                                                value={embeddingBaseUrl}
+                                                                onChange={(e) => setEmbeddingBaseUrl(e.target.value)}
+                                                                placeholder="Base URL"
+                                                                className={inputClass}
+                                                            />
+                                                        )}
+                                                        <p className="text-[10px] text-dark-400">Use an OpenAI-compatible endpoint for providers not listed.</p>
+                                                    </div>
                                                 </SectionCard>
                                             </div>
                                         )}

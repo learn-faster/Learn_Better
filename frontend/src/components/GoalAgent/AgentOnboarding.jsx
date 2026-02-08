@@ -56,13 +56,14 @@ const AgentOnboarding = ({ onComplete, onOpenSettings }) => {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="px-4 py-3 border-b border-white/5">
-        <p className="text-sm font-semibold text-white">Personalize your agent</p>
-        <div className="mt-2 flex gap-2">
+      <div className="px-5 py-4 border-b border-white/5">
+        <p className="text-sm font-semibold text-white tracking-wide">Personalize your agent</p>
+        <p className="text-[11px] text-dark-400 mt-1">Help me build a pacing model that fits your goals and energy.</p>
+        <div className="mt-3 flex gap-2">
           {steps.map((label, idx) => (
             <div
               key={label}
-              className={`text-[10px] px-2 py-1 rounded-full ${idx === step ? 'bg-primary-500/20 text-primary-200' : 'bg-white/5 text-dark-500'}`}
+              className={`text-[10px] px-3 py-1 rounded-full border ${idx === step ? 'bg-primary-500/20 text-primary-200 border-primary-500/40' : 'bg-white/5 text-dark-500 border-white/10'}`}
             >
               {label}
             </div>
@@ -70,40 +71,47 @@ const AgentOnboarding = ({ onComplete, onOpenSettings }) => {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-6">
+      <div className="flex-1 overflow-y-auto px-5 py-5 space-y-6 custom-scrollbar">
         {step === 0 && (
           <div className="space-y-4">
-            <Field label="Short‑term goal (days)">
-              <input className={inputClass} value={goals.short} onChange={(e) => setGoals({ ...goals, short: e.target.value })} placeholder="e.g. Finish chapter 2" />
-            </Field>
-            <Field label="Near‑term goal (weeks)">
-              <input className={inputClass} value={goals.near} onChange={(e) => setGoals({ ...goals, near: e.target.value })} placeholder="e.g. Complete ML basics" />
-            </Field>
-            <Field label="Long‑term goal (months+)">
-              <input className={inputClass} value={goals.long} onChange={(e) => setGoals({ ...goals, long: e.target.value })} placeholder="e.g. Build portfolio project" />
-            </Field>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+              <p className="text-xs text-dark-400">Define what “success” looks like at each time horizon.</p>
+              <div className="mt-4 space-y-4">
+                <Field label="Short‑term goal (days)">
+                  <input className={inputClass} value={goals.short} onChange={(e) => setGoals({ ...goals, short: e.target.value })} placeholder="e.g. Finish chapter 2" />
+                </Field>
+                <Field label="Near‑term goal (weeks)">
+                  <input className={inputClass} value={goals.near} onChange={(e) => setGoals({ ...goals, near: e.target.value })} placeholder="e.g. Complete ML basics" />
+                </Field>
+                <Field label="Long‑term goal (months+)">
+                  <input className={inputClass} value={goals.long} onChange={(e) => setGoals({ ...goals, long: e.target.value })} placeholder="e.g. Build portfolio project" />
+                </Field>
+              </div>
+            </div>
           </div>
         )}
 
         {step === 1 && (
           <div className="space-y-4">
-            <Field label="Available hours per week">
-              <input className={inputClass} type="number" value={weeklyHours} onChange={(e) => setWeeklyHours(e.target.value)} />
-            </Field>
-            <Field label="Focus style">
-              <select className={inputClass} value={focusStyle} onChange={(e) => setFocusStyle(e.target.value)}>
-                <option value="deep">Deep work blocks</option>
-                <option value="short">Short bursts</option>
-                <option value="mixed">Mixed schedule</option>
-              </select>
-            </Field>
-            <Field label="Preferred time">
-              <select className={inputClass} value={preferredTime} onChange={(e) => setPreferredTime(e.target.value)}>
-                <option value="morning">Morning</option>
-                <option value="afternoon">Afternoon</option>
-                <option value="evening">Evening</option>
-              </select>
-            </Field>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-4">
+              <Field label="Available hours per week">
+                <input className={inputClass} type="number" value={weeklyHours} onChange={(e) => setWeeklyHours(e.target.value)} />
+              </Field>
+              <Field label="Focus style">
+                <select className={inputClass} value={focusStyle} onChange={(e) => setFocusStyle(e.target.value)}>
+                  <option value="deep">Deep work blocks</option>
+                  <option value="short">Short bursts</option>
+                  <option value="mixed">Mixed schedule</option>
+                </select>
+              </Field>
+              <Field label="Preferred time">
+                <select className={inputClass} value={preferredTime} onChange={(e) => setPreferredTime(e.target.value)}>
+                  <option value="morning">Morning</option>
+                  <option value="afternoon">Afternoon</option>
+                  <option value="evening">Evening</option>
+                </select>
+              </Field>
+            </div>
           </div>
         )}
 
@@ -154,7 +162,7 @@ const AgentOnboarding = ({ onComplete, onOpenSettings }) => {
         )}
       </div>
 
-      <div className="p-3 border-t border-white/5 flex items-center justify-between">
+      <div className="p-4 border-t border-white/5 flex items-center justify-between">
         <button
           onClick={() => setStep((s) => Math.max(0, s - 1))}
           className="text-xs text-dark-400 hover:text-white"
@@ -165,7 +173,7 @@ const AgentOnboarding = ({ onComplete, onOpenSettings }) => {
         {step < 2 ? (
           <button
             onClick={() => setStep((s) => Math.min(2, s + 1))}
-            className="px-3 py-2 text-xs font-bold rounded-lg bg-primary-500/90 hover:bg-primary-500 text-white flex items-center gap-1"
+            className="px-4 py-2 text-xs font-bold rounded-xl bg-primary-500/90 hover:bg-primary-500 text-white flex items-center gap-1"
           >
             Next <ChevronRight className="w-4 h-4" />
           </button>
@@ -173,7 +181,7 @@ const AgentOnboarding = ({ onComplete, onOpenSettings }) => {
           <button
             onClick={saveOnboarding}
             disabled={isSaving}
-            className="px-3 py-2 text-xs font-bold rounded-lg bg-emerald-500/90 hover:bg-emerald-500 text-white flex items-center gap-1"
+            className="px-4 py-2 text-xs font-bold rounded-xl bg-emerald-500/90 hover:bg-emerald-500 text-white flex items-center gap-1"
           >
             <CheckCircle2 className="w-4 h-4" /> Finish
           </button>
