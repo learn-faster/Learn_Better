@@ -5,7 +5,7 @@ import axios from 'axios';
  * Configures the base URL for the backend and provides 
  * standardized response/error handling via interceptors.
  */
-export const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8001'; // Force IPv4 to avoid ::1 issues
+export const API_URL = import.meta.env.VITE_API_URL || ''; // Use relative path for proxy
 
 const api = axios.create({
     baseURL: API_URL + '/api',
