@@ -30,6 +30,7 @@ from src.models.schemas import LearningPath
 from src.ingestion.youtube_utils import extract_video_id, fetch_transcript
 from src.config import settings  # Added
 from src.services.weekly_digest_scheduler import run_weekly_digest_scheduler
+from src.services.negotiation_scheduler import run_negotiation_scheduler
 
 # Import new routers
 from src.routers import (
@@ -38,6 +39,7 @@ from src.routers import (
     study as study_router,
     folders as folders_router,
     analytics as analytics_router,
+    dashboard as dashboard_router,
     ai as ai_router,
     navigation as navigation_router,
     cognitive as cognitive_router,
@@ -46,7 +48,8 @@ from src.routers import (
     goals as goals_router,
     notifications as notifications_router,
     multidoc_graph as multidoc_graph_router,
-    fitbit as fitbit_router
+    fitbit as fitbit_router,
+    practice as practice_router
 )
 
 # Import Open Notebook components
@@ -107,6 +110,8 @@ async def lifespan(app: FastAPI):
     # Start weekly digest scheduler (optional)
     weekly_task = None
     weekly_stop_event = None
+    negotiation_task = None
+    negotiation_stop_event = None
     if settings.enable_weekly_digest_scheduler:
         weekly_stop_event = asyncio.Event()
         weekly_task = asyncio.create_task(
@@ -120,6 +125,15 @@ async def lifespan(app: FastAPI):
         app.state.weekly_digest_task = weekly_task
         app.state.weekly_digest_stop = weekly_stop_event
         logger.info("Weekly digest scheduler started.")
+
+    # Start daily negotiation scheduler
+    negotiation_stop_event = asyncio.Event()
+    negotiation_task = asyncio.create_task(
+        run_negotiation_scheduler(negotiation_stop_event)
+    )
+    app.state.negotiation_task = negotiation_task
+    app.state.negotiation_stop = negotiation_stop_event
+    logger.info("Negotiation scheduler started.")
     
     # Start Open Notebook Command Worker
     worker_process = None
@@ -147,6 +161,13 @@ async def lifespan(app: FastAPI):
     if weekly_task:
         try:
             await weekly_task
+        except Exception:
+            pass
+    if negotiation_stop_event:
+        negotiation_stop_event.set()
+    if negotiation_task:
+        try:
+            await negotiation_task
         except Exception:
             pass
 
@@ -196,6 +217,7 @@ app.include_router(flashcards_router.router)
 app.include_router(study_router.router)
 app.include_router(folders_router.router)
 app.include_router(analytics_router.router)
+app.include_router(dashboard_router.router)
 app.include_router(ai_router.router)
 app.include_router(navigation_router.router)
 app.include_router(cognitive_router.router)
@@ -204,6 +226,7 @@ app.include_router(resources_router.router)
 app.include_router(goals_router.router)
 app.include_router(notifications_router.router)
 app.include_router(multidoc_graph_router.router)
+app.include_router(practice_router.router)
 app.include_router(fitbit_router.router, prefix="/api/fitbit")
 app.include_router(notebook_router, prefix="/api")
 

@@ -87,7 +87,9 @@ async def run_weekly_digest_scheduler(day_of_week: int, hour: int, minute: int, 
 
             if sent > 0:
                 db.commit()
-            logger.info(f"[WeeklyDigestScheduler] Run completed. Sent: {sent}")
+                logger.info(f"[WeeklyDigestScheduler] Run completed. Sent: {sent}")
+            else:
+                logger.debug("[WeeklyDigestScheduler] Run completed. Sent: 0")
         except Exception as e:
             logger.error(f"[WeeklyDigestScheduler] Error during digest run: {e}")
         finally:

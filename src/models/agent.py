@@ -28,11 +28,16 @@ class AgentSettings(BaseModel):
     screenshot_interval_min: int = 15
     check_in_frequency_hours: int = 4
     resend_api_key: Optional[str] = None
+    resend_reply_domain: Optional[str] = None
     email: Optional[str] = None
     use_biometrics: bool = False
+    biometrics_mode: Literal["insights", "intensity", "scheduling"] = "intensity"
+    auto_refresh_fitbit: bool = True
     fitbit_client_id: Optional[str] = None
     fitbit_client_secret: Optional[str] = None
     fitbit_redirect_uri: Optional[str] = None
+    bedtime: Optional[str] = None
+    email_negotiation_enabled: Optional[bool] = True
     # Notification preferences (also stored on UserSettings model)
     email_daily_reminder: Optional[bool] = None
     email_streak_alert: Optional[bool] = None
@@ -66,6 +71,9 @@ class Goal(BaseModel):
     priority: int = 1
     progress: float = 0.0
     daily_target_hours: float = 0.0
+    short_term_goals: List[str] = Field(default_factory=list)
+    near_term_goals: List[str] = Field(default_factory=list)
+    long_term_goals: List[str] = Field(default_factory=list)
 
 class SessionState(BaseModel):
     """Current active session state."""
@@ -151,6 +159,10 @@ class AgentStatusResponse(BaseModel):
     email_configured: bool
     resend_configured: bool
     fitbit_connected: bool
+    readiness_score: Optional[float] = None
+    fitbit_last_sync: Optional[datetime] = None
+    biometrics_mode: Optional[str] = None
+    pending_daily_items: Optional[int] = None
     onboarding: Dict[str, Any] = Field(default_factory=dict)
 
 class AgentScreenshotRequest(BaseModel):

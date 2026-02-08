@@ -173,9 +173,16 @@ class DocumentResponse(DocumentBase):
     upload_date: datetime
     status: str = "pending"
     extracted_text: Optional[str] = None
+    raw_extracted_text: Optional[str] = None
+    filtered_extracted_text: Optional[str] = None
     ai_summary: Optional[str] = None
     reading_progress: float = 0.0
     folder_id: Optional[str] = None
+    source_url: Optional[str] = None
+    source_type: Optional[str] = None
+    content_profile: Optional[Dict[str, Any]] = None
+    ocr_status: Optional[str] = None
+    ocr_provider: Optional[str] = None
 
     # Time tracking fields
     time_spent_reading: int = 0
@@ -233,6 +240,50 @@ class TimeTrackingRequest(BaseModel):
     """Request schema for updating document reading time."""
     seconds_spent: int
     reading_progress: Optional[float] = None
+
+
+class DocumentSectionResponse(BaseModel):
+    id: str
+    document_id: int
+    section_index: int
+    title: Optional[str] = None
+    content: str
+    excerpt: Optional[str] = None
+    relevance_score: float = 0.0
+    included: bool = True
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentSectionUpdate(BaseModel):
+    included: Optional[bool] = None
+
+
+class DocumentQualityResponse(BaseModel):
+    document_id: int
+    raw_word_count: int = 0
+    filtered_word_count: int = 0
+    dedup_ratio: float = 0.0
+    boilerplate_removed_lines: int = 0
+    sections_total: int = 0
+    sections_included: int = 0
+    ocr_status: Optional[str] = None
+    ocr_provider: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class IngestionJobResponse(BaseModel):
+    id: str
+    document_id: int
+    status: str
+    phase: str
+    progress: float
+    message: Optional[str] = None
+    partial_ready: bool = False
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # ========== Flashcard Schemas ==========
@@ -309,6 +360,194 @@ class StudySessionResponse(BaseModel):
 
 
 # ========== Analytics Schemas ==========
+
+class DashboardPlanItem(BaseModel):
+    id: str
+    title: str
+    item_type: str
+    duration_minutes: int
+    goal_id: Optional[str] = None
+    notes: Optional[str] = None
+    completed: bool
+    completed_at: Optional[datetime] = None
+
+
+class DashboardPlanSummary(BaseModel):
+    items: List[DashboardPlanItem] = []
+    total_count: int = 0
+    completed_count: int = 0
+    minutes_planned: int = 0
+    minutes_completed: int = 0
+
+
+class DashboardUpcomingReview(BaseModel):
+    date: str
+    count: int
+
+
+class DashboardGoalPacingItem(BaseModel):
+    goal_id: str
+    title: str
+    deadline: Optional[datetime] = None
+    target_hours: float
+    logged_hours: float
+    remaining_hours: float
+    required_minutes_per_day: int
+    status: str
+    days_remaining: Optional[int] = None
+
+
+class DashboardFocusSummary(BaseModel):
+    minutes_today: int
+    minutes_last_7_days: int
+    practice_minutes_today: int
+    practice_minutes_last_7_days: int
+    study_minutes_today: int
+    study_minutes_last_7_days: int
+
+
+class DashboardInsight(BaseModel):
+    id: str
+    title: str
+    message: str
+    action_label: Optional[str] = None
+    action_route: Optional[str] = None
+    severity: str = "info"
+
+
+class DashboardOverviewResponse(BaseModel):
+    today_plan: DashboardPlanSummary
+    due_today: int
+    upcoming_reviews: List[DashboardUpcomingReview] = []
+    goal_pacing: List[DashboardGoalPacingItem] = []
+    focus_summary: DashboardFocusSummary
+    insights: List[DashboardInsight] = []
+    retention_rate: float
+    velocity: float
+    streak_status: dict
+
+
+class AnalyticsGoalProgressItem(BaseModel):
+    goal_id: str
+    title: str
+    deadline: Optional[datetime] = None
+    target_hours: float
+    logged_hours: float
+    progress_pct: float
+    expected_progress_pct: Optional[float] = None
+    pace_status: str
+    required_minutes_per_day: int
+    days_remaining: Optional[int] = None
+
+
+class AnalyticsGoalProgressResponse(BaseModel):
+    items: List[AnalyticsGoalProgressItem]
+
+
+class AnalyticsTimeAllocationItem(BaseModel):
+    date: str
+    focus_minutes: int
+    practice_minutes: int
+    study_minutes: int
+    total_minutes: int
+
+
+class AnalyticsTimeAllocationResponse(BaseModel):
+    items: List[AnalyticsTimeAllocationItem]
+
+
+class AnalyticsConsistencyResponse(BaseModel):
+    active_days: int
+    total_days: int
+    longest_streak: int
+    missed_days: int
+
+
+class AnalyticsRecommendation(BaseModel):
+    id: str
+    title: str
+    message: str
+    action_label: Optional[str] = None
+    action_route: Optional[str] = None
+    severity: str = "info"
+
+
+class AnalyticsRecommendationsResponse(BaseModel):
+    items: List[AnalyticsRecommendation]
+
+
+
+# ========== Practice Schemas ==========
+
+class PracticeSessionCreate(BaseModel):
+    mode: str = "focus"  # quick, focus, deep
+    goal_id: Optional[str] = None
+    curriculum_id: Optional[str] = None
+    duration_minutes: Optional[int] = Field(None, ge=5, le=180)
+
+
+class PracticeSessionItem(BaseModel):
+    id: str
+    item_type: str
+    prompt: str
+    expected_answer: Optional[str] = None
+    source_id: Optional[str] = None
+    metadata_json: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PracticeSessionStartResponse(BaseModel):
+    session_id: str
+    target_duration_minutes: int
+    items: List[PracticeSessionItem]
+    source_mix: Dict[str, int] = {}
+
+
+class PracticeItemSubmit(BaseModel):
+    item_id: str
+    response_text: Optional[str] = None
+    rating: Optional[int] = Field(None, ge=0, le=5)
+    time_taken: Optional[int] = None
+
+
+class PracticeItemResult(BaseModel):
+    score: float
+    feedback: Optional[str] = None
+    next_review: Optional[datetime] = None
+
+
+class PracticeSessionEnd(BaseModel):
+    reflection: Optional[str] = None
+    effectiveness_rating: Optional[int] = Field(None, ge=1, le=5)
+
+
+class PracticeSessionSummary(BaseModel):
+    session_id: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    mode: str
+    target_duration_minutes: int
+    items_completed: int
+    average_score: float
+    total_time_seconds: int
+    reflection: Optional[str] = None
+    effectiveness_rating: Optional[int] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PracticeHistoryItem(BaseModel):
+    session_id: str
+    start_time: datetime
+    end_time: Optional[datetime] = None
+    mode: str
+    items_completed: int
+    average_score: float
+
+
+class PracticeHistoryResponse(BaseModel):
+    items: List[PracticeHistoryItem]
 
 class ActivityLogResponse(BaseModel):
     """Schema for user activity log entries."""
@@ -408,6 +647,7 @@ class KnowledgeGraphResponse(KnowledgeGraphBase):
 class KnowledgeGraphBuildRequest(BaseModel):
     build_mode: str = Field(..., description="existing or rebuild")
     llm_config: Optional[LLMConfig] = None
+    source_mode: str = Field("filtered", description="filtered or raw")
 
 
 class KnowledgeGraphConnectionSuggestion(BaseModel):
@@ -584,6 +824,9 @@ class GoalBase(BaseModel):
     priority: int = 1  # 1=high, 2=medium, 3=low
     email_reminders: bool = True
     reminder_frequency: str = "daily"  # daily, weekly, none
+    short_term_goals: List[str] = []
+    near_term_goals: List[str] = []
+    long_term_goals: List[str] = []
 
 
 class GoalCreate(GoalBase):
@@ -602,6 +845,9 @@ class GoalUpdate(BaseModel):
     status: Optional[str] = None
     email_reminders: Optional[bool] = None
     reminder_frequency: Optional[str] = None
+    short_term_goals: Optional[List[str]] = None
+    near_term_goals: Optional[List[str]] = None
+    long_term_goals: Optional[List[str]] = None
 
 
 class GoalResponse(GoalBase):
@@ -619,6 +865,44 @@ class GoalResponse(GoalBase):
     is_on_track: Optional[bool] = True
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DailyPlanItem(BaseModel):
+    id: str
+    title: str
+    item_type: str = "study"
+    duration_minutes: int = 30
+    source_id: Optional[str] = None
+    notes: Optional[str] = None
+    completed: Optional[bool] = False
+    completed_at: Optional[datetime] = None
+
+
+class DailyPlanResponse(BaseModel):
+    date: date
+    items: List[DailyPlanItem] = []
+    readiness_score: Optional[float] = None
+    biometrics_mode: Optional[str] = None
+
+
+class DailyPlanEntryUpdate(BaseModel):
+    completed: bool = True
+
+
+class DailyPlanHistoryItem(BaseModel):
+    id: str
+    date: date
+    title: str
+    item_type: str
+    duration_minutes: int
+    goal_id: Optional[str] = None
+    notes: Optional[str] = None
+    completed: bool = False
+    completed_at: Optional[datetime] = None
+
+
+class DailyPlanHistoryResponse(BaseModel):
+    items: List[DailyPlanHistoryItem] = []
 
 
 # ========== Focus Session Schemas ==========

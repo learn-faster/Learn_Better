@@ -59,6 +59,7 @@ class ReadingTimeEstimator:
                 "difficulty_score": self._get_readability_score(metrics['text'], language),
                 "language": language,
                 "scanned_prob": metrics['scanned_prob'],
+                "page_count": metrics.get("page_count", 0),
                 "metrics": {
                     "images": metrics['images'],
                     "tables": metrics['tables'],
@@ -78,6 +79,7 @@ class ReadingTimeEstimator:
         table_count = 0
         formula_count = 0
         
+        total_pages = 0
         try:
             with pdfplumber.open(file_path) as pdf:
                 total_pages = len(pdf.pages)
@@ -123,7 +125,8 @@ class ReadingTimeEstimator:
             "images": image_count,
             "tables": table_count,
             "formulas": formula_count,
-            "scanned_prob": scanned_prob
+            "scanned_prob": scanned_prob,
+            "page_count": total_pages
         }
 
     def _calculate_difficulty_multiplier(self, text: str, language: str) -> float:

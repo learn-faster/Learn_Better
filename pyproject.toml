@@ -56,6 +56,10 @@ dependencies = [
     "ai-prompter>=0.3.1",
     "tomli>=2.4.0",
     "langgraph-checkpoint-sqlite>=3.0.3",
+    "trafilatura>=1.4.0",
+    "pytesseract>=0.3.13",
+    "pdf2image>=1.17.0",
+    "pillow>=11.3.0",
 ]
 
 [tool.uv]

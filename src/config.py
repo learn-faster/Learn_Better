@@ -86,6 +86,20 @@ class Settings(BaseSettings):
     allowed_pdf_extensions: List[str] = [".pdf"]
     allowed_image_extensions: List[str] = [".jpg", ".jpeg", ".png"]
 
+    # Content filtering settings
+    filter_enable_llm: bool = True
+    filter_llm_max_sections: int = 60
+    filter_min_section_chars: int = 80
+
+    # OCR settings
+    ocr_mode: str = "local"  # local, cloud, disabled
+    ocr_max_pages: int = 8
+    ocr_cloud_fallback: bool = True
+    ocr_language: str = "eng"
+
+    # Web extraction
+    web_extraction_timeout: int = 20
+
     # LLM Settings
     llm_provider: str = "openai"  # openai, groq, ollama, openrouter
     openai_api_key: str = ""
@@ -122,6 +136,9 @@ class Settings(BaseSettings):
 
     # Fitbit OAuth
     fitbit_redirect_uri: Optional[str] = None
+
+    # Email inbound (reply-to) domain
+    email_reply_domain: Optional[str] = None
 
     @field_validator("cors_origins", mode="before")
     @classmethod

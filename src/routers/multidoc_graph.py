@@ -391,9 +391,15 @@ async def build_graph(
             llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, payload.llm_config, graph.llm_config)
             for doc_id in doc_ids:
                 doc = db.query(Document).filter(Document.id == doc_id).first()
-                if not doc or not doc.extracted_text:
+                if not doc:
+                    raise ValueError(f"Document {doc_id} not found")
+                if payload.source_mode == "raw":
+                    source_text = doc.raw_extracted_text or doc.extracted_text or ""
+                else:
+                    source_text = doc.filtered_extracted_text or doc.extracted_text or doc.raw_extracted_text or ""
+                if not source_text or not source_text.strip():
                     raise ValueError(f"Document {doc_id} has no extracted text")
-                await ingestion_engine.process_document_scoped_from_text(doc.extracted_text, doc_id, llm_config=llm_config)
+                await ingestion_engine.process_document_scoped_from_text(source_text, doc_id, llm_config=llm_config)
         else:
             raise ValueError("Invalid build_mode. Use 'existing' or 'rebuild'.")
 

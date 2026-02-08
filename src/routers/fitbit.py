@@ -4,9 +4,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 import requests
 import os
-from datetime import datetime
+from datetime import datetime, date
 from src.services.fitbit_service import FitbitService
-from src.models.fitbit import FitbitToken
+from src.models.fitbit import FitbitToken, FitbitDailyMetrics
 from src.database.orm import get_db
 from src.models.orm import UserSettings
 from src.config import settings
@@ -150,3 +150,70 @@ def get_fitbit_status(
     
     token = db.query(FitbitToken).filter(FitbitToken.user_id == user_settings.id).first()
     return {"connected": token is not None}
+
+
+@router.get("/summary")
+def get_fitbit_summary(
+    date_str: Optional[str] = None,
+    user_id: str = "default_user",
+    db: Session = Depends(get_db)
+):
+    """Return stored Fitbit daily summary, fetching if missing."""
+    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    if not user_settings:
+        return {"connected": False}
+
+    token = db.query(FitbitToken).filter(FitbitToken.user_id == user_settings.id).first()
+    if not token:
+        return {"connected": False}
+
+    target_date = date.today()
+    if date_str:
+        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    fb_service = FitbitService(token)
+    record = fb_service.get_or_refresh_daily_summary(db, target_date)
+    if not record:
+        return {"connected": True, "date": target_date.isoformat(), "readiness_score": None}
+
+    return {
+        "connected": True,
+        "date": record.date.isoformat(),
+        "sleep_duration_hours": record.sleep_duration_hours,
+        "sleep_efficiency": record.sleep_efficiency,
+        "resting_heart_rate": record.resting_heart_rate,
+        "readiness_score": record.readiness_score,
+        "summary": record.summary,
+        "last_synced_at": record.updated_at or record.created_at
+    }
+
+
+@router.post("/refresh")
+def refresh_fitbit_summary(
+    user_id: str = "default_user",
+    db: Session = Depends(get_db)
+):
+    """Force refresh today's Fitbit summary."""
+    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    if not user_settings:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    token = db.query(FitbitToken).filter(FitbitToken.user_id == user_settings.id).first()
+    if not token:
+        raise HTTPException(status_code=404, detail="Fitbit token not found")
+
+    fb_service = FitbitService(token)
+    record = fb_service.get_or_refresh_daily_summary(db, date.today(), force_refresh=True)
+    if not record:
+        raise HTTPException(status_code=400, detail="Failed to refresh Fitbit summary")
+
+    return {
+        "connected": True,
+        "date": record.date.isoformat(),
+        "sleep_duration_hours": record.sleep_duration_hours,
+        "sleep_efficiency": record.sleep_efficiency,
+        "resting_heart_rate": record.resting_heart_rate,
+        "readiness_score": record.readiness_score,
+        "summary": record.summary,
+        "last_synced_at": record.updated_at or record.created_at
+    }

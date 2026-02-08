@@ -40,8 +40,15 @@ class Document(Base):
     folder_id = Column(String, ForeignKey("folders.id"), nullable=True)
     
     extracted_text = Column(Text, nullable=True)
+    raw_extracted_text = Column(Text, nullable=True)
+    filtered_extracted_text = Column(Text, nullable=True)
     ai_summary = Column(Text, nullable=True)
     page_count = Column(Integer, default=0)
+    source_url = Column(String, nullable=True)
+    source_type = Column(String, nullable=True)  # upload, youtube, link
+    content_profile = Column(JSON, default=dict)
+    ocr_status = Column(String, default="not_required")  # not_required, pending, completed, failed
+    ocr_provider = Column(String, nullable=True)
     
     # Time tracking
     time_spent_reading = Column(Integer, default=0) # Seconds
@@ -68,6 +75,47 @@ class Document(Base):
     folder = relationship("Folder", back_populates="documents")
     flashcards = relationship("Flashcard", back_populates="document", cascade="all, delete-orphan")
     activity_logs = relationship("ActivityLog", back_populates="document")
+    sections = relationship("DocumentSection", back_populates="document", cascade="all, delete-orphan")
+
+
+class DocumentSection(Base):
+    """
+    A filtered/structured section extracted from a document.
+    Enables inclusion/exclusion for graph and study pipelines.
+    """
+    __tablename__ = "document_sections"
+
+    id = Column(String, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), index=True, nullable=False)
+    section_index = Column(Integer, default=0)
+    title = Column(String, nullable=True)
+    content = Column(Text, nullable=False)
+    excerpt = Column(Text, nullable=True)
+    relevance_score = Column(Float, default=0.0)
+    included = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    document = relationship("Document", back_populates="sections")
+
+
+class IngestionJob(Base):
+    """
+    Tracks long-running ingestion tasks and progressive availability.
+    """
+    __tablename__ = "ingestion_jobs"
+
+    id = Column(String, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("documents.id"), index=True, nullable=False)
+    status = Column(String, default="pending")  # pending, running, completed, failed
+    phase = Column(String, default="queued")  # queued, extracting, filtering, ocr, ingesting
+    progress = Column(Float, default=0.0)
+    message = Column(Text, nullable=True)
+    partial_ready = Column(Boolean, default=False)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Flashcard(Base):
     __tablename__ = "flashcards"
@@ -131,6 +179,42 @@ class StudyReview(Base):
     session = relationship("StudySession", back_populates="reviews")
     flashcard = relationship("Flashcard", back_populates="reviews")
 
+class PracticeSession(Base):
+    __tablename__ = "practice_sessions"
+
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, index=True, default="default_user")
+    goal_id = Column(String, nullable=True)
+    curriculum_id = Column(String, nullable=True)
+    mode = Column(String, default="focus")
+    target_duration_minutes = Column(Integer, default=25)
+    start_time = Column(DateTime, default=datetime.utcnow)
+    end_time = Column(DateTime, nullable=True)
+    effectiveness_rating = Column(Integer, nullable=True)
+    reflection = Column(Text, nullable=True)
+    stats_json = Column(JSON, default=dict)
+
+    items = relationship("PracticeItem", back_populates="session", cascade="all, delete-orphan")
+
+
+class PracticeItem(Base):
+    __tablename__ = "practice_items"
+
+    id = Column(String, primary_key=True, index=True)
+    session_id = Column(String, ForeignKey("practice_sessions.id"))
+
+    item_type = Column(String, default="flashcard")  # flashcard, curriculum_task, graph_prompt, llm_drill
+    source_id = Column(String, nullable=True)
+    prompt = Column(Text, nullable=False)
+    expected_answer = Column(Text, nullable=True)
+    response = Column(Text, nullable=True)
+    score = Column(Float, default=0.0)
+    time_taken = Column(Integer, default=0)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    session = relationship("PracticeSession", back_populates="items")
+
 class ActivityLog(Base):
     __tablename__ = "activity_logs"
     
@@ -146,6 +230,39 @@ class ActivityLog(Base):
     document = relationship("Document", back_populates="activity_logs")
 
 
+class DailyPlanEntry(Base):
+    __tablename__ = "daily_plan_entries"
+    
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, index=True, default="default_user")
+    date = Column(Date, index=True)
+    item_id = Column(String, nullable=True)
+    title = Column(String, nullable=False)
+    item_type = Column(String, default="study")
+    goal_id = Column(String, nullable=True)
+    planned_minutes = Column(Integer, default=30)
+    completed = Column(Boolean, default=False)
+    completed_at = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class AgentEmailMessage(Base):
+    __tablename__ = "agent_email_messages"
+    
+    id = Column(String, primary_key=True, index=True)
+    user_id = Column(String, index=True, default="default_user")
+    direction = Column(String, default="outbound")  # inbound/outbound
+    thread_id = Column(String, nullable=True)
+    subject = Column(String, nullable=True)
+    from_email = Column(String, nullable=True)
+    to_email = Column(String, nullable=True)
+    body_text = Column(Text, nullable=True)
+    metadata_ = Column("metadata", JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class UserSettings(Base):
     """
     User-specific settings for learning calibration.
@@ -159,6 +276,7 @@ class UserSettings(Base):
     # Email for notifications
     email = Column(String, nullable=True)
     resend_api_key = Column(String, nullable=True) # User-provided API key
+    resend_reply_domain = Column(String, nullable=True)
     timezone = Column(String, default="UTC")
     
     # Streak tracking
@@ -188,6 +306,9 @@ class UserSettings(Base):
     fitbit_client_id = Column(String, nullable=True)
     fitbit_client_secret = Column(String, nullable=True)
     fitbit_redirect_uri = Column(String, nullable=True)
+    bedtime = Column(String, nullable=True)
+    email_negotiation_enabled = Column(Boolean, default=True)
+    email_negotiation_last_sent_at = Column(DateTime, nullable=True)
     
     # LLM Configuration (JSON)
     # Stores provider settings and component-specific overrides
@@ -357,6 +478,11 @@ class Goal(Base):
     # Time targets
     target_hours = Column(Float, default=100.0)  # Total hours to complete
     logged_hours = Column(Float, default=0.0)  # Hours logged so far
+
+    # Goal ladder (short / near / long)
+    short_term_goals = Column(JSON, default=list)
+    near_term_goals = Column(JSON, default=list)
+    long_term_goals = Column(JSON, default=list)
     
     # Deadline & Priority
     deadline = Column(DateTime, nullable=True)

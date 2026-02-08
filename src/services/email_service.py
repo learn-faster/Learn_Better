@@ -38,7 +38,8 @@ class EmailService:
         subject: str,
         html_content: str,
         text_content: Optional[str] = None,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        reply_to: Optional[str] = None
     ) -> bool:
         """
         Sends an email via Resend API.
@@ -66,7 +67,8 @@ class EmailService:
                         "to": [to_email],
                         "subject": subject,
                         "html": html_content,
-                        "text": text_content
+                        "text": text_content,
+                        "reply_to": reply_to
                     }
                 )
                 if response.status_code == 200:

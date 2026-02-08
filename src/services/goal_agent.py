@@ -152,7 +152,8 @@ class GoalManifestationAgent:
                 if token:
                     fb_service = FitbitService(token)
                     summary = fb_service.get_biometric_summary(datetime.now().strftime('%Y-%m-%d'))
-                    biometrics_info = f"- Biometrics: {summary} (ENABLED)"
+                    mode = agent_state.user_context.preferences.get("biometrics_mode", "intensity")
+                    biometrics_info = f"- Biometrics: {summary} (ENABLED, mode: {mode})"
                 else:
                     biometrics_info = "- Biometrics: ENABLED but no Fitbit token found."
                 db.close()
@@ -161,6 +162,13 @@ class GoalManifestationAgent:
                 biometrics_info = "- Biometrics: ENABLED but error fetching data."
 
         goals_summary = "\n".join([f"  - {g.title} ({g.status}, {int(g.progress*100)}%)" for g in agent_state.goals]) if agent_state.goals else "  No active goals."
+        pacing = agent_state.user_context.preferences.get("goal_pacing", [])
+        pacing_lines = []
+        for p in pacing:
+            pacing_lines.append(
+                f"  - {p.get('title')}: days_remaining={p.get('days_remaining')}, required_daily_hours={p.get('required_daily_hours')}, short={len(p.get('short_term_goals', []))}, near={len(p.get('near_term_goals', []))}, long={len(p.get('long_term_goals', []))}"
+            )
+        pacing_summary = "\n".join(pacing_lines) if pacing_lines else "  No pacing data."
         
         system_prompt = f"""
         You are the Goal Manifestation Agent (GMA), an AI coach helping users achieve their goals.
@@ -173,6 +181,8 @@ class GoalManifestationAgent:
         - Scratchpad: {scratchpad if scratchpad else '(empty)'}
         - Active Goals:
 {goals_summary}
+        - Goal Pacing (computed):
+{pacing_summary}
         
         ===== DECISION FRAMEWORK =====
         Choose ONE of the following actions:
@@ -190,6 +200,12 @@ class GoalManifestationAgent:
         ===== IMPORTANT: TOOL USAGE =====
         If the user asks to "send an email" or similar, you MUST use the 'execute' step with the 'send_email_notification' tool. 
         Do NOT just respond with text saying you'll do it. Actually trigger the tool call.
+
+        ===== NEGOTIATION RULES =====
+        - If the user asks to finish a goal earlier/later than the computed pacing, calculate a new required daily load.
+        - Use short-term goals as highest priority; adjust near/long-term goals accordingly.
+        - Ask clarifying questions if the user's requested timeline is unrealistic.
+        - Propose tradeoffs (increase daily minutes, reduce scope, shift other goals).
         
         ===== OUTPUT FORMAT =====
         Respond with a JSON object:
@@ -416,6 +432,7 @@ class GoalManifestationAgent:
         from src.database.orm import SessionLocal
         from src.models.orm import UserSettings, Goal as GoalORM
         from src.models.agent import AgentLLMConfig
+        from src.services.goal_negotiation_service import goal_negotiation_service
 
         # Load State from DB
         db = SessionLocal()
@@ -425,6 +442,7 @@ class GoalManifestationAgent:
             llm_config = None
             vision_llm_config = None
             guardrail_mode = "soft"
+            biometrics_mode = "intensity"
             if user_settings and user_settings.llm_config:
                 agent_llm = user_settings.llm_config.get("agent_llm")
                 if agent_llm:
@@ -434,9 +452,11 @@ class GoalManifestationAgent:
                     if agent_settings.get("vision_llm_config"):
                         vision_llm_config = AgentLLMConfig(**agent_settings.get("vision_llm_config"))
                     guardrail_mode = agent_settings.get("guardrail_mode", "soft")
+                    biometrics_mode = agent_settings.get("biometrics_mode", "intensity")
             
             # Load goals
             goals_orm = db.query(GoalORM).filter(GoalORM.user_id == user_id).all()
+            pacing = goal_negotiation_service.compute_goal_pacing(goals_orm)
             goals = [Goal(
                 id=g.id,
                 title=g.title,
@@ -444,7 +464,10 @@ class GoalManifestationAgent:
                 status=g.status if g.status in ["pending", "active", "completed", "failed"] else "pending",
                 deadline=g.deadline,
                 priority=g.priority,
-                progress=g.logged_hours / g.target_hours if g.target_hours > 0 else 0
+                progress=g.logged_hours / g.target_hours if g.target_hours > 0 else 0,
+                short_term_goals=g.short_term_goals or [],
+                near_term_goals=g.near_term_goals or [],
+                long_term_goals=g.long_term_goals or []
             ) for g in goals_orm]
 
             initial_state = AgentState(
@@ -453,7 +476,8 @@ class GoalManifestationAgent:
                     name="User",
                     email=user_settings.email if user_settings else None,
                     resend_api_key=user_settings.resend_api_key if user_settings else None,
-                    use_biometrics=user_settings.use_biometrics if user_settings else False
+                    use_biometrics=user_settings.use_biometrics if user_settings else False,
+                    preferences={"biometrics_mode": biometrics_mode, "goal_pacing": pacing}
                 ),
                 llm_config=llm_config,
                 goals=goals

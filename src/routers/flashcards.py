@@ -97,21 +97,57 @@ def get_flashcards(
 @router.get("/due", response_model=List[FlashcardResponse])
 def get_due_flashcards(
     limit: int = 50,
+    interleave: bool = False,
+    group_by: str = "document",
+    document_id: Optional[int] = None,
+    tag: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
     """
     Retrieves flashcards that are scheduled for review (next_review <= now).
-    Cards are ordered by their due date (earliest first).
+    If interleave is true, cards are mixed across groups (document or tag).
     """
     now = datetime.utcnow()
-    
-    flashcards = db.query(Flashcard)\
-        .filter(Flashcard.next_review <= now)\
-        .order_by(Flashcard.next_review)\
-        .limit(limit)\
-        .all()
-    
-    return flashcards
+
+    query = db.query(Flashcard).filter(Flashcard.next_review <= now)
+    if document_id:
+        query = query.filter(Flashcard.document_id == document_id)
+    if tag:
+        query = query.filter(Flashcard.tags.contains([tag]))
+
+    if not interleave:
+        return query.order_by(Flashcard.next_review).limit(limit).all()
+
+    fetch_limit = max(limit * 4, 50)
+    cards = query.order_by(Flashcard.next_review).limit(fetch_limit).all()
+    if not cards:
+        return []
+
+    # Group cards
+    groups = {}
+    for card in cards:
+        if group_by == "tag" and card.tags:
+            key = card.tags[0]
+        else:
+            key = card.document_id or "unassigned"
+        groups.setdefault(key, []).append(card)
+
+    # Sort groups by earliest due card
+    group_keys = sorted(groups.keys(), key=lambda k: groups[k][0].next_review)
+    result = []
+    while len(result) < limit and group_keys:
+        new_keys = []
+        for key in group_keys:
+            bucket = groups.get(key, [])
+            if bucket:
+                result.append(bucket.pop(0))
+                if len(result) >= limit:
+                    break
+            if bucket:
+                new_keys.append(key)
+        group_keys = new_keys
+
+    return result
 
 
 @router.get("/{flashcard_id}", response_model=FlashcardResponse)
