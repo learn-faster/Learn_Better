@@ -65,19 +65,61 @@ const Analytics = () => {
     const [velocity, setVelocity] = useState(null);
     const [forgettingCurve, setForgettingCurve] = useState(null);
     const [streakStatus, setStreakStatus] = useState(null);
+    const [goalProgress, setGoalProgress] = useState([]);
+    const [timeAllocation, setTimeAllocation] = useState([]);
+    const [consistency, setConsistency] = useState(null);
+    const [recommendations, setRecommendations] = useState([]);
+    const [goals, setGoals] = useState([]);
+    const [goalFilter, setGoalFilter] = useState('all');
+    const [dateFrom, setDateFrom] = useState(() => {
+        const d = new Date();
+        d.setDate(d.getDate() - 30);
+        return d.toISOString().slice(0, 10);
+    });
+    const [dateTo, setDateTo] = useState(() => new Date().toISOString().slice(0, 10));
     const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchGoals = async () => {
+            try {
+                const data = await api.get('/goals/?status=active');
+                setGoals(data || []);
+            } catch (err) {
+                console.error('Failed to fetch goals', err);
+            }
+        };
+        fetchGoals();
+    }, []);
 
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const [perfData, retData, overData, timeData, velData, curveData, streakData] = await Promise.all([
-                    api.get('/analytics/performance'),
-                    api.get('/analytics/retention'),
-                    api.get('/analytics/overview'),
-                    api.get('/analytics/time-tracking'),
-                    api.get('/analytics/velocity'),
-                    api.get('/analytics/forgetting-curve'),
-                    api.get('/analytics/streak-status')
+                const params = { date_from: dateFrom, date_to: dateTo };
+                if (goalFilter !== 'all') params.goal_id = goalFilter;
+                const [
+                    perfData,
+                    retData,
+                    overData,
+                    timeData,
+                    velData,
+                    curveData,
+                    streakData,
+                    goalProgressData,
+                    allocationData,
+                    consistencyData,
+                    recommendationsData
+                ] = await Promise.all([
+                    api.get('/analytics/performance', { params }),
+                    api.get('/analytics/retention', { params }),
+                    api.get('/analytics/overview', { params }),
+                    api.get('/analytics/time-tracking', { params }),
+                    api.get('/analytics/velocity', { params }),
+                    api.get('/analytics/forgetting-curve', { params }),
+                    api.get('/analytics/streak-status'),
+                    api.get('/analytics/goal-progress'),
+                    api.get('/analytics/time-allocation', { params }),
+                    api.get('/analytics/consistency', { params }),
+                    api.get('/analytics/recommendations', { params })
                 ]);
                 setPerformance(perfData);
                 setRetention(retData);
@@ -86,6 +128,10 @@ const Analytics = () => {
                 setVelocity(velData);
                 setForgettingCurve(curveData);
                 setStreakStatus(streakData);
+                setGoalProgress(goalProgressData?.items || []);
+                setTimeAllocation(allocationData?.items || []);
+                setConsistency(consistencyData || null);
+                setRecommendations(recommendationsData?.items || []);
             } catch (err) {
                 console.error('Failed to fetch analytics', err);
             } finally {
@@ -94,7 +140,7 @@ const Analytics = () => {
         };
 
         fetchData();
-    }, []);
+    }, [dateFrom, dateTo, goalFilter]);
 
     /**
      * Data configuration for the Activity Trends line chart.
@@ -296,6 +342,41 @@ const Analytics = () => {
                 )}
             </header>
 
+            {/* Filters */}
+            <div className="flex flex-col md:flex-row md:items-center gap-3 p-4 rounded-2xl bg-dark-900/60 border border-white/5">
+                <div className="flex items-center gap-2">
+                    <label className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">From</label>
+                    <input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        className="bg-dark-900/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                </div>
+                <div className="flex items-center gap-2">
+                    <label className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">To</label>
+                    <input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        className="bg-dark-900/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white"
+                    />
+                </div>
+                <div className="flex items-center gap-2">
+                    <label className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Goal</label>
+                    <select
+                        value={goalFilter}
+                        onChange={(e) => setGoalFilter(e.target.value)}
+                        className="bg-dark-900/80 border border-white/10 rounded-lg px-3 py-2 text-xs text-white"
+                    >
+                        <option value="all">All goals</option>
+                        {goals.map((goal) => (
+                            <option key={goal.id} value={goal.id}>{goal.title}</option>
+                        ))}
+                    </select>
+                </div>
+            </div>
+
             {/* Performance Overview: KPI Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <StatCard
@@ -331,6 +412,144 @@ const Analytics = () => {
                     iconColor="text-cyan-400"
                 />
             </div>
+
+            {/* Recommendations */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {recommendations.map((rec) => (
+                    <Card key={rec.id} className="p-5">
+                        <p className="text-xs uppercase tracking-widest text-dark-500 font-bold mb-2">{rec.severity || 'info'}</p>
+                        <h3 className="text-lg font-bold text-white mb-2">{rec.title}</h3>
+                        <p className="text-sm text-dark-400">{rec.message}</p>
+                        {rec.action_label && (
+                            <button className="text-xs font-bold text-primary-400 mt-3">
+                                {rec.action_label} →
+                            </button>
+                        )}
+                    </Card>
+                ))}
+                {recommendations.length === 0 && (
+                    <Card className="p-6">
+                        <p className="text-sm text-dark-500">No recommendations yet.</p>
+                    </Card>
+                )}
+            </div>
+
+            {/* Goal Progress */}
+            <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-white">Goal Progress</h3>
+                    <Target className="w-5 h-5 text-dark-500" />
+                </div>
+                <div className="space-y-4">
+                    {goalProgress.map((goal) => (
+                        <div key={goal.goal_id} className="p-4 rounded-2xl bg-white/5 border border-white/5">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-semibold text-white">{goal.title}</p>
+                                    <p className="text-[10px] text-dark-500">
+                                        {goal.required_minutes_per_day > 0 ? `${goal.required_minutes_per_day} min/day` : "No deadline"}
+                                    </p>
+                                </div>
+                                <span className={`text-[10px] font-bold uppercase tracking-widest ${goal.pace_status === 'on_track' ? 'text-emerald-400' : goal.pace_status === 'overdue' ? 'text-red-400' : 'text-amber-400'}`}>
+                                    {goal.pace_status.replace('_', ' ')}
+                                </span>
+                            </div>
+                            <div className="mt-3">
+                                <div className="flex items-center justify-between text-xs text-dark-500 mb-1">
+                                    <span>{goal.progress_pct}% complete</span>
+                                    {goal.expected_progress_pct !== null && (
+                                        <span>Expected {goal.expected_progress_pct}%</span>
+                                    )}
+                                </div>
+                                <div className="w-full h-2 bg-dark-800 rounded-full overflow-hidden">
+                                    <div
+                                        className="h-full bg-gradient-to-r from-primary-500 to-violet-500"
+                                        style={{ width: `${goal.progress_pct}%` }}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                    {goalProgress.length === 0 && (
+                        <p className="text-sm text-dark-500">No active goals yet.</p>
+                    )}
+                </div>
+            </Card>
+
+            {/* Time Allocation */}
+            <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-white">Time Allocation</h3>
+                    <Timer className="w-5 h-5 text-dark-500" />
+                </div>
+                <div className="h-[280px]">
+                    {timeAllocation.length > 0 ? (
+                        <Bar
+                            data={{
+                                labels: timeAllocation.map((item) => new Date(item.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+                                datasets: [
+                                    {
+                                        label: 'Focus',
+                                        data: timeAllocation.map((item) => item.focus_minutes),
+                                        backgroundColor: 'rgba(99, 102, 241, 0.7)'
+                                    },
+                                    {
+                                        label: 'Practice',
+                                        data: timeAllocation.map((item) => item.practice_minutes),
+                                        backgroundColor: 'rgba(14, 165, 233, 0.7)'
+                                    },
+                                    {
+                                        label: 'Study',
+                                        data: timeAllocation.map((item) => item.study_minutes),
+                                        backgroundColor: 'rgba(16, 185, 129, 0.7)'
+                                    }
+                                ]
+                            }}
+                            options={{
+                                ...chartOptions,
+                                scales: {
+                                    x: chartOptions.scales.x,
+                                    y: chartOptions.scales.y
+                                }
+                            }}
+                        />
+                    ) : (
+                        <div className="h-full flex items-center justify-center text-dark-600 border-2 border-dashed border-white/5 rounded-2xl">
+                            <p className="text-sm">No time allocation data yet</p>
+                        </div>
+                    )}
+                </div>
+            </Card>
+
+            {/* Consistency */}
+            <Card className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="font-bold text-white">Consistency</h3>
+                    <Flame className="w-5 h-5 text-dark-500" />
+                </div>
+                {consistency ? (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div className="p-4 rounded-2xl bg-white/5">
+                            <p className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Active Days</p>
+                            <p className="text-2xl font-black text-white">{consistency.active_days}</p>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-white/5">
+                            <p className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Total Days</p>
+                            <p className="text-2xl font-black text-white">{consistency.total_days}</p>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-white/5">
+                            <p className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Longest Streak</p>
+                            <p className="text-2xl font-black text-white">{consistency.longest_streak}</p>
+                        </div>
+                        <div className="p-4 rounded-2xl bg-white/5">
+                            <p className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Missed Days</p>
+                            <p className="text-2xl font-black text-white">{consistency.missed_days}</p>
+                        </div>
+                    </div>
+                ) : (
+                    <p className="text-sm text-dark-500">No consistency data yet.</p>
+                )}
+            </Card>
 
             {/* Insight Visualization: Trends and Stages */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

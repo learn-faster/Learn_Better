@@ -111,12 +111,25 @@ const AgentDock = () => {
         onClick={() => setOpen((v) => !v)}
         className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[120] w-11 h-11 md:w-12 md:h-12 rounded-2xl shadow-lg shadow-primary-500/30 flex items-center justify-center text-white hover:scale-[1.03] transition-transform agent-orb overflow-hidden"
         style={{
-          right: 'max(16px, env(safe-area-inset-right))',
-          bottom: 'max(16px, env(safe-area-inset-bottom))'
+          right: 'max(24px, env(safe-area-inset-right))',
+          bottom: 'max(24px, env(safe-area-inset-bottom))'
         }}
         title="Open Goal Agent"
       >
-        {open ? <ChevronUp className="w-5 h-5" /> : <span className="agent-orb-core" />}
+        {open ? (
+          <ChevronUp className="w-5 h-5" />
+        ) : (
+          <span className="agent-orb-shell">
+            <span className="agent-orb-halo" />
+            <span className="agent-orb-aurora" />
+            <span className="agent-orb-ring" />
+            <span className="agent-orb-core" />
+            <span className="agent-orb-star agent-orb-star-1" />
+            <span className="agent-orb-star agent-orb-star-2" />
+            <span className="agent-orb-star agent-orb-star-3" />
+            <span className="agent-orb-star agent-orb-star-4" />
+          </span>
+        )}
       </button>
 
       {/* Drawer */}
@@ -126,7 +139,7 @@ const AgentDock = () => {
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 30 }}
-            className="fixed bottom-20 right-6 z-[110] w-[400px] max-w-[92vw] h-[72vh] rounded-3xl bg-dark-950/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col"
+            className="fixed bottom-20 right-6 z-[110] w-[400px] max-w-[92vw] h-[72vh] rounded-3xl bg-dark-950/95 backdrop-blur-xl border border-white/10 shadow-2xl overflow-hidden flex flex-col agent-dock-panel"
           >
             <div className="px-4 py-3 border-b border-white/5 flex items-center justify-between">
               <div className="flex items-center gap-2">

@@ -37,10 +37,11 @@ const Study = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [sessionResults, setSessionResults] = useState(null);
     const [startTime, setStartTime] = useState(null);
+    const [interleave, setInterleave] = useState(true);
 
     useEffect(() => {
-        fetchDueCards();
-    }, [fetchDueCards]);
+        fetchDueCards({ interleave, group_by: 'document' });
+    }, [fetchDueCards, interleave]);
 
     const handleStart = async () => {
         await startSession();
@@ -130,6 +131,15 @@ const Study = () => {
                             <div className="flex items-center justify-between">
                                 <span className="text-sm font-medium">SRS Algorithm</span>
                                 <span className="text-xs bg-white/5 px-2 py-1 rounded border border-white/5 uppercase font-bold">SM-2 Optimized</span>
+                            </div>
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm font-medium">Interleaving</span>
+                                <button
+                                    onClick={() => setInterleave((prev) => !prev)}
+                                    className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest border transition-all ${interleave ? 'bg-primary-500/20 text-primary-200 border-primary-500/30' : 'bg-white/5 text-dark-400 border-white/10'}`}
+                                >
+                                    {interleave ? 'On' : 'Off'}
+                                </button>
                             </div>
                             <div className="flex items-center justify-between">
                                 <span className="text-sm font-medium">Time Limit</span>

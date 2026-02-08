@@ -12,7 +12,9 @@ import {
     Scan,
     FileText,
     Settings,
-    Clock
+    Clock,
+    CheckSquare,
+    Mail
 } from 'lucide-react';
 import useTimerStore from '../../stores/useTimerStore';
 import { clsx } from 'clsx';
@@ -86,9 +88,9 @@ const Navbar = ({ onOpenSettings }) => {
         { to: '/practice', icon: GraduationCap, label: 'Practice' },
         { to: '/knowledge-graph', icon: Network, label: 'Knowledge Map' },
         { to: '/curriculum', icon: Map, label: 'Curriculum' },
-
-
+        { to: '/daily-goals', icon: CheckSquare, label: 'Daily Goals' },
         { to: '/analytics', icon: BarChart3, label: 'Analytics' },
+        { to: '/admin/emails', icon: Mail, label: 'Email Logs' }
     ];
 
     return (

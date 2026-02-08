@@ -28,7 +28,16 @@ const AgentWelcome = ({ onStart, onSkip }) => {
       <div className="relative z-10 h-full w-full max-w-6xl mx-auto px-6 py-10 flex flex-col">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="agent-orb h-10 w-10 rounded-full" />
+            <div className="agent-orb h-10 w-10 rounded-full flex items-center justify-center">
+              <span className="agent-orb-shell">
+                <span className="agent-orb-halo" />
+                <span className="agent-orb-aurora" />
+                <span className="agent-orb-ring" />
+                <span className="agent-orb-core" />
+                <span className="agent-orb-star agent-orb-star-1" />
+                <span className="agent-orb-star agent-orb-star-2" />
+              </span>
+            </div>
             <div>
               <p className="text-xs uppercase tracking-[0.3em] text-primary-300 font-black">Goal Agent</p>
               <p className="text-[10px] text-dark-400">Personal guidance, always on.</p>
@@ -72,7 +81,16 @@ const AgentWelcome = ({ onStart, onSkip }) => {
 
           <div className="rounded-[2.5rem] border border-white/10 bg-dark-900/60 backdrop-blur-xl p-8 shadow-2xl">
             <div className="flex items-center gap-3">
-              <div className="agent-orb h-12 w-12 rounded-full" />
+              <div className="agent-orb h-12 w-12 rounded-full flex items-center justify-center">
+                <span className="agent-orb-shell">
+                  <span className="agent-orb-halo" />
+                  <span className="agent-orb-aurora" />
+                  <span className="agent-orb-ring" />
+                  <span className="agent-orb-core" />
+                  <span className="agent-orb-star agent-orb-star-1" />
+                  <span className="agent-orb-star agent-orb-star-2" />
+                </span>
+              </div>
               <div>
                 <p className="text-sm font-bold text-white">Quick Personalization</p>
                 <p className="text-xs text-dark-400">Set goals, schedule, and integrations.</p>

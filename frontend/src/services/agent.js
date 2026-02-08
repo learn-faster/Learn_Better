@@ -8,5 +8,10 @@ export const agentApi = {
   saveSettings: (payload) => api.post('/goals/agent/settings', payload),
   screenshot: (payload) => api.post('/goals/agent/tools/screenshot', payload),
   email: (payload) => api.post('/goals/agent/tools/email', payload),
-  scratchpad: (payload) => api.post('/goals/agent/tools/scratchpad', payload)
+  scratchpad: (payload) => api.post('/goals/agent/tools/scratchpad', payload),
+  fitbitSummary: (params) => api.get('/fitbit/summary', { params }),
+  fitbitRefresh: () => api.post('/fitbit/refresh'),
+  history: () => api.get('/goals/agent/history'),
+  negotiateSummary: () => api.get('/goals/agent/negotiation-summary'),
+  emailLogs: (params) => api.get('/goals/agent/email/logs', { params })
 };

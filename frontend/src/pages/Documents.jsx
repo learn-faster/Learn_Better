@@ -113,7 +113,7 @@ const Documents = () => {
 
     // Polling effect: Check for processing documents every 3 seconds
     useEffect(() => {
-        const hasProcessingDocs = documents.some(d => d.status === 'processing' || d.status === 'pending');
+        const hasProcessingDocs = documents.some(d => ['processing', 'pending', 'ingesting'].includes(d.status));
 
         let interval;
         if (hasProcessingDocs) {
@@ -453,7 +453,7 @@ const Documents = () => {
                                                 </div>
                                                 <div className="flex gap-2">
                                                     {/* Reprocess Button for Failed or No-Text Docs */}
-                                                    {(doc.status === 'failed' || (doc.status === 'extracted' && !doc.extracted_text)) && (
+                                                    {doc.status === 'failed' && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -467,7 +467,7 @@ const Documents = () => {
                                                     )}
 
                                                     {/* Synthesize Button for Extracted/Ready Docs */}
-                                                    {(doc.status === 'extracted' || doc.status === 'ready_for_synthesis') && doc.extracted_text && (
+                                                    {(doc.status === 'extracted' || doc.status === 'ready_for_synthesis') && (
                                                         <button
                                                             onClick={(e) => {
                                                                 e.stopPropagation();
@@ -668,7 +668,7 @@ const Documents = () => {
                                             {/* Subtle Glow */}
                                             <div className="flex items-center gap-2">
                                                 {/* List View Reprocess Button */}
-                                                {(doc.status === 'failed' || (doc.status === 'extracted' && !doc.extracted_text)) && (
+                                                {doc.status === 'failed' && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();
@@ -682,7 +682,7 @@ const Documents = () => {
                                                 )}
 
                                                 {/* List View Synthesize Button */}
-                                                {(doc.status === 'extracted' || doc.status === 'ready_for_synthesis') && doc.extracted_text && (
+                                                {(doc.status === 'extracted' || doc.status === 'ready_for_synthesis') && (
                                                     <button
                                                         onClick={(e) => {
                                                             e.stopPropagation();

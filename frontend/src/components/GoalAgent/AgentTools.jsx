@@ -77,7 +77,13 @@ const AgentTools = ({ status }) => {
         <input className={inputClass} placeholder="to@example.com" value={emailTo} onChange={(e) => setEmailTo(e.target.value)} />
         <input className={inputClass} placeholder="Subject" value={emailSubject} onChange={(e) => setEmailSubject(e.target.value)} />
         <textarea className={inputClass} rows={3} placeholder="Write your email..." value={emailBody} onChange={(e) => setEmailBody(e.target.value)} />
-        <button onClick={sendEmail} className={btnClass}>Send</button>
+        <button
+          onClick={sendEmail}
+          disabled={!status?.email_configured}
+          className={`${btnClass} disabled:opacity-40 disabled:cursor-not-allowed`}
+        >
+          Send
+        </button>
         {emailStatus && <p className="text-xs text-dark-400">Status: {emailStatus}</p>}
       </ToolCard>
 

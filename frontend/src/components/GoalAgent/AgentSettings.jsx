@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Save, Loader2, Eye, EyeOff, ShieldCheck } from 'lucide-react';
+import { Save, Loader2, Eye, EyeOff, ShieldCheck, Sparkles, RefreshCw } from 'lucide-react';
 import { agentApi } from '../../services/agent';
 
 const AgentSettings = ({ onClose, onSaved }) => {
@@ -22,10 +22,17 @@ const AgentSettings = ({ onClose, onSaved }) => {
     enable_screenshots: true,
     check_in_frequency_hours: 4,
     use_biometrics: false,
+    biometrics_mode: 'intensity',
+    auto_refresh_fitbit: true,
+    bedtime: '22:00',
+    email_negotiation_enabled: true,
     email: '',
-    resend_api_key: ''
+    resend_api_key: '',
+    resend_reply_domain: ''
   });
   const [connected, setConnected] = useState(false);
+  const [fitbitSummary, setFitbitSummary] = useState(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -47,6 +54,10 @@ const AgentSettings = ({ onClose, onSaved }) => {
           }));
         }
         setConnected(statusData?.fitbit_connected || false);
+        if (statusData?.fitbit_connected) {
+          const summary = await agentApi.fitbitSummary();
+          setFitbitSummary(summary);
+        }
       } catch (err) {
         console.error('Error fetching settings:', err);
       } finally {
@@ -86,6 +97,18 @@ const AgentSettings = ({ onClose, onSaved }) => {
       setError(typeof error === 'string' ? error : 'Failed to save settings. Please try again.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleRefreshFitbit = async () => {
+    setRefreshing(true);
+    try {
+      const summary = await agentApi.fitbitRefresh();
+      setFitbitSummary(summary);
+    } catch (err) {
+      console.error('Failed to refresh Fitbit summary:', err);
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -145,9 +168,74 @@ const AgentSettings = ({ onClose, onSaved }) => {
                   className="w-4 h-4 text-primary-500 rounded focus:ring-primary-500"
                 />
               </div>
+              <div className="mt-3">
+                <label className="block text-xs text-dark-400 mb-1">Biometrics Mode</label>
+                <select
+                  value={settings.biometrics_mode || 'intensity'}
+                  onChange={(e) => handleChange(null, 'biometrics_mode', e.target.value)}
+                  className={inputClass}
+                >
+                  <option value="insights">Insights only</option>
+                  <option value="intensity">Intensity tuning</option>
+                  <option value="scheduling">Full scheduling</option>
+                </select>
+              </div>
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-sm text-dark-300">Auto-refresh Fitbit</span>
+                <input
+                  type="checkbox"
+                  checked={!!settings.auto_refresh_fitbit}
+                  onChange={(e) => handleChange(null, 'auto_refresh_fitbit', e.target.checked)}
+                  className="w-4 h-4 text-primary-500 rounded focus:ring-primary-500"
+                />
+              </div>
               {!connected && (
                 <div className="mt-3 text-xs text-dark-500">Fitbit not connected. Use onboarding or Settings to connect.</div>
               )}
+              {connected && (
+                <div className="mt-3 rounded-xl border border-white/10 bg-white/5 p-3 text-xs text-dark-300 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-primary-200">
+                      <Sparkles className="w-3.5 h-3.5" /> Readiness
+                    </span>
+                    <span className="font-semibold">{fitbitSummary?.readiness_score ?? '—'}</span>
+                  </div>
+                  <div className="text-[11px] text-dark-400">
+                    Sleep: {fitbitSummary?.sleep_duration_hours ?? '—'}h • Efficiency: {fitbitSummary?.sleep_efficiency ?? '—'}%
+                  </div>
+                  <div className="text-[11px] text-dark-400">
+                    Resting HR: {fitbitSummary?.resting_heart_rate ?? '—'} bpm
+                  </div>
+                  <button
+                    onClick={handleRefreshFitbit}
+                    disabled={refreshing}
+                    className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-white/5 hover:bg-white/10 text-primary-200"
+                  >
+                    {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                    Refresh now
+                  </button>
+                </div>
+              )}
+            </Section>
+
+            <Section title="Negotiation Emails">
+              <label className="block text-xs text-dark-400 mb-1">Bedtime (local)</label>
+              <input
+                type="time"
+                value={settings.bedtime || '22:00'}
+                onChange={(e) => handleChange(null, 'bedtime', e.target.value)}
+                className={inputClass}
+              />
+              <div className="flex items-center justify-between mt-3">
+                <span className="text-sm text-dark-300">Email negotiation enabled</span>
+                <input
+                  type="checkbox"
+                  checked={!!settings.email_negotiation_enabled}
+                  onChange={(e) => handleChange(null, 'email_negotiation_enabled', e.target.checked)}
+                  className="w-4 h-4 text-primary-500 rounded focus:ring-primary-500"
+                />
+              </div>
+              <p className="text-[11px] text-dark-500 mt-2">Agent sends a bedtime check‑in if daily plan is incomplete.</p>
             </Section>
 
             <Section title="Email">
@@ -176,6 +264,14 @@ const AgentSettings = ({ onClose, onSaved }) => {
                   {showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}
                 </button>
               </div>
+              <label className="block text-xs text-dark-400 mt-3 mb-1">Resend Reply Domain</label>
+              <input
+                type="text"
+                value={settings.resend_reply_domain || ''}
+                onChange={(e) => handleChange(null, 'resend_reply_domain', e.target.value)}
+                className={inputClass}
+                placeholder="reply.yourdomain.com"
+              />
             </Section>
 
             <button

@@ -144,6 +144,10 @@ const DocumentViewer = () => {
     const initialSessionId = searchParams.get('sessionId') || null;
     const [activeTab, setActiveTab] = useState(initialTab);
     const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
+    const [sections, setSections] = useState([]);
+    const [quality, setQuality] = useState(null);
+    const [ingestionJob, setIngestionJob] = useState(null);
+    const [isSectionBusy, setIsSectionBusy] = useState(false);
 
     // Flashcard State
     const [flashcardFront, setFlashcardFront] = useState('');
@@ -275,6 +279,28 @@ const DocumentViewer = () => {
     }, [id, navigate]);
 
     useEffect(() => {
+        const fetchCore = async () => {
+            try {
+                const [sectionsRes, qualityRes] = await Promise.all([
+                    api.get(`/documents/${id}/sections`, { params: { include_all: true } }),
+                    api.get(`/documents/${id}/quality`)
+                ]);
+                setSections(sectionsRes || []);
+                setQuality(qualityRes || null);
+            } catch (err) {
+                console.error('Failed to load document core data', err);
+            }
+            try {
+                const jobRes = await api.get(`/documents/${id}/ingestion`);
+                setIngestionJob(jobRes);
+            } catch {
+                setIngestionJob(null);
+            }
+        };
+        fetchCore();
+    }, [id]);
+
+    useEffect(() => {
         if (initialTab) {
             setActiveTab(initialTab);
         }
@@ -334,6 +360,23 @@ const DocumentViewer = () => {
             panel.expand();
         } else {
             panel.collapse();
+        }
+    };
+
+    const handleToggleSection = async (section) => {
+        if (!section) return;
+        setIsSectionBusy(true);
+        try {
+            const updated = await api.patch(`/documents/${id}/sections/${section.id}`, {
+                included: !section.included
+            });
+            setSections((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
+            const qualityRes = await api.get(`/documents/${id}/quality`);
+            setQuality(qualityRes || null);
+        } catch (err) {
+            console.error('Failed to update section', err);
+        } finally {
+            setIsSectionBusy(false);
         }
     };
 
@@ -631,10 +674,11 @@ const DocumentViewer = () => {
                         <div className="h-full flex flex-col">
                             <Tabs value={activeTab} onValueChange={setActiveTab} className="h-full flex flex-col">
                                 <div className="px-4 py-3 border-b border-white/5 bg-dark-900/80 backdrop-blur-sm">
-                                    <TabsList className="grid w-full grid-cols-4 bg-dark-800/60 border border-white/10 rounded-xl">
+                                    <TabsList className="grid w-full grid-cols-5 bg-dark-800/60 border border-white/10 rounded-xl">
                                         <TabsTrigger value="chat" className="text-[10px] uppercase tracking-wider font-black"><MessageSquare className="w-3.5 h-3.5 mr-2" />Chat</TabsTrigger>
                                         <TabsTrigger value="notes" className="text-[10px] uppercase tracking-wider font-black"><StickyNote className="w-3.5 h-3.5 mr-2" />Notes</TabsTrigger>
                                         <TabsTrigger value="flashcards" className="text-[10px] uppercase tracking-wider font-black"><Sparkles className="w-3.5 h-3.5 mr-2" />Cards</TabsTrigger>
+                                        <TabsTrigger value="core" className="text-[10px] uppercase tracking-wider font-black"><FileText className="w-3.5 h-3.5 mr-2" />Core</TabsTrigger>
                                         <TabsTrigger value="recall" className="text-[10px] uppercase tracking-wider font-black"><Layers className="w-3.5 h-3.5 mr-2" />Recall</TabsTrigger>
                                     </TabsList>
                                 </div>
@@ -662,6 +706,81 @@ const DocumentViewer = () => {
                                         setExternalFront={setFlashcardFront}
                                         setExternalBack={setFlashcardBack}
                                     />
+                                </TabsContent>
+
+                                <TabsContent value="core" className="flex-1 overflow-y-auto m-0 p-4 space-y-4">
+                                    <div className="p-4 rounded-2xl bg-dark-900/60 border border-white/10">
+                                        <div className="flex items-start justify-between">
+                                            <div>
+                                                <p className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Content Quality</p>
+                                                <h4 className="text-white font-bold text-sm mt-1">Filtered Core View</h4>
+                                            </div>
+                                            {ingestionJob && (
+                                                <div className="text-[10px] text-dark-400 uppercase tracking-widest">
+                                                    {ingestionJob.phase}: {Math.round(ingestionJob.progress || 0)}%
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+                                            <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                                                <p className="text-dark-500 uppercase font-bold text-[10px]">Raw Words</p>
+                                                <p className="text-white font-black text-lg">{quality?.raw_word_count || 0}</p>
+                                            </div>
+                                            <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                                                <p className="text-dark-500 uppercase font-bold text-[10px]">Filtered Words</p>
+                                                <p className="text-white font-black text-lg">{quality?.filtered_word_count || 0}</p>
+                                            </div>
+                                            <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                                                <p className="text-dark-500 uppercase font-bold text-[10px]">Boilerplate Removed</p>
+                                                <p className="text-white font-black text-lg">{quality?.boilerplate_removed_lines || 0}</p>
+                                            </div>
+                                            <div className="p-3 rounded-xl bg-white/5 border border-white/5">
+                                                <p className="text-dark-500 uppercase font-bold text-[10px]">Dedup Ratio</p>
+                                                <p className="text-white font-black text-lg">{quality?.dedup_ratio ?? 0}</p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-3 mt-4 text-[10px] uppercase tracking-widest text-dark-500">
+                                            <span>OCR: {quality?.ocr_status || 'n/a'}</span>
+                                            {quality?.ocr_provider && <span>Provider: {quality.ocr_provider}</span>}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="text-xs font-black uppercase tracking-widest text-dark-400">Sections</h4>
+                                            <span className="text-[10px] text-dark-500 uppercase tracking-widest">
+                                                {quality?.sections_included || 0}/{quality?.sections_total || 0} included
+                                            </span>
+                                        </div>
+
+                                        {sections.length === 0 && (
+                                            <div className="p-4 rounded-2xl border border-white/5 text-xs text-dark-500">
+                                                No sections extracted yet. Try again after processing completes.
+                                            </div>
+                                        )}
+
+                                        {sections.map((section) => (
+                                            <div key={section.id} className="p-4 rounded-2xl bg-dark-900/40 border border-white/5">
+                                                <div className="flex items-start justify-between gap-3">
+                                                    <div>
+                                                        <p className="text-xs font-bold text-white">
+                                                            {section.title || `Section ${section.section_index + 1}`}
+                                                        </p>
+                                                        <p className="text-[11px] text-dark-500 mt-1">
+                                                            {section.excerpt || section.content?.slice(0, 160)}
+                                                        </p>
+                                                    </div>
+                                                    <button
+                                                        disabled={isSectionBusy}
+                                                        onClick={() => handleToggleSection(section)}
+                                                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all ${section.included ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' : 'bg-white/5 text-dark-400 border-white/10'}`}
+                                                    >
+                                                        {section.included ? 'Included' : 'Excluded'}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
                                 </TabsContent>
 
                                 <TabsContent value="recall" className="flex-1 overflow-hidden m-0 p-0">

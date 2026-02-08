@@ -34,9 +34,8 @@ import AbstractBackground from '../components/ui/AbstractBackground';
 const Dashboard = () => {
     const navigate = useNavigate();
     const { openSettings } = useOutletContext();
-    const [overview, setOverview] = useState(null);
+    const [dashboard, setDashboard] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [upcoming, setUpcoming] = useState({});
     const [activities, setActivities] = useState([]);
     const [streakStatus, setStreakStatus] = useState(null);
 
@@ -44,16 +43,13 @@ const Dashboard = () => {
     useEffect(() => {
         const fetchDashboardData = async () => {
             try {
-                const [overviewData, upcomingData, activityData, streakData] = await Promise.all([
-                    api.get('/analytics/overview'),
-                    api.get('/study/upcoming'),
+                const [dashboardData, activityData] = await Promise.all([
+                    api.get('/dashboard/overview'),
                     api.get('/analytics/activity?limit=4'),
-                    api.get('/analytics/streak-status')
                 ]);
-                setOverview(overviewData);
-                setUpcoming(upcomingData);
+                setDashboard(dashboardData);
                 setActivities(activityData);
-                setStreakStatus(streakData);
+                setStreakStatus(dashboardData?.streak_status || null);
             } catch (err) {
                 console.error('Failed to fetch dashboard data', err);
             } finally {
@@ -64,17 +60,45 @@ const Dashboard = () => {
         fetchDashboardData();
     }, []);
 
+    const toggleDailyPlan = async (itemId, completed) => {
+        try {
+            const res = await api.patch(`/goals/daily-plan/${itemId}`, { completed: !completed });
+            setDashboard((prev) => {
+                if (!prev || !prev.today_plan) return prev;
+                const updatedItems = prev.today_plan.items.map((it) =>
+                    it.id === itemId ? { ...it, completed: res.completed, completed_at: res.completed_at } : it
+                );
+                const completedCount = updatedItems.filter((it) => it.completed).length;
+                const minutesPlanned = updatedItems.reduce((sum, it) => sum + (it.duration_minutes || 0), 0);
+                const minutesCompleted = updatedItems.filter((it) => it.completed).reduce((sum, it) => sum + (it.duration_minutes || 0), 0);
+                return {
+                    ...prev,
+                    today_plan: {
+                        ...prev.today_plan,
+                        items: updatedItems,
+                        total_count: updatedItems.length,
+                        completed_count: completedCount,
+                        minutes_planned: minutesPlanned,
+                        minutes_completed: minutesCompleted
+                    }
+                };
+            });
+        } catch (err) {
+            console.error('Failed to update daily plan item', err);
+        }
+    };
+
     const stats = [
         {
             label: 'Due Today',
-            value: overview?.cards_due_today || 0,
+            value: dashboard?.due_today || 0,
             icon: Clock,
             color: 'from-amber-500 to-orange-500',
             glow: 'shadow-amber-500/20'
         },
         {
             label: 'Study Streak',
-            value: `${overview?.study_streak || 0}`,
+            value: `${dashboard?.streak_status?.streak || 0}`,
             suffix: 'days',
             icon: Flame,
             color: 'from-orange-500 to-red-500',
@@ -82,15 +106,16 @@ const Dashboard = () => {
         },
         {
             label: 'Retention',
-            value: `${overview?.retention_rate || 0}%`,
+            value: `${dashboard?.retention_rate || 0}%`,
             icon: Target,
             color: 'from-primary-500 to-indigo-500',
             glow: 'shadow-primary-500/20'
         },
         {
-            label: 'Total Cards',
-            value: overview?.total_flashcards || 0,
-            icon: CheckCircle2,
+            label: 'Velocity',
+            value: dashboard?.velocity || 0,
+            suffix: 'cards/hr',
+            icon: TrendingUp,
             color: 'from-emerald-500 to-teal-500',
             glow: 'shadow-emerald-500/20'
         },
@@ -150,10 +175,20 @@ const Dashboard = () => {
                                         transition={{ delay: 0.2 }}
                                         className="text-dark-400 mt-3 max-w-md text-sm md:text-base"
                                     >
-                                        {overview?.cards_due_today > 0
-                                            ? `You have ${overview.cards_due_today} cards waiting for review.`
+                                        {dashboard?.due_today > 0
+                                            ? `You have ${dashboard.due_today} cards waiting for review.`
                                             : "You're all caught up! Time to learn something new."}
                                     </motion.p>
+                                    {!!dashboard?.today_plan && (
+                                        <motion.p
+                                            initial={{ opacity: 0 }}
+                                            animate={{ opacity: 1 }}
+                                            transition={{ delay: 0.25 }}
+                                            className="text-xs text-dark-500 mt-2"
+                                        >
+                                            {dashboard.today_plan.completed_count}/{dashboard.today_plan.total_count} tasks complete · {dashboard.today_plan.minutes_completed}/{dashboard.today_plan.minutes_planned} min
+                                        </motion.p>
+                                    )}
                                 </div>
                             </div>
                         </header>
@@ -277,7 +312,139 @@ const Dashboard = () => {
                         transition={{ delay: 0.5 }}
                         className="lg:col-span-1 relative z-20"
                     >
-                        <div className="sticky top-6" />
+                        <div className="sticky top-6 space-y-6">
+                            <GoalProgress />
+
+                            <div className="p-6 rounded-2xl bg-dark-900/60 backdrop-blur-sm border border-white/5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                        <Calendar className="w-4 h-4 text-primary-400" />
+                                        Today’s Plan
+                                    </h3>
+                                    <button
+                                        onClick={() => navigate('/practice')}
+                                        className="text-[10px] font-bold uppercase tracking-widest text-dark-500 hover:text-primary-400 transition-colors"
+                                    >
+                                        Start
+                                    </button>
+                                </div>
+                            <div className="space-y-3">
+                                {(dashboard?.today_plan?.items || []).map((item) => (
+                                    <div key={item.id} className={`p-3 rounded-xl bg-white/5 border ${item.completed ? 'border-emerald-500/30' : 'border-white/5'} hover:border-white/10 transition-colors`}>
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div>
+                                                    <button
+                                                        onClick={() => toggleDailyPlan(item.id, item.completed)}
+                                                        className="flex items-start gap-2 text-left"
+                                                    >
+                                                        <span className={`mt-0.5 w-4 h-4 rounded-md border flex items-center justify-center ${item.completed ? 'bg-emerald-500/80 border-emerald-400' : 'border-white/15'}`}>
+                                                            {item.completed && <CheckCircle2 className="w-3 h-3 text-white" />}
+                                                        </span>
+                                                        <span className={`text-sm font-semibold ${item.completed ? 'text-emerald-200 line-through' : 'text-white'}`}>{item.title}</span>
+                                                    </button>
+                                                    {item.notes && (
+                                                        <p className="text-[11px] text-dark-500 mt-1">{item.notes}</p>
+                                                    )}
+                                                </div>
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-dark-400">
+                                                    {item.duration_minutes}m
+                                                </span>
+                                            </div>
+                                    </div>
+                                ))}
+                                    {(!dashboard?.today_plan?.items || dashboard.today_plan.items.length === 0) && (
+                                        <div className="py-6 text-center text-xs text-dark-500">
+                                            No plan yet. Start a focus block to generate one.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Goal Pacing */}
+                            <div className="p-6 rounded-2xl bg-dark-900/60 backdrop-blur-sm border border-white/5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                        <Target className="w-4 h-4 text-primary-400" />
+                                        Goal Pacing
+                                    </h3>
+                                    <button
+                                        onClick={() => navigate('/learning-path')}
+                                        className="text-[10px] font-bold uppercase tracking-widest text-dark-500 hover:text-primary-400 transition-colors"
+                                    >
+                                        Manage
+                                    </button>
+                                </div>
+                                <div className="space-y-3">
+                                    {(dashboard?.goal_pacing || []).map((goal) => (
+                                        <div key={goal.goal_id} className="p-3 rounded-xl bg-white/5 border border-white/5">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-sm font-semibold text-white">{goal.title}</p>
+                                                    <p className="text-[10px] text-dark-500">
+                                                        {goal.required_minutes_per_day > 0 ? `${goal.required_minutes_per_day} min/day` : "No deadline set"}
+                                                    </p>
+                                                </div>
+                                                <span className={`text-[10px] font-bold uppercase tracking-widest ${goal.status === 'on_track' ? 'text-emerald-400' : goal.status === 'overdue' ? 'text-red-400' : 'text-amber-400'}`}>
+                                                    {goal.status.replace('_', ' ')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {(!dashboard?.goal_pacing || dashboard.goal_pacing.length === 0) && (
+                                        <div className="py-4 text-center text-xs text-dark-500">No active goals yet.</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Focus Summary */}
+                            <div className="p-6 rounded-2xl bg-dark-900/60 backdrop-blur-sm border border-white/5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                        <Clock className="w-4 h-4 text-primary-400" />
+                                        Focus Summary
+                                    </h3>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3 text-xs">
+                                    <div className="p-3 rounded-xl bg-white/5">
+                                        <p className="text-dark-500 uppercase tracking-widest font-bold mb-1">Today</p>
+                                        <p className="text-lg font-black text-white">{dashboard?.focus_summary?.minutes_today || 0}m</p>
+                                    </div>
+                                    <div className="p-3 rounded-xl bg-white/5">
+                                        <p className="text-dark-500 uppercase tracking-widest font-bold mb-1">Last 7 days</p>
+                                        <p className="text-lg font-black text-white">{dashboard?.focus_summary?.minutes_last_7_days || 0}m</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Insights */}
+                            <div className="p-6 rounded-2xl bg-dark-900/60 backdrop-blur-sm border border-white/5">
+                                <div className="flex items-center justify-between mb-4">
+                                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                                        <Zap className="w-4 h-4 text-primary-400" />
+                                        Insights
+                                    </h3>
+                                </div>
+                                <div className="space-y-3">
+                                    {(dashboard?.insights || []).map((insight) => (
+                                        <div key={insight.id} className="p-3 rounded-xl bg-white/5 border border-white/5">
+                                            <p className="text-sm font-semibold text-white">{insight.title}</p>
+                                            <p className="text-[11px] text-dark-500 mt-1">{insight.message}</p>
+                                            {insight.action_label && (
+                                                <button
+                                                    onClick={() => navigate(insight.action_route || '/practice')}
+                                                    className="text-[10px] font-bold uppercase tracking-widest text-primary-400 mt-2"
+                                                >
+                                                    {insight.action_label} →
+                                                </button>
+                                            )}
+                                        </div>
+                                    ))}
+                                    {(!dashboard?.insights || dashboard.insights.length === 0) && (
+                                        <div className="py-4 text-center text-xs text-dark-500">No insights yet.</div>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                     </motion.div>
 
                 </div>

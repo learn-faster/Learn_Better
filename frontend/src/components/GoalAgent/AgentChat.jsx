@@ -1,19 +1,39 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Bot, User, AlertTriangle } from 'lucide-react';
+import { Send, Bot, User, AlertTriangle, Gauge } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { agentApi } from '../../services/agent';
 
 const AgentChat = ({ status, onOpenSettings }) => {
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: 'Hi! I’m your Goal Agent. Tell me what you want to achieve and I’ll build a plan.' }
-  ]);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isNegotiating, setIsNegotiating] = useState(false);
   const endRef = useRef(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading]);
+
+  useEffect(() => {
+    const loadHistory = async () => {
+      try {
+        const data = await agentApi.history();
+        const history = data?.history || [];
+        if (history.length > 0) {
+          setMessages(history);
+        } else {
+          setMessages([
+            { role: 'assistant', content: 'Hi! I’m your Goal Agent. Tell me what you want to achieve and I’ll build a plan.' }
+          ]);
+        }
+      } catch {
+        setMessages([
+          { role: 'assistant', content: 'Hi! I’m your Goal Agent. Tell me what you want to achieve and I’ll build a plan.' }
+        ]);
+      }
+    };
+    loadHistory();
+  }, []);
 
   const sendMessage = async (overrideText) => {
     const text = (overrideText ?? input).trim();
@@ -51,6 +71,30 @@ const AgentChat = ({ status, onOpenSettings }) => {
     sendMessage(text);
   };
 
+  const handleNegotiate = async () => {
+    if (isNegotiating) return;
+    setIsNegotiating(true);
+    try {
+      const data = await agentApi.negotiateSummary();
+      const pacing = data?.pacing || [];
+      if (pacing.length === 0) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: 'No active goals found to negotiate yet.' }]);
+      } else {
+        const lines = pacing.map((p) => {
+          const days = p.days_remaining ?? '—';
+          const hours = p.required_daily_hours ?? '—';
+          return `• ${p.title}: days remaining ${days}, required daily hours ${hours}`;
+        });
+        const msg = `Here is your current pacing:\n\n${lines.join('\n')}\n\nTell me the timeline you want, and I’ll rebalance the plan.`;
+        setMessages((prev) => [...prev, { role: 'assistant', content: msg }]);
+      }
+    } catch (e) {
+      setMessages((prev) => [...prev, { role: 'assistant', content: 'Unable to recalculate pacing right now.' }]);
+    } finally {
+      setIsNegotiating(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="px-4 py-3 border-b border-white/5 text-xs text-dark-400">
@@ -75,6 +119,17 @@ const AgentChat = ({ status, onOpenSettings }) => {
       </div>
 
       <div className="p-3 border-t border-white/5">
+        <div className="mb-2 flex items-center justify-between">
+          <button
+            onClick={handleNegotiate}
+            disabled={isNegotiating}
+            className="flex items-center gap-2 text-[11px] px-3 py-1.5 rounded-full bg-white/5 text-primary-200 hover:bg-white/10 disabled:opacity-40"
+          >
+            <Gauge className="w-3.5 h-3.5" />
+            Recalculate pacing
+          </button>
+          <span className="text-[10px] text-dark-500">Ask for a faster or lighter timeline</span>
+        </div>
         <div className="relative">
           <textarea
             value={input}
@@ -103,7 +158,14 @@ const MessageBubble = ({ message }) => {
     <div className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}>
       {!isUser && (
         <div className="w-7 h-7 rounded-full agent-orb flex items-center justify-center">
-          <Bot className="w-4 h-4 text-white" />
+          <span className="agent-orb-shell agent-orb-mini">
+            <span className="agent-orb-halo" />
+            <span className="agent-orb-aurora" />
+            <span className="agent-orb-ring" />
+            <span className="agent-orb-core" />
+            <span className="agent-orb-star agent-orb-star-1" />
+            <span className="agent-orb-star agent-orb-star-2" />
+          </span>
         </div>
       )}
       <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${isUser ? 'bg-primary-500/90 text-white' : 'bg-dark-900/70 border border-white/10 text-white shadow-[0_0_25px_rgba(139,92,246,0.08)]'}`}>

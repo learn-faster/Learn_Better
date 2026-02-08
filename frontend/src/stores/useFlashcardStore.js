@@ -36,10 +36,10 @@ const useFlashcardStore = create((set, get) => ({
      * @async
      * @returns {Promise<Array>} The list of due cards.
      */
-    fetchDueCards: async () => {
+    fetchDueCards: async (params = {}) => {
         set({ isLoading: true, error: null });
         try {
-            const data = await api.get('/flashcards/due');
+            const data = await api.get('/flashcards/due', { params });
             set({ dueCards: data, isLoading: false });
             return data;
         } catch (err) {

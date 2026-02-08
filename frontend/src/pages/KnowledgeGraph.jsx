@@ -115,6 +115,7 @@ const KnowledgeGraph = () => {
         llm_config: { provider: 'openai', model: '', base_url: '' }
     });
     const [buildMode, setBuildMode] = useState('existing');
+    const [buildSourceMode, setBuildSourceMode] = useState('filtered');
     const [buildError, setBuildError] = useState('');
     const [showConnections, setShowConnections] = useState(false);
     const [showCrossLinks, setShowCrossLinks] = useState(true);
@@ -243,7 +244,7 @@ const KnowledgeGraph = () => {
         setBuildError('');
         setIsGraphLoading(true);
         try {
-            await GraphService.buildGraph(selectedGraphId, { build_mode: buildMode });
+            await GraphService.buildGraph(selectedGraphId, { build_mode: buildMode, source_mode: buildSourceMode });
             await fetchGraph(true);
             await loadGraphs();
             setShowBuildModal(false);
@@ -1140,6 +1141,26 @@ const KnowledgeGraph = () => {
                                         <div className="text-[10px] text-dark-400">Re-run extraction with LLM</div>
                                     </div>
                                 </label>
+                            </div>
+                            <div className="mt-6">
+                                <p className="text-xs font-bold uppercase tracking-widest text-dark-500 mb-3">Source Text</p>
+                                <div className="flex flex-wrap gap-3">
+                                    {[
+                                        { value: 'filtered', label: 'Filtered Core' },
+                                        { value: 'raw', label: 'Raw Full Text' }
+                                    ].map((option) => (
+                                        <button
+                                            key={option.value}
+                                            onClick={() => setBuildSourceMode(option.value)}
+                                            className={`px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-all ${buildSourceMode === option.value ? 'bg-cyan-500/15 text-cyan-300 border-cyan-400/40' : 'bg-dark-900/40 text-dark-400 border-white/5 hover:border-white/10'}`}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <p className="text-[10px] text-dark-500 mt-3">
+                                    Filtered mode removes boilerplate and repeats to focus on key concepts.
+                                </p>
                             </div>
                             {buildError && (
                                 <div className="text-xs text-amber-400 mt-4">{buildError}</div>

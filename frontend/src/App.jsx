@@ -14,6 +14,8 @@ import KnowledgeGraph from './pages/KnowledgeGraph';
 import CurriculumList from './pages/CurriculumList';
 import CurriculumView from './pages/CurriculumView';
 import Settings from './pages/Settings';
+import DailyGoals from './pages/DailyGoals';
+import AdminEmails from './pages/AdminEmails';
 
 
 const queryClient = new QueryClient({
@@ -41,6 +43,8 @@ function App() {
             <Route path="curriculum/:id" element={<CurriculumView />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="settings" element={<Settings />} />
+            <Route path="daily-goals" element={<DailyGoals />} />
+            <Route path="admin/emails" element={<AdminEmails />} />
           </Route>
         </Routes>
       </Router>
