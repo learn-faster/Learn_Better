@@ -237,5 +237,42 @@ These are the areas planned/under refinement based on current roadmap:
   WEEKLY_DIGEST_MINUTE=0
   ```
 
+### Resend Inbound Email + Vercel Hosting Instructions
+Use these steps to enable inbound email negotiation and replies.
+
+#### 1) Backend URL for Webhook
+Resend requires a **public HTTPS** endpoint. If your backend is deployed on Vercel, the webhook endpoint is:
+
+```
+https://<your-vercel-project>.vercel.app/api/goals/agent/email/inbound
+```
+
+If your backend is not on Vercel, replace with your backend’s public domain.
+
+#### 2) Resend Inbound Webhook Setup
+In the Resend dashboard:
+- **Endpoint URL:** use the URL above
+- **Event type:** Incoming Email / Email Received (inbound)
+
+#### 3) Environment Variables (Backend)
+Set these in Vercel (or your backend host):
+
+```
+RESEND_API_KEY=...
+RESEND_FROM_EMAIL=onboarding@resend.dev
+RESEND_REPLY_DOMAIN=reply.yourdomain.com
+FRONTEND_URL=https://<your-frontend-domain>
+```
+
+#### 4) Frontend Configuration
+Agent Settings includes:
+- `Resend API Key`
+- `Resend Reply Domain`
+
+These are saved to user settings and are used for **both** outbound and inbound email flows.
+
+#### 5) Localhost Limitation
+Resend **cannot** send webhooks to `localhost`. Use a public domain or a tunnel (ngrok/Cloudflare) for local testing.
+
 ## Summary
 The project is actively being refined into a high‑quality, production‑ready learning platform. Recent updates focused on PDF stability, agent UI, settings UX, and general UI polish, while the next wave will deepen functionality across documents, knowledge graphs, curriculum planning, and agent workflows.
