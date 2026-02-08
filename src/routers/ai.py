@@ -8,6 +8,7 @@ import traceback
 from src.database.orm import get_db
 from src.models.orm import Document, UserSettings
 from src.services.llm_service import llm_service
+from src.utils.logger import logger
 from src.ingestion.document_processor import DocumentProcessor
 from src.path_resolution.path_resolver import PathResolver
 from src.models.schemas import LearningPath, PathRequest, LLMConfig
@@ -75,7 +76,7 @@ async def generate_flashcards(request: GenerateRequest, db: Session = Depends(ge
         flashcards = await llm_service.generate_flashcards(text, request.count, config)
         return flashcards
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Error generating flashcards")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -119,7 +120,7 @@ async def generate_questions(request: GenerateRequest, db: Session = Depends(get
         questions = await llm_service.generate_questions(text, request.count, config)
         return questions
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Error generating flashcards")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -159,7 +160,7 @@ async def generate_learning_path(
             return graph_path
             
     except Exception as e:
-        print(f"Graph resolution failed: {e}")
+        logger.error(f"Graph resolution failed: {e}")
         # Continue to fallback ONLY if concept doesn't exist in graph
 
     # 2. Fallback to LLM Generation (Only if NOT in graph or graph resolution failed and concept is new)
@@ -203,7 +204,7 @@ async def generate_learning_path(
         path = await llm_service.generate_learning_path(text, request.target_concept, config=config)
         return path
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Error generating learning path")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -220,12 +221,12 @@ async def extract_concepts(request: GenerateRequest, db: Session = Depends(get_d
     file_path = document.file_path
 
     if not text and file_path:
-        print(f"DEBUG: Attempting extraction for document {document.id} at path: {file_path}")
+        logger.debug(f"Attempting extraction for document {document.id} at path: {file_path}")
         
         # Robust path check: if file_path is relative, join with upload_dir
         if not os.path.exists(file_path):
             alt_path = os.path.join(settings.upload_dir, os.path.basename(file_path))
-            print(f"DEBUG: Original path not found. Trying alt path: {alt_path}")
+            logger.debug(f"Original path not found. Trying alt path: {alt_path}")
             if os.path.exists(alt_path):
                 file_path = alt_path
             else:
@@ -236,14 +237,14 @@ async def extract_concepts(request: GenerateRequest, db: Session = Depends(get_d
         try:
             text = document_processor.convert_to_markdown(file_path)
             if text:
-                print(f"DEBUG: Successfully extracted {len(text)} characters.")
+                logger.debug(f"Successfully extracted {len(text)} characters.")
                 # Update document with extracted text so we don't do it again
                 document.extracted_text = text
                 db.commit()
             else:
-                 print(f"DEBUG: MarkItDown returned empty text for {file_path}")
+                 logger.debug(f"MarkItDown returned empty text for {file_path}")
         except Exception as e:
-            print(f"ERROR: Extraction failed for {file_path}: {str(e)}")
+            logger.error(f"Extraction failed for {file_path}: {str(e)}")
             
     if not text:
         raise HTTPException(
@@ -279,5 +280,5 @@ async def extract_concepts(request: GenerateRequest, db: Session = Depends(get_d
             "data": extraction
         }
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Error during concept extraction")
         raise HTTPException(status_code=500, detail=str(e))

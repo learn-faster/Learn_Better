@@ -11,6 +11,7 @@ from openai import AsyncOpenAI
 from src.config import settings
 from src.services.prompts import FLASHCARD_PROMPT_TEMPLATE, QUESTION_PROMPT_TEMPLATE, LEARNING_PATH_PROMPT_TEMPLATE, CONCEPT_EXTRACTION_PROMPT_TEMPLATE
 from opik import configure, track
+from src.utils.logger import logger
 
 class LLMService:
     """
@@ -40,7 +41,7 @@ class LLMService:
         #     try:
         #         configure()
         #     except Exception as e:
-        #         print(f"Warning: Opik configuration failed: {e}")
+        #         logger.warning(f"Opik configuration failed: {e}")
 
         # Create HTTP client with robust timeout (5 minutes for slow LLMs like Ollama)
         # trust_env=True is critical for users behind proxies/VPNs
@@ -165,11 +166,11 @@ class LLMService:
             
             return response.choices[0].message.content
         except Exception as e:
-            print(f"LLM Chat Error: {type(e).__name__}: {e}")
+            logger.error(f"LLM Chat Error: {type(e).__name__}: {e}")
             # Log more details if it's an OpenAI API error
             if hasattr(e, 'response'):
                 try:
-                    print(f"DEBUG: Error Response Body: {e.response.text}", flush=True)
+                    logger.error(f"DEBUG: Error Response Body: {e.response.text}")
                 except:
                     pass
             raise e
@@ -206,7 +207,7 @@ class LLMService:
             )
             return response.choices[0].message.content
         except Exception as e:
-            print(f"LLM Vision Error: {e}")
+            logger.error(f"LLM Vision Error: {e}")
             raise e
 
 
@@ -302,7 +303,7 @@ class LLMService:
                 # 4. Fallback: If it looks like a valid markdown response, wrap it in a JSON structure
                 # This prevents crashes when the model ignores JSON instructions but gives good content
                 if text.strip().startswith('#') or 'module' in text.lower():
-                    print("DEBUG: LLM returned raw markdown. Wrapping in fallback JSON.")
+                    logger.warning("LLM returned raw markdown. Wrapping in fallback JSON.")
                     return {
                         "title": "Generated Curriculum",
                         "description": "Content generated from your request.",
@@ -371,8 +372,8 @@ class LLMService:
             )
             return response.data[0].embedding
         except Exception as e:
-            print(f"Embedding Error: {e}")
-            traceback.print_exc()
+            logger.error(f"Embedding Error: {e}")
+            logger.error(traceback.format_exc())
             raise e
 
     @track

@@ -6,6 +6,7 @@ from .connections import neo4j_conn, postgres_conn
 from .graph_storage import graph_storage
 from .orm import Base, engine
 from src.models import orm as orm_models  # Ensure models are registered with Base
+from src.utils.logger import logger
 
 
 def initialize_neo4j_constraints():
@@ -54,7 +55,7 @@ def initialize_orm_tables():
     try:
         # Create new tables (Flashcard, StudySession, etc.)
         Base.metadata.create_all(bind=engine)
-        print("ORM tables initialized successfully")
+        logger.info("ORM tables initialized successfully")
         
         # Manually migrate 'documents' table to add new columns if they don't exist
         migrate_documents_table()
@@ -137,23 +138,23 @@ def initialize_databases():
     
     # 1. Verify PostgreSQL schema
     if not verify_postgres_schema():
-        print("PostgreSQL verification failed")
+        logger.error("PostgreSQL verification failed")
         return False
         
     # 2. Initialize ORM tables and run migrations
     if not initialize_orm_tables():
-        print("ORM initialization failed")
+        logger.error("ORM initialization failed")
         return False
 
     # 3. Initialize Neo4j constraints
     try:
         initialize_neo4j_constraints()
-        print("Neo4j constraints initialized successfully")
+        logger.info("Neo4j constraints initialized successfully")
     except Exception as e:
         print(f"Neo4j initialization failed (non-fatal): {e}")
         # We allow this to be non-fatal for now to avoid blocking the whole app
     
-    print("Database initialization completed successfully")
+    logger.info("Database initialization completed successfully")
     return True
 
 

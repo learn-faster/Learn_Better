@@ -4,17 +4,19 @@ import logging
 import subprocess
 from typing import List, Optional
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Query
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Query, Request
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from src.storage.document_store import DocumentStore
+from src.utils.logger import logger
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("learnfast-core")
+# Configure logging (Removed old basicConfig)
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger("learnfast-core")
 
 # Import core components
 from src.ingestion.ingestion_engine import IngestionEngine
@@ -140,6 +142,15 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# Global Exception Handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Global Exception Handler: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"message": "Internal Server Error", "detail": str(exc)},
+    )
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
@@ -167,7 +178,12 @@ app.include_router(notebook_router, prefix="/api")
 
 
 # Mount static files
-app.mount("/static", StaticFiles(directory="src/static"), name="static")
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Mount screenshots directory
+os.makedirs("data/screenshots", exist_ok=True)
+app.mount("/screenshots", StaticFiles(directory="data/screenshots"), name="screenshots")
 app.mount("/uploads", StaticFiles(directory=settings.upload_dir), name="uploads") # Mount uploads
 app.mount("/extracted_images", StaticFiles(directory="data/extracted_images"), name="extracted_images")  # Multimodal assets
 

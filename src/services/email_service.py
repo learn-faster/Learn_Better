@@ -7,6 +7,7 @@ import os
 from typing import Optional, List
 from datetime import datetime
 import httpx
+from src.utils.logger import logger
 
 class EmailService:
     """
@@ -43,7 +44,7 @@ class EmailService:
         key_to_use = api_key or self.api_key
         
         if not key_to_use:
-            print(f"[EmailService] No API key — would send: {subject} to {to_email}")
+            logger.warning(f"[EmailService] No API key — would send: {subject} to {to_email}")
             return False
             
         try:
@@ -63,13 +64,13 @@ class EmailService:
                     }
                 )
                 if response.status_code == 200:
-                    print(f"[EmailService] Sent: {subject}")
+                    logger.info(f"[EmailService] Sent: {subject}")
                     return True
                 else:
-                    print(f"[EmailService] Failed: {response.text}")
+                    logger.error(f"[EmailService] Failed: {response.text}")
                     return False
         except Exception as e:
-            print(f"[EmailService] Error: {e}")
+            logger.error(f"[EmailService] Error: {e}")
             return False
     
     # ========== Agent Email Templates ==========

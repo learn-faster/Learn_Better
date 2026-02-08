@@ -171,3 +171,120 @@ def _enrich_goal_response(goal: Goal) -> GoalResponse:
         days_remaining=days_remaining,
         is_on_track=is_on_track
     )
+
+
+# ========== Agent Endpoints ==========
+
+from src.services.goal_agent import goal_agent
+from src.models.agent import ChatInput, AgentResponse, AgentSettings
+
+@router.post("/agent/chat", response_model=AgentResponse)
+async def chat_with_agent(
+    chat_input: ChatInput,
+    user_id: str = "default_user",
+    db: Session = Depends(get_db)  
+):
+    """
+    Chat with the Goal Manifestation Agent.
+    """
+    # TODO: Pass DB connection to agent properly if needed, 
+    # but for now agent uses imported services which handle their own DB.
+    response_text = await goal_agent.process_message(user_id, chat_input.message)
+    
+    # In the future, we can extract structured data from agent state to populate these fields
+    return AgentResponse(
+        message=response_text,
+        suggested_actions=[],
+        tool_calls=[]
+    )
+
+@router.post("/agent/settings")
+async def update_agent_settings(
+    settings: AgentSettings,
+    user_id: str = "default_user",
+    db: Session = Depends(get_db)
+):
+    """
+    Update Agent settings (LLM config, etc).
+    """
+    
+    # Lazy import to avoid circular dependency
+    from src.models.orm import UserSettings
+    
+    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    if not user_settings:
+        # Create default if missing
+        user_settings = UserSettings(user_id=user_id)
+        db.add(user_settings)
+    
+    # Update Agent settings using a fresh dictionary to ensure SQLAlchemy detects change
+    new_config = dict(user_settings.llm_config) if user_settings.llm_config else {}
+    
+    # Store the entire settings object for full persistence
+    new_config["agent_settings"] = settings.model_dump()
+    
+    # Also keep agent_llm for backward compatibility with goal_agent.py current logic
+    new_config["agent_llm"] = settings.llm_config.model_dump()
+    
+    user_settings.llm_config = new_config
+    
+    # Explicitly flag modification for JSON column
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(user_settings, "llm_config")
+    
+    # Update legacy field for compatibility
+    user_settings.email_daily_reminder = settings.check_in_frequency_hours > 0 
+    
+    # Save Resend API Key if provided
+    if settings.resend_api_key:
+        user_settings.resend_api_key = settings.resend_api_key
+    
+    db.commit()
+    return {"status": "updated", "settings": settings.model_dump()}
+
+@router.get("/agent/settings")
+async def get_agent_settings(
+    user_id: str = "default_user",
+    db: Session = Depends(get_db)
+):
+    """
+    Retrieve Agent settings.
+    """
+    from src.models.orm import UserSettings
+    
+    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
+    if not user_settings:
+        return {
+            "llm_config": {
+                "provider": "openai",
+                "model": "gpt-4o",
+                "base_url": "",
+                "temperature": 0.7,
+                "api_key": ""
+            },
+            "enable_screenshots": True,
+            "check_in_frequency_hours": 4
+        }
+    
+    # Try to load from consolidated agent_settings first
+    agent_settings_data = user_settings.llm_config.get("agent_settings", {}) if user_settings.llm_config else {}
+    
+    # Fallback to legacy agent_llm if consolidated is missing
+    agent_llm = user_settings.llm_config.get("agent_llm", {}) if user_settings.llm_config else {}
+    
+    # Reconstruct/Fallback values
+    llm_config = agent_settings_data.get("llm_config") or {
+        "provider": agent_llm.get("provider", "openai"),
+        "model": agent_llm.get("model", "gpt-4o"),
+        "base_url": agent_llm.get("base_url", ""),
+        "temperature": agent_llm.get("temperature", 0.7),
+        "api_key": agent_llm.get("api_key", "")
+    }
+    
+    return {
+        "llm_config": llm_config,
+        "enable_screenshots": agent_settings_data.get("enable_screenshots", True),
+        "check_in_frequency_hours": agent_settings_data.get("check_in_frequency_hours", 4 if user_settings.email_daily_reminder else 0),
+        "resend_api_key": user_settings.resend_api_key
+    }
+
