@@ -4,6 +4,7 @@ from typing import Optional
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 import traceback
+import time
 
 from src.database.orm import get_db
 from src.models.orm import Document, UserSettings
@@ -282,3 +283,23 @@ async def extract_concepts(request: GenerateRequest, db: Session = Depends(get_d
     except Exception as e:
         logger.exception("Error during concept extraction")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class TestLLMRequest(BaseModel):
+    prompt: str
+    llm_config: Optional[LLMConfig] = None
+
+
+@router.post("/test-llm")
+async def test_llm(request: TestLLMRequest):
+    start = time.time()
+    output = await llm_service.get_chat_completion(
+        messages=[{"role": "user", "content": request.prompt}],
+        config=request.llm_config
+    )
+    latency_ms = int((time.time() - start) * 1000)
+    return {
+        "ok": True,
+        "latency_ms": latency_ms,
+        "output_sample": output[:500]
+    }

@@ -138,3 +138,98 @@ Based on the module type, generate the following:
 
 Output only the content itself. If it's JSON, ensure it's valid JSON.
 """
+
+
+WEEKLY_CURRICULUM_PROMPT_TEMPLATE = r"""
+You are an elite learning architect. Design a week-by-week plan that is grounded in the provided documents and concept graph.
+Do NOT introduce new sources. If LLM enhancement is enabled, add explanations or examples only.
+
+Goal: {goal}
+Time Budget: {hours_per_week} hours/week for {duration_weeks} weeks
+Start Date: {start_date}
+Prerequisites (if any): {prereqs}
+
+Available Documents (use their ids when linking tasks/checkpoints):
+{documents}
+
+Context/Source Material:
+{text}
+
+Return strict JSON with this format:
+{{
+  "title": "Plan title",
+  "description": "1-2 sentence overview",
+  "weeks": [
+    {{
+      "week_index": 1,
+      "goal": "Focus goal",
+      "focus_concepts": ["concept 1", "concept 2"],
+      "estimated_hours": 5,
+      "tasks": [
+        {{
+          "title": "Task title",
+          "task_type": "reading | practice | quiz | graph | review",
+          "linked_doc_ids": [1, 2],
+          "estimate_minutes": 45,
+          "notes": "Optional explanation or example"
+        }}
+      ],
+      "checkpoints": [
+        {{
+          "title": "Checkpoint title",
+          "success_criteria": "Measurable success criteria",
+          "assessment_type": "recall | quiz | summary",
+          "linked_doc_ids": [1],
+          "due_offset_days": 7
+        }}
+      ]
+    }}
+  ]
+}}
+"""
+
+
+CLOZE_GENERATION_PROMPT_TEMPLATE = r"""
+You are an expert tutor creating short recall passages for a student.
+From the text below, generate {count} short, logically complete passages.
+Each passage should be 2-5 sentences and focused on a single concept.
+For each passage, produce a masked (cloze) version where key terms are replaced with [[blank_1]], [[blank_2]], etc.
+Also return an answer_key list with the key ideas (not verbatim), 2-5 bullets.
+Return a JSON array of objects with keys: passage_markdown, masked_markdown, answer_key.
+
+Text:
+{text}
+
+Output format:
+[
+  {{
+    "passage_markdown": "...",
+    "masked_markdown": "...",
+    "answer_key": ["idea 1", "idea 2"]
+  }}
+]
+"""
+
+RECALL_GRADING_PROMPT_TEMPLATE = r"""
+You are an expert grader for learning recall.
+Given the reference passage and the student's response, score semantic recall from 0 to 1.
+Be lenient on phrasing; grade on key ideas. Provide feedback and a list of matched ideas.
+Return JSON with: score (0-1), feedback (short), matched (list), missing (list).
+
+Reference Passage:
+{passage}
+
+Expected Key Ideas:
+{answer_key}
+
+Student Response:
+{response}
+
+Output format:
+{{
+  "score": 0.8,
+  "feedback": "...",
+  "matched": ["..."],
+  "missing": ["..."]
+}}
+"""

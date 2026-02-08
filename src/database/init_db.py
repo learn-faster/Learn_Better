@@ -106,6 +106,7 @@ def migrate_documents_table():
 def migrate_user_settings_table():
     """Add new columns to user_settings table if they are missing."""
     cols_to_add = [
+        ("timezone", "VARCHAR DEFAULT 'UTC'"),
         ("email", "VARCHAR"),
         ("resend_api_key", "VARCHAR"),
         ("current_streak", "INTEGER DEFAULT 0"),
@@ -118,6 +119,10 @@ def migrate_user_settings_table():
         ("email_daily_reminder", "BOOLEAN DEFAULT TRUE"),
         ("email_streak_alert", "BOOLEAN DEFAULT TRUE"),
         ("email_weekly_digest", "BOOLEAN DEFAULT TRUE"),
+        ("weekly_digest_day", "INTEGER DEFAULT 6"),
+        ("weekly_digest_hour", "INTEGER DEFAULT 18"),
+        ("weekly_digest_minute", "INTEGER DEFAULT 0"),
+        ("weekly_digest_last_sent_at", "TIMESTAMP"),
         ("llm_config", "JSON"),
         ("use_biometrics", "BOOLEAN DEFAULT FALSE"),
         ("fitbit_client_id", "VARCHAR"),

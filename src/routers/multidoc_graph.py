@@ -8,12 +8,30 @@ Provides endpoints for:
 """
 
 import logging
+import json
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional, Dict, Any
 
 from src.database.graph_storage import multi_doc_graph_storage
 from src.navigation.navigation_engine import multi_doc_navigation
 from src.ingestion.ingestion_engine import IngestionEngine
+from src.database.orm import get_db
+from sqlalchemy.orm import Session
+from src.models.orm import KnowledgeGraph, Document
+from src.models.schemas import (
+    KnowledgeGraphCreate,
+    KnowledgeGraphUpdate,
+    KnowledgeGraphResponse,
+    KnowledgeGraphBuildRequest,
+    KnowledgeGraphSuggestionRequest,
+    KnowledgeGraphConnectionRequest,
+    KnowledgeGraphDataResponse,
+    LLMConfig
+)
+from src.services.knowledge_graph_service import KnowledgeGraphService
+from src.dependencies import get_ingestion_engine
+from src.services.llm_service import llm_service
 
 logger = logging.getLogger(__name__)
 
@@ -226,3 +244,286 @@ async def get_graph_statistics():
     except Exception as e:
         logger.error(f"Error getting graph statistics: {e}")
         raise HTTPException(status_code=500, detail="Failed to retrieve statistics")
+
+
+# ===========================
+# Saved Knowledge Graphs API
+# ===========================
+
+@router.get("", response_model=List[KnowledgeGraphResponse])
+async def list_graphs(user_id: str = "default_user", db: Session = Depends(get_db)):
+    graphs = KnowledgeGraphService.list_graphs(db, user_id)
+    responses = []
+    for graph in graphs:
+        doc_ids = [gd.document_id for gd in graph.documents]
+        responses.append(KnowledgeGraphResponse(
+            id=graph.id,
+            user_id=graph.user_id,
+            name=graph.name,
+            description=graph.description,
+            status=graph.status,
+            node_count=graph.node_count,
+            relationship_count=graph.relationship_count,
+            created_at=graph.created_at,
+            updated_at=graph.updated_at,
+            last_built_at=graph.last_built_at,
+            document_ids=doc_ids,
+            llm_config=(LLMConfig(**graph.llm_config) if graph.llm_config else None)
+        ))
+    return responses
+
+
+@router.post("", response_model=KnowledgeGraphResponse)
+async def create_graph(payload: KnowledgeGraphCreate, db: Session = Depends(get_db)):
+    graph = KnowledgeGraphService.create_graph(
+        db=db,
+        user_id=payload.user_id,
+        name=payload.name,
+        description=payload.description,
+        document_ids=payload.document_ids,
+        llm_config=payload.llm_config
+    )
+    doc_ids = [gd.document_id for gd in graph.documents]
+    return KnowledgeGraphResponse(
+        id=graph.id,
+        user_id=graph.user_id,
+        name=graph.name,
+        description=graph.description,
+        status=graph.status,
+        node_count=graph.node_count,
+        relationship_count=graph.relationship_count,
+        created_at=graph.created_at,
+        updated_at=graph.updated_at,
+        last_built_at=graph.last_built_at,
+        document_ids=doc_ids,
+        llm_config=(LLMConfig(**graph.llm_config) if graph.llm_config else None)
+    )
+
+
+@router.get("/{graph_id}", response_model=KnowledgeGraphResponse)
+async def get_graph(graph_id: str, db: Session = Depends(get_db)):
+    graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Graph not found")
+    doc_ids = [gd.document_id for gd in graph.documents]
+    return KnowledgeGraphResponse(
+        id=graph.id,
+        user_id=graph.user_id,
+        name=graph.name,
+        description=graph.description,
+        status=graph.status,
+        node_count=graph.node_count,
+        relationship_count=graph.relationship_count,
+        created_at=graph.created_at,
+        updated_at=graph.updated_at,
+        last_built_at=graph.last_built_at,
+        document_ids=doc_ids,
+        llm_config=(LLMConfig(**graph.llm_config) if graph.llm_config else None)
+    )
+
+
+@router.put("/{graph_id}", response_model=KnowledgeGraphResponse)
+async def update_graph(graph_id: str, payload: KnowledgeGraphUpdate, db: Session = Depends(get_db)):
+    graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Graph not found")
+
+    graph = KnowledgeGraphService.update_graph(
+        db=db,
+        graph=graph,
+        name=payload.name,
+        description=payload.description,
+        document_ids=payload.document_ids,
+        llm_config=payload.llm_config
+    )
+
+    doc_ids = [gd.document_id for gd in graph.documents]
+    return KnowledgeGraphResponse(
+        id=graph.id,
+        user_id=graph.user_id,
+        name=graph.name,
+        description=graph.description,
+        status=graph.status,
+        node_count=graph.node_count,
+        relationship_count=graph.relationship_count,
+        created_at=graph.created_at,
+        updated_at=graph.updated_at,
+        last_built_at=graph.last_built_at,
+        document_ids=doc_ids,
+        llm_config=(LLMConfig(**graph.llm_config) if graph.llm_config else None)
+    )
+
+
+@router.delete("/{graph_id}")
+async def delete_graph(graph_id: str, db: Session = Depends(get_db)):
+    graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Graph not found")
+    KnowledgeGraphService.delete_graph(db, graph)
+    return {"message": "Graph deleted"}
+
+
+@router.post("/{graph_id}/build", response_model=KnowledgeGraphResponse)
+async def build_graph(
+    graph_id: str,
+    payload: KnowledgeGraphBuildRequest,
+    db: Session = Depends(get_db),
+    ingestion_engine: IngestionEngine = Depends(get_ingestion_engine)
+):
+    graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Graph not found")
+
+    doc_ids = [gd.document_id for gd in graph.documents]
+    if not doc_ids:
+        raise HTTPException(status_code=400, detail="Graph has no documents")
+
+    graph.status = "building"
+    db.commit()
+
+    try:
+        if payload.build_mode == "existing":
+            for doc_id in doc_ids:
+                doc_graph = multi_doc_graph_storage.get_document_graph(doc_id)
+                if not doc_graph or doc_graph.get("node_count", 0) == 0:
+                    raise ValueError(f"No scoped graph data found for document {doc_id}")
+        elif payload.build_mode == "rebuild":
+            llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, payload.llm_config, graph.llm_config)
+            for doc_id in doc_ids:
+                doc = db.query(Document).filter(Document.id == doc_id).first()
+                if not doc or not doc.extracted_text:
+                    raise ValueError(f"Document {doc_id} has no extracted text")
+                await ingestion_engine.process_document_scoped_from_text(doc.extracted_text, doc_id, llm_config=llm_config)
+        else:
+            raise ValueError("Invalid build_mode. Use 'existing' or 'rebuild'.")
+
+        graph_data = KnowledgeGraphService.get_graph_data(graph, include_connections=False)
+        graph.node_count = graph_data["node_count"]
+        graph.relationship_count = graph_data["relationship_count"]
+        graph.status = "ready"
+        graph.last_built_at = datetime.utcnow()
+        db.commit()
+        db.refresh(graph)
+    except Exception as e:
+        graph.status = "error"
+        db.commit()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    doc_ids = [gd.document_id for gd in graph.documents]
+    return KnowledgeGraphResponse(
+        id=graph.id,
+        user_id=graph.user_id,
+        name=graph.name,
+        description=graph.description,
+        status=graph.status,
+        node_count=graph.node_count,
+        relationship_count=graph.relationship_count,
+        created_at=graph.created_at,
+        updated_at=graph.updated_at,
+        last_built_at=graph.last_built_at,
+        document_ids=doc_ids,
+        llm_config=(LLMConfig(**graph.llm_config) if graph.llm_config else None)
+    )
+
+
+@router.get("/{graph_id}/data", response_model=KnowledgeGraphDataResponse)
+async def get_graph_data(
+    graph_id: str,
+    include_connections: bool = True,
+    target_graph_id: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
+    if not graph:
+        raise HTTPException(status_code=404, detail="Graph not found")
+
+    data = KnowledgeGraphService.get_graph_data(graph, include_connections=include_connections, target_graph_id=target_graph_id)
+    return KnowledgeGraphDataResponse(
+        graph_id=graph.id,
+        nodes=data["nodes"],
+        links=data["links"],
+        node_count=data["node_count"],
+        relationship_count=data["relationship_count"],
+        graph_meta=data["graph_meta"]
+    )
+
+
+@router.post("/{graph_id}/connections/suggest")
+async def suggest_connections(
+    graph_id: str,
+    payload: KnowledgeGraphSuggestionRequest,
+    db: Session = Depends(get_db)
+):
+    graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
+    target_graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == payload.target_graph_id).first()
+    if not graph or not target_graph:
+        raise HTTPException(status_code=404, detail="Graph not found")
+
+    source_data = KnowledgeGraphService.get_graph_data(graph, include_connections=False)
+    target_data = KnowledgeGraphService.get_graph_data(target_graph, include_connections=False)
+
+    source_concepts = [{"id": n["id"], "name": n["name"]} for n in source_data["nodes"]]
+    target_concepts = [{"id": n["id"], "name": n["name"]} for n in target_data["nodes"]]
+
+    if not source_concepts or not target_concepts:
+        return {"connections": [], "message": "No concepts available to compare"}
+
+    llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, payload.llm_config, graph.llm_config)
+
+    prompt = f"""
+You are a knowledge graph alignment assistant.
+User context: {payload.context}
+
+Source concepts (graph A):
+{json.dumps(source_concepts[:150])}
+
+Target concepts (graph B):
+{json.dumps(target_concepts[:150])}
+
+Select the best cross-graph connections based on the context.
+Return JSON: {{"connections":[{{"from_scoped_id":"", "to_scoped_id":"", "confidence":0.0, "rationale":""}}]}}
+Limit to at most {payload.max_links} connections.
+"""
+    try:
+        response_text = await llm_service.get_chat_completion(
+            messages=[{"role": "user", "content": prompt}],
+            response_format="json",
+            config=llm_config
+        )
+        data = json.loads(response_text)
+        connections = data.get("connections", [])
+        return {"connections": connections}
+    except Exception as e:
+        logger.error(f"Connection suggestion failed: {e}")
+        return {"connections": [], "message": "Failed to generate suggestions"}
+
+
+@router.post("/{graph_id}/connections")
+async def save_connections(
+    graph_id: str,
+    payload: KnowledgeGraphConnectionRequest,
+    db: Session = Depends(get_db)
+):
+    graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
+    target_graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == payload.target_graph_id).first()
+    if not graph or not target_graph:
+        raise HTTPException(status_code=404, detail="Graph not found")
+
+    created = multi_doc_graph_storage.create_cross_graph_links(
+        connections=[c.model_dump() for c in payload.connections],
+        context=payload.context,
+        graph_a=graph.id,
+        graph_b=target_graph.id,
+        method=payload.method,
+        created_by=graph.user_id
+    )
+    return {"created": created}
+
+
+@router.get("/{graph_id}/connections")
+async def get_connections(
+    graph_id: str,
+    target_graph_id: Optional[str] = None
+):
+    connections = multi_doc_graph_storage.get_cross_graph_links(graph_id, target_graph_id=target_graph_id)
+    return {"connections": connections}

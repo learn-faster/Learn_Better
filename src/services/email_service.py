@@ -159,6 +159,7 @@ class EmailService:
         cards_reviewed: int,
         streak: int,
         goals_summary: List[dict],
+        curriculum_summary: Optional[List[dict]] = None,
         api_key: Optional[str] = None
     ) -> bool:
         """Sends a weekly progress digest."""
@@ -173,6 +174,40 @@ class EmailService:
         if not goals_html:
             goals_html = "<li>No active goals yet. Create one to start tracking!</li>"
         
+        curriculum_html = ""
+        if curriculum_summary:
+            rows = ""
+            for c in curriculum_summary[:3]:
+                title = c.get("title", "Curriculum")
+                progress = c.get("progress", 0)
+                next_cp = c.get("next_checkpoint", "—")
+                due = c.get("next_due", "—")
+                rows += f"""
+                <tr>
+                    <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;">
+                        <div style="font-weight:600;color:#111827;">{title}</div>
+                        <div style="font-size:12px;color:#6b7280;">Next: {next_cp} · {due}</div>
+                    </td>
+                    <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;text-align:right;font-weight:700;color:#4f46e5;">
+                        {progress:.0f}%
+                    </td>
+                </tr>
+                """
+            curriculum_html = f"""
+            <h3 style="margin-top:24px;">Curriculum Progress</h3>
+            <table style="width:100%;border:1px solid #e5e7eb;border-radius:12px;overflow:hidden;border-collapse:collapse;">
+                <thead>
+                    <tr style="background:#f9fafb;">
+                        <th style="text-align:left;padding:10px 12px;font-size:12px;color:#6b7280;">Plan</th>
+                        <th style="text-align:right;padding:10px 12px;font-size:12px;color:#6b7280;">Progress</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows}
+                </tbody>
+            </table>
+            """
+
         html = f"""
         <div style="font-family: system-ui, sans-serif; max-width: 500px; margin: 0 auto;">
             <h2 style="color: #6366f1;">Weekly Learning Digest 📚</h2>
@@ -194,6 +229,7 @@ class EmailService:
             </table>
             <h3>Goals Progress</h3>
             <ul>{goals_html}</ul>
+            {curriculum_html}
             <p>Keep up the great work! 💪</p>
             <div style="margin: 24px 0;">
                 <a href="{self.frontend_url}/analytics" style="background:#6366f1;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;display:inline-block;">

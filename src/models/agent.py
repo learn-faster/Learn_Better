@@ -19,8 +19,11 @@ class AgentLLMConfig(BaseModel):
 class AgentSettings(BaseModel):
     """Global settings for the Agent."""
     model_config = {"extra": "ignore"}  # Ignore extra fields from UI
-    
+
     llm_config: AgentLLMConfig = Field(default_factory=AgentLLMConfig)
+    vision_llm_config: AgentLLMConfig = Field(default_factory=AgentLLMConfig)
+    guardrail_mode: Literal["soft", "hard"] = "soft"
+
     enable_screenshots: bool = True
     screenshot_interval_min: int = 15
     check_in_frequency_hours: int = 4
@@ -34,6 +37,10 @@ class AgentSettings(BaseModel):
     email_daily_reminder: Optional[bool] = None
     email_streak_alert: Optional[bool] = None
     email_weekly_digest: Optional[bool] = None
+    timezone: Optional[str] = None
+    weekly_digest_day: Optional[int] = None
+    weekly_digest_hour: Optional[int] = None
+    weekly_digest_minute: Optional[int] = None
 
 # --- State Definitions ---
 
@@ -47,7 +54,7 @@ class UserContext(BaseModel):
     use_biometrics: bool = False
     bio: Optional[str] = None
     # Learned preferences could go here or in a separate dict
-    preferences: Dict[str, Any] = Field(default_factory=dict) 
+    preferences: Dict[str, Any] = Field(default_factory=dict)
 
 class Goal(BaseModel):
     """Simplified Goal representation for the Agent's context."""
@@ -74,7 +81,7 @@ class PlanItem(BaseModel):
     """A single item in the agent's daily plan."""
     id: str
     title: str
-    start_time: Optional[str] = None # ISO format or "09:00"
+    start_time: Optional[str] = None  # ISO format or "09:00"
     duration_minutes: int
     goal_id: Optional[str] = None
     status: Literal["pending", "completed", "missed"] = "pending"
@@ -88,23 +95,33 @@ class AgentState(BaseModel):
     user_context: UserContext
     llm_config: Optional[AgentLLMConfig] = None
     goals: List[Goal] = Field(default_factory=list)
-    recent_activity: List[str] = Field(default_factory=list) # Summary of recent actions
-    
+    recent_activity: List[str] = Field(default_factory=list)  # Summary of recent actions
+
     # Operational
     current_session: SessionState = Field(default_factory=SessionState)
     daily_plan: List[PlanItem] = Field(default_factory=list)
-    scratchpad: str = "" # Persistent scratchpad content
-    
+    scratchpad: str = ""  # Persistent scratchpad content
+
     # Internal
     last_updated: datetime = Field(default_factory=datetime.utcnow)
-    messages: List[Dict[str, str]] = Field(default_factory=list) # Chat history for current turn
+    messages: List[Dict[str, str]] = Field(default_factory=list)  # Chat history for current turn
 
 # --- Input/Output ---
 
 class ChatInput(BaseModel):
     """Input message from the user."""
     message: str
-    image_url: Optional[str] = None # For multimodal interaction
+    image_url: Optional[str] = None  # For multimodal interaction
+
+class AgentGuardrail(BaseModel):
+    status: Literal["in_domain", "adjacent", "out_of_domain"] = "in_domain"
+    rationale: Optional[str] = None
+    suggested_actions: List[str] = Field(default_factory=list)
+
+class AgentToolEvent(BaseModel):
+    type: str
+    status: Literal["success", "error"] = "success"
+    payload: Dict[str, Any] = Field(default_factory=dict)
 
 class AgentResponse(BaseModel):
     """Structured response from the agent."""
@@ -112,3 +129,39 @@ class AgentResponse(BaseModel):
     tool_calls: List[Dict[str, Any]] = Field(default_factory=list)
     updated_plan: Optional[List[PlanItem]] = None
     suggested_actions: List[str] = Field(default_factory=list)
+    tool_events: List[AgentToolEvent] = Field(default_factory=list)
+    guardrail: Optional[AgentGuardrail] = None
+
+# --- Onboarding & Tools ---
+
+class AgentOnboardingGoal(BaseModel):
+    title: str
+    description: Optional[str] = None
+    domain: str = "learning"
+    target_hours: float = 100.0
+    deadline: Optional[datetime] = None
+    priority: int = 1
+    status: str = "active"
+
+class AgentOnboardingRequest(BaseModel):
+    onboarding: Dict[str, Any] = Field(default_factory=dict)
+    goals: List[AgentOnboardingGoal] = Field(default_factory=list)
+
+class AgentStatusResponse(BaseModel):
+    email_configured: bool
+    resend_configured: bool
+    fitbit_connected: bool
+    onboarding: Dict[str, Any] = Field(default_factory=dict)
+
+class AgentScreenshotRequest(BaseModel):
+    url: str
+    analyze: bool = True
+    prompt: Optional[str] = None
+
+class AgentEmailRequest(BaseModel):
+    to: str
+    subject: str
+    body: str
+
+class AgentScratchpadRequest(BaseModel):
+    content: str

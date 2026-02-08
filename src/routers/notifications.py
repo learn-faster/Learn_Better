@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 from src.database.orm import get_db
 from src.models.orm import Goal, FocusSession, Flashcard, StudyReview, UserSettings
 from src.services.email_service import email_service
+from src.services.weekly_digest_service import send_weekly_digest_for_user_id
 
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
 
@@ -184,39 +185,9 @@ async def send_weekly_digest(
     if not user_settings or not user_settings.email:
         return {"message": "No user email configured", "emails_sent": 0}
     
-    # Calculate weekly stats
-    week_ago = datetime.utcnow() - timedelta(days=7)
-    
-    # Hours logged this week
-    focus_sessions = db.query(FocusSession).filter(
-        FocusSession.start_time >= week_ago,
-        FocusSession.end_time.isnot(None)
-    ).all()
-    hours_logged = sum(s.duration_minutes for s in focus_sessions) / 60.0
-    
-    # Cards reviewed this week
-    cards_reviewed = db.query(StudyReview).filter(
-        StudyReview.reviewed_at >= week_ago
-    ).count()
-    
-    # Current streak
-    streak = user_settings.current_streak or 0
-    
-    # Goals summary
-    active_goals = db.query(Goal).filter(Goal.status == "active").all()
-    goals_summary = [
-        {"title": g.title, "progress": g.logged_hours / g.target_hours * 100 if g.target_hours > 0 else 0}
-        for g in active_goals[:3]
-    ]
-    
     background_tasks.add_task(
-        email_service.send_weekly_digest,
-        user_settings.email,
-        hours_logged,
-        cards_reviewed,
-        streak,
-        goals_summary,
-        api_key=user_settings.resend_api_key
+        send_weekly_digest_for_user_id,
+        user_settings.user_id
     )
     
     return {"message": "Weekly digest sent", "emails_sent": 1}

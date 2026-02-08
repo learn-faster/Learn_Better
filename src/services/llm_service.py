@@ -7,6 +7,7 @@ import json
 import httpx
 import traceback
 import re
+import os
 from openai import AsyncOpenAI
 from src.config import settings
 from src.services.prompts import FLASHCARD_PROMPT_TEMPLATE, QUESTION_PROMPT_TEMPLATE, LEARNING_PATH_PROMPT_TEMPLATE, CONCEPT_EXTRACTION_PROMPT_TEMPLATE
@@ -36,12 +37,13 @@ class LLMService:
         else:
             self.api_key = ""
 
-        # Opik disabled temporarily to debug connection issues
-        # if settings.use_opik:
-        #     try:
-        #         configure()
-        #     except Exception as e:
-        #         logger.warning(f"Opik configuration failed: {e}")
+        if settings.use_opik:
+            try:
+                if settings.opik_api_key and not os.getenv("OPIK_API_KEY"):
+                    os.environ["OPIK_API_KEY"] = settings.opik_api_key
+                configure()
+            except Exception as e:
+                logger.warning(f"Opik configuration failed: {e}")
 
         # Create HTTP client with robust timeout (5 minutes for slow LLMs like Ollama)
         # trust_env=True is critical for users behind proxies/VPNs
@@ -110,11 +112,25 @@ class LLMService:
 
         # Determine effective base_url
         effective_base_url = base_url
+        if provider == "huggingface" and not effective_base_url:
+            raise ValueError("huggingface provider requires an OpenAI-compatible base_url")
         if not effective_base_url:
             if provider == "groq":
                 effective_base_url = "https://api.groq.com/openai/v1"
             elif provider == "openrouter":
                 effective_base_url = "https://openrouter.ai/api/v1"
+            elif provider == "together":
+                effective_base_url = "https://api.together.xyz/v1"
+            elif provider == "fireworks":
+                effective_base_url = "https://api.fireworks.ai/inference/v1"
+            elif provider == "mistral":
+                effective_base_url = "https://api.mistral.ai/v1"
+            elif provider == "deepseek":
+                effective_base_url = "https://api.deepseek.com/v1"
+            elif provider == "perplexity":
+                effective_base_url = "https://api.perplexity.ai"
+            elif provider == "huggingface":
+                effective_base_url = base_url
             elif provider == "ollama":
                 effective_base_url = f"{settings.ollama_base_url.rstrip('/')}/v1"
             elif provider == "ollama_cloud":

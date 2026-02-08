@@ -10,7 +10,7 @@ from typing import Optional, List, Any, Dict
 from datetime import datetime
 from src.database.connections import postgres_conn
 from src.ingestion.vector_storage import VectorStorage
-from src.models.orm import AgentMemory
+from src.models.orm import AgentMemory, AgentMemoryEpisodic, AgentMemorySemantic, AgentMemoryProcedural
 from src.database.orm import SessionLocal
 
 logger = logging.getLogger(__name__)
@@ -111,6 +111,125 @@ class MemoryService:
     def clear_chat_history(self, user_id: str = "default_user"):
         """Clear the chat history."""
         self.delete_memory("chat_history", user_id)
+
+    # --- Layered Memory (Relational) ---
+
+    def save_episodic_memory(
+        self,
+        summary: str,
+        user_id: str = "default_user",
+        context: Optional[Dict[str, Any]] = None,
+        goal_id: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ):
+        session = SessionLocal()
+        try:
+            record = AgentMemoryEpisodic(
+                user_id=user_id,
+                summary=summary,
+                context=context or {},
+                goal_id=goal_id,
+                tags=tags or []
+            )
+            session.add(record)
+            session.commit()
+            return record
+        except Exception as e:
+            logger.error(f"Error saving episodic memory: {e}")
+            session.rollback()
+            return None
+        finally:
+            session.close()
+
+    def save_semantic_memory_structured(
+        self,
+        key: str,
+        value: Any,
+        user_id: str = "default_user",
+        confidence: float = 0.7,
+        source: Optional[str] = None,
+        tags: Optional[List[str]] = None
+    ):
+        session = SessionLocal()
+        try:
+            record = session.query(AgentMemorySemantic).filter_by(user_id=user_id, key=key).first()
+            if record:
+                record.value = value
+                record.confidence = confidence
+                record.source = source
+                record.tags = tags or []
+                record.updated_at = datetime.utcnow()
+            else:
+                record = AgentMemorySemantic(
+                    user_id=user_id,
+                    key=key,
+                    value=value,
+                    confidence=confidence,
+                    source=source,
+                    tags=tags or []
+                )
+                session.add(record)
+            session.commit()
+            return record
+        except Exception as e:
+            logger.error(f"Error saving semantic memory: {e}")
+            session.rollback()
+            return None
+        finally:
+            session.close()
+
+    def save_procedural_memory(
+        self,
+        strategy: str,
+        user_id: str = "default_user",
+        effectiveness_score: float = 0.0,
+        last_used: Optional[datetime] = None,
+        tags: Optional[List[str]] = None
+    ):
+        session = SessionLocal()
+        try:
+            record = AgentMemoryProcedural(
+                user_id=user_id,
+                strategy=strategy,
+                effectiveness_score=effectiveness_score,
+                last_used=last_used,
+                tags=tags or []
+            )
+            session.add(record)
+            session.commit()
+            return record
+        except Exception as e:
+            logger.error(f"Error saving procedural memory: {e}")
+            session.rollback()
+            return None
+        finally:
+            session.close()
+
+    def get_recent_episodic(self, user_id: str = "default_user", limit: int = 10):
+        session = SessionLocal()
+        try:
+            return (
+                session.query(AgentMemoryEpisodic)
+                .filter_by(user_id=user_id)
+                .order_by(AgentMemoryEpisodic.timestamp.desc())
+                .limit(limit)
+                .all()
+            )
+        except Exception as e:
+            logger.error(f"Error fetching episodic memory: {e}")
+            return []
+        finally:
+            session.close()
+
+    def get_semantic(self, key: str, user_id: str = "default_user"):
+        session = SessionLocal()
+        try:
+            return session.query(AgentMemorySemantic).filter_by(user_id=user_id, key=key).first()
+        except Exception as e:
+            logger.error(f"Error fetching semantic memory: {e}")
+            return None
+        finally:
+            session.close()
 
     # --- Semantic Memory (Vector) ---
 

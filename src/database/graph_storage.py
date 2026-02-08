@@ -892,6 +892,91 @@ class MultiDocGraphStorage:
             logger.error(f"Error getting graph statistics: {e}")
             return {}
 
+    def create_cross_graph_links(
+        self,
+        connections: List[Dict[str, Any]],
+        context: str,
+        graph_a: str,
+        graph_b: str,
+        method: str = "llm",
+        created_by: str = "system"
+    ) -> int:
+        """
+        Create cross-graph connections between document concepts.
+        """
+        created = 0
+        if not connections:
+            return created
+
+        for conn in connections:
+            from_id = conn.get("from_scoped_id")
+            to_id = conn.get("to_scoped_id")
+            confidence = conn.get("confidence", 0.5)
+            if not from_id or not to_id:
+                continue
+            try:
+                query = """
+                    MATCH (a:DocumentConcept {id: $from_id})
+                    MATCH (b:DocumentConcept {id: $to_id})
+                    MERGE (a)-[r:CROSS_GRAPH {graph_a: $graph_a, graph_b: $graph_b, context: $context}]->(b)
+                    ON CREATE SET r.created_at = datetime()
+                    SET r.confidence = $confidence,
+                        r.method = $method,
+                        r.created_by = $created_by,
+                        r.updated_at = datetime()
+                    RETURN r
+                """
+                result = self.connection.execute_query(query, {
+                    "from_id": from_id,
+                    "to_id": to_id,
+                    "graph_a": graph_a,
+                    "graph_b": graph_b,
+                    "context": context,
+                    "confidence": confidence,
+                    "method": method,
+                    "created_by": created_by
+                })
+                if result:
+                    created += 1
+            except Exception as e:
+                logger.error(f"Error creating cross-graph link {from_id} -> {to_id}: {e}")
+
+        return created
+
+    def get_cross_graph_links(self, graph_id: str, target_graph_id: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Fetch cross-graph connections for a graph (optionally filtered by target graph).
+        """
+        try:
+            query = """
+                MATCH (a:DocumentConcept)-[r:CROSS_GRAPH]->(b:DocumentConcept)
+                WHERE (r.graph_a = $graph_id AND ($target_graph_id IS NULL OR r.graph_b = $target_graph_id))
+                   OR (r.graph_b = $graph_id AND ($target_graph_id IS NULL OR r.graph_a = $target_graph_id))
+                RETURN a.id as from_id, b.id as to_id,
+                       r.confidence as confidence, r.context as context,
+                       r.method as method, r.graph_a as graph_a, r.graph_b as graph_b
+            """
+            result = self.connection.execute_query(query, {
+                "graph_id": graph_id,
+                "target_graph_id": target_graph_id
+            })
+
+            return [
+                {
+                    "from_id": r["from_id"],
+                    "to_id": r["to_id"],
+                    "confidence": r.get("confidence"),
+                    "context": r.get("context"),
+                    "method": r.get("method"),
+                    "graph_a": r.get("graph_a"),
+                    "graph_b": r.get("graph_b")
+                }
+                for r in result
+            ]
+        except Exception as e:
+            logger.error(f"Error fetching cross-graph links: {e}")
+            return []
+
 
 # Global multi-document graph storage instance
 multi_doc_graph_storage = MultiDocGraphStorage()

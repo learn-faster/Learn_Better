@@ -184,7 +184,8 @@ Content to analyze:
         self, 
         content_chunks: List[str], 
         on_progress: Optional[Any] = None, # Callable[[str, int], None]
-        on_partial_schema: Optional[Any] = None # Callable[[GraphSchema], None]
+        on_partial_schema: Optional[Any] = None, # Callable[[GraphSchema], None]
+        llm_config: Optional[Any] = None
     ) -> GraphSchema:
         """
         Extract knowledge graph structure from content chunks using LLM.
@@ -213,10 +214,10 @@ Content to analyze:
             try:
                 # Import here to avoid circular dependency
                 from src.services.llm_service import llm_service
-                from src.routers.ai import LLMConfig
+                from src.models.schemas import LLMConfig
                 from src.config import settings
 
-                config = LLMConfig(
+                config = llm_config or LLMConfig(
                     provider=settings.llm_provider,
                     model=settings.extraction_model if settings.extraction_model else settings.llm_model,
                     base_url=settings.ollama_base_url
@@ -502,7 +503,7 @@ Content to analyze:
     
     # ========== Multi-Document Graph Ingestion ==========
     
-    async def extract_graph_structure_for_document(self, content_chunks: List[str], document_id: int) -> Dict[str, Any]:
+    async def extract_graph_structure_for_document(self, content_chunks: List[str], document_id: int, llm_config: Optional[Any] = None) -> Dict[str, Any]:
         """
         Extract and store graph structure with document scoping.
         
@@ -519,7 +520,7 @@ Content to analyze:
         from src.database.graph_storage import multi_doc_graph_storage
         
         # Extract graph structure
-        schema = await self.extract_graph_structure(content_chunks)
+        schema = await self.extract_graph_structure(content_chunks, llm_config=llm_config)
         
         concepts_stored = 0
         relationships_stored = 0
@@ -558,7 +559,7 @@ Content to analyze:
             "relationships_total": len(schema.prerequisites)
         }
     
-    async def process_document_scoped(self, file_path: str, document_id: int) -> Dict[str, Any]:
+    async def process_document_scoped(self, file_path: str, document_id: int, llm_config: Optional[Any] = None) -> Dict[str, Any]:
         """
         Process a document using document-scoped graph storage.
         """
@@ -570,7 +571,7 @@ Content to analyze:
             chunks = self.document_processor.chunk_content(markdown)
             
             # 3. Extract and store scoped graph
-            result = await self.extract_graph_structure_for_document(chunks, document_id)
+            result = await self.extract_graph_structure_for_document(chunks, document_id, llm_config=llm_config)
             
             # 4. Store vector data (still uses original storage)
             chunk_tags = ["general"] * len(chunks)
@@ -589,6 +590,31 @@ Content to analyze:
             
         except Exception as e:
             logger.error(f"Scoped document processing failed for {file_path}: {e}")
+            raise
+
+    async def process_document_scoped_from_text(self, extracted_text: str, document_id: int, llm_config: Optional[Any] = None) -> Dict[str, Any]:
+        """
+        Process a document using already extracted text (no file IO),
+        using document-scoped graph storage.
+        """
+        try:
+            chunks = self.document_processor.chunk_content(extracted_text or "")
+            result = await self.extract_graph_structure_for_document(chunks, document_id, llm_config=llm_config)
+
+            # Store vector data for this document
+            chunk_tags = ["general"] * len(chunks)
+            if result.get("concepts_total", 0) > 0:
+                chunk_tags = await self.store_vector_data(
+                    doc_source=f"doc_{document_id}",
+                    content_chunks=chunks,
+                    concept_tags=chunk_tags,
+                    document_id=document_id
+                )
+
+            result["chunks_stored"] = len(chunk_tags)
+            return result
+        except Exception as e:
+            logger.error(f"Scoped document processing failed (text) for doc {document_id}: {e}")
             raise
     
     def merge_cross_document_concepts(

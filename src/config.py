@@ -107,6 +107,12 @@ class Settings(BaseSettings):
     rewrite_model: Optional[str] = None
     rewrite_context_window: int = 10000
 
+    # Weekly Digest Scheduler (server-side)
+    enable_weekly_digest_scheduler: bool = False
+    weekly_digest_day: int = 6  # 0=Mon ... 6=Sun
+    weekly_digest_hour: int = 18  # 24h UTC
+    weekly_digest_minute: int = 0
+
     # SurrealDB Configuration
     surreal_url: str = "ws://localhost:8000/rpc"
     surreal_user: str = "root"

@@ -1,6 +1,6 @@
 """Pydantic models for LearnFast Core Engine data structures."""
 
-from datetime import datetime
+from datetime import datetime, date
 from typing import List, Optional, Dict, Any, Union
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -370,6 +370,76 @@ class LLMConfig(BaseModel):
     model: Optional[str] = None
 
 
+# ========== Knowledge Graph Schemas ==========
+
+class KnowledgeGraphBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class KnowledgeGraphCreate(KnowledgeGraphBase):
+    user_id: str = "default_user"
+    document_ids: List[int] = []
+    llm_config: Optional[LLMConfig] = None
+
+
+class KnowledgeGraphUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    document_ids: Optional[List[int]] = None
+    llm_config: Optional[LLMConfig] = None
+
+
+class KnowledgeGraphResponse(KnowledgeGraphBase):
+    id: str
+    user_id: str
+    status: str
+    node_count: int
+    relationship_count: int
+    created_at: datetime
+    updated_at: datetime
+    last_built_at: Optional[datetime] = None
+    document_ids: List[int] = []
+    llm_config: Optional[LLMConfig] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class KnowledgeGraphBuildRequest(BaseModel):
+    build_mode: str = Field(..., description="existing or rebuild")
+    llm_config: Optional[LLMConfig] = None
+
+
+class KnowledgeGraphConnectionSuggestion(BaseModel):
+    from_scoped_id: str
+    to_scoped_id: str
+    confidence: float = Field(ge=0.0, le=1.0)
+    rationale: Optional[str] = None
+
+
+class KnowledgeGraphConnectionRequest(BaseModel):
+    target_graph_id: str
+    context: str
+    connections: List[KnowledgeGraphConnectionSuggestion]
+    method: str = "llm"
+
+
+class KnowledgeGraphSuggestionRequest(BaseModel):
+    target_graph_id: str
+    context: str
+    max_links: int = 20
+    llm_config: Optional[LLMConfig] = None
+
+
+class KnowledgeGraphDataResponse(BaseModel):
+    graph_id: str
+    nodes: List[Dict[str, Any]]
+    links: List[Dict[str, Any]]
+    node_count: int
+    relationship_count: int
+    graph_meta: Dict[str, Any]
+
+
 # ========== Curriculum Schemas ==========
 
 class CurriculumModuleBase(BaseModel):
@@ -402,13 +472,99 @@ class CurriculumCreate(CurriculumBase):
     llm_config: Optional[LLMConfig] = None
 
 
+class CurriculumGenerateRequest(CurriculumBase):
+    user_id: str = "default_user"
+    document_id: Optional[int] = None
+    document_ids: List[int] = []
+    time_budget_hours_per_week: int = 5
+    duration_weeks: int = 4
+    start_date: Optional[date] = None
+    llm_enhance: bool = False
+    llm_config: Optional[LLMConfig] = None
+
+
+class CurriculumTaskResponse(BaseModel):
+    id: str
+    week_id: str
+    title: str
+    task_type: str = "reading"
+    linked_doc_id: Optional[int] = None
+    linked_module_id: Optional[str] = None
+    estimate_minutes: int = 30
+    notes: Optional[str] = None
+    status: str = "pending"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CurriculumCheckpointResponse(BaseModel):
+    id: str
+    week_id: str
+    title: str
+    success_criteria: Optional[str] = None
+    linked_doc_ids: List[int] = []
+    linked_module_ids: List[str] = []
+    assessment_type: str = "recall"
+    due_date: Optional[date] = None
+    status: str = "pending"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CurriculumWeekResponse(BaseModel):
+    id: str
+    curriculum_id: str
+    week_index: int
+    goal: Optional[str] = None
+    focus_concepts: List[str] = []
+    estimated_hours: float = 0.0
+    status: str = "planned"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    tasks: List[CurriculumTaskResponse] = []
+    checkpoints: List[CurriculumCheckpointResponse] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class CurriculumTimelineResponse(BaseModel):
+    curriculum_id: str
+    weeks: List[CurriculumWeekResponse] = []
+
+
+class CurriculumMetricsResponse(BaseModel):
+    curriculum_id: str
+    weeks_total: int = 0
+    weeks_completed: int = 0
+    tasks_total: int = 0
+    tasks_completed: int = 0
+    progress_percent: float = 0.0
+    last_activity_at: Optional[datetime] = None
+    next_checkpoint_title: Optional[str] = None
+    next_checkpoint_due: Optional[date] = None
+
+
+class CurriculumWeekReportResponse(BaseModel):
+    week_id: str
+    curriculum_id: str
+    week_index: int
+    title: str
+    markdown: str
+    stats: Dict[str, Any] = {}
+
+
 class CurriculumResponse(CurriculumBase):
     id: str
     user_id: str
     document_id: Optional[int] = None
+    document_ids: List[int] = []
     goal_id: Optional[str] = None
     status: str
     progress: float
+    start_date: Optional[date] = None
+    duration_weeks: int = 4
+    time_budget_hours_per_week: int = 5
+    llm_enhance: bool = False
     created_at: datetime
     updated_at: datetime
     modules: List[CurriculumModuleResponse] = []
@@ -492,3 +648,72 @@ class FocusSessionResponse(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+
+class DocumentQuizItem(BaseModel):
+    id: str
+    document_id: int
+    mode: str = "cloze"
+    passage_markdown: str
+    masked_markdown: Optional[str] = None
+    answer_key: List[str] = []
+    tags: List[str] = []
+    difficulty: int = 3
+    source_span: Dict[str, Any] = {}
+    created_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class DocumentQuizGenerateRequest(BaseModel):
+    mode: str = "cloze"
+    count: int = 5
+    max_length: int = 450
+    difficulty: int = 3
+    source_mode: str = "auto"
+    selection_text: Optional[str] = None
+    llm_config: Optional[LLMConfig] = None
+
+class DocumentQuizSessionCreate(BaseModel):
+    mode: str = "cloze"
+    item_ids: Optional[List[str]] = None
+    settings: Optional[Dict[str, Any]] = None
+
+class DocumentQuizSessionResponse(BaseModel):
+    id: str
+    document_id: int
+    mode: str
+    settings: Dict[str, Any] = {}
+    status: str = "active"
+    items: List[DocumentQuizItem] = []
+
+class DocumentQuizGradeRequest(BaseModel):
+    session_id: str
+    quiz_item_id: str
+    answer_text: str
+    transcript: Optional[str] = None
+    llm_config: Optional[LLMConfig] = None
+
+class DocumentQuizGradeResponse(BaseModel):
+    score: float
+    feedback: str
+    llm_eval: Dict[str, Any] = {}
+
+class DocumentStudySettingsPayload(BaseModel):
+    reveal_config: Dict[str, Any] = Field(default_factory=dict)
+    llm_config: Optional[LLMConfig] = None
+    voice_mode_enabled: bool = False
+
+class DocumentStudySettingsResponse(BaseModel):
+    reveal_config: Dict[str, Any] = Field(default_factory=dict)
+    llm_config: Optional[LLMConfig] = None
+    voice_mode_enabled: bool = False
+
+
+class DocumentQuizStatsResponse(BaseModel):
+    document_id: int
+    total_attempts: int = 0
+    average_score: float = 0.0
+    best_score: float = 0.0
+    last_attempt_at: Optional[datetime] = None
+    attempts_last_7d: int = 0
+    average_score_last_7d: float = 0.0
