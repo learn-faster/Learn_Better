@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel
 
 from src.storage.document_store import DocumentStore
@@ -35,7 +36,8 @@ from src.services.negotiation_scheduler import run_negotiation_scheduler
 from src.database.connections import postgres_conn
 from src.database.orm import SessionLocal
 from src.models.orm import UserSettings
-from src.queue.ingestion_queue import get_redis
+from src.queue.ingestion_queue import get_redis, get_queue_health
+from src.observability.opik import build_opik_config, init_opik, get_trace_context_manager, get_opik_context
 
 # Import new routers
 from src.routers import (
@@ -107,6 +109,22 @@ async def lifespan(app: FastAPI):
     app.state.path_resolver = path_resolver
     app.state.content_retriever = content_retriever
     
+    # Initialize Opik settings from user profile if available
+    try:
+        db = SessionLocal()
+        settings_row = db.query(UserSettings).filter_by(user_id="default_user").first()
+        opik_cfg = build_opik_config(settings_row)
+        init_opik(opik_cfg)
+        app.state.opik_config = opik_cfg
+    except Exception as e:
+        logger.warning(f"Failed to initialize Opik: {e}")
+        app.state.opik_config = {"enabled": False}
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
     # Ensure upload directory exists
     os.makedirs(settings.upload_dir, exist_ok=True)
 
@@ -216,6 +234,35 @@ async def lifespan(app: FastAPI):
         pass
 
 
+
+
+class OpikTraceMiddleware(BaseHTTPMiddleware):
+    def __init__(self, app):
+        super().__init__(app)
+
+    async def dispatch(self, request, call_next):
+        config = getattr(request.app.state, "opik_config", None) or {}
+        enabled = bool(config.get("enabled"))
+        trace_cm = get_trace_context_manager()
+        if not enabled or trace_cm is None:
+            return await call_next(request)
+
+        trace_name = f"{request.method} {request.url.path}"
+        user_id = request.query_params.get("user_id") or "default_user"
+        metadata = {"path": request.url.path, "method": request.method, "user_id": user_id}
+
+        with trace_cm(name=trace_name, metadata=metadata, tags=["api"]):
+            response = await call_next(request)
+            ctx = get_opik_context()
+            if ctx is not None:
+                trace = ctx.get_current_trace_data()
+                if trace is not None:
+                    response.headers["X-Opik-Trace-Id"] = trace.id
+                    project_name = config.get("project_name")
+                    if project_name:
+                        response.headers["X-Opik-Project"] = project_name
+            return response
+
 app = FastAPI(
     title="LearnFast Core Engine",
     description="Hybrid Graph-RAG Learning Platform API",
@@ -233,6 +280,10 @@ async def global_exception_handler(request: Request, exc: Exception):
     )
 
 # Configure CORS - uses settings.cors_origins which auto-detects from env or defaults
+app.add_middleware(
+    OpikTraceMiddleware
+)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins or ["http://localhost:5173", "http://127.0.0.1:5173"],
@@ -296,16 +347,9 @@ async def api_config():
     except Exception:
         db_status = "offline"
 
-    redis_status = "disabled"
-    try:
-        redis = get_redis()
-        if redis:
-            redis.ping()
-            redis_status = "connected"
-        else:
-            redis_status = "disabled"
-    except Exception:
-        redis_status = "disconnected"
+    queue_info = get_queue_health()
+    redis_status = queue_info.get("status")
+    queue_workers = queue_info.get("workers")
 
     return {
         "version": app.version,
@@ -313,7 +357,8 @@ async def api_config():
         "latestVersion": None,
         "hasUpdate": False,
         "dbStatus": db_status,
-        "queueStatus": redis_status
+        "queueStatus": redis_status,
+        "queueWorkers": queue_workers
     }
 
 # --- Endpoint Migration Status ---

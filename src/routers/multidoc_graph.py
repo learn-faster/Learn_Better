@@ -348,20 +348,20 @@ async def build_graph(
     db.commit()
 
     try:
-        if payload.build_mode == "existing":
-            graph.build_stage = "validating"
-            graph.build_progress = 5.0
+        llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, payload.llm_config, graph.llm_config)
+        total_docs = max(1, len(doc_ids))
+
+        def update_build(stage: str, progress: float):
+            graph.build_stage = stage
+            graph.build_progress = max(0.0, min(100.0, float(progress)))
             db.commit()
-            for doc_id in doc_ids:
-                doc_graph = multi_doc_graph_storage.get_document_graph(doc_id)
-                if not doc_graph or doc_graph.get("node_count", 0) == 0:
-                    raise ValueError(f"No scoped graph data found for document {doc_id}")
-        elif payload.build_mode == "rebuild":
-            llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, payload.llm_config, graph.llm_config)
+
+        if payload.build_mode == "existing":
+            update_build("validating", 5.0)
             for idx, doc_id in enumerate(doc_ids):
-                graph.build_stage = f"processing_document_{idx + 1}"
-                graph.build_progress = 10.0 + (70.0 * (idx / max(1, len(doc_ids))))
-                db.commit()
+                doc_graph = multi_doc_graph_storage.get_document_graph(doc_id)
+                if doc_graph and doc_graph.get("node_count", 0) > 0:
+                    continue
                 doc = db.query(Document).filter(Document.id == doc_id).first()
                 if not doc:
                     raise ValueError(f"Document {doc_id} not found")
@@ -371,12 +371,44 @@ async def build_graph(
                     source_text = doc.filtered_extracted_text or doc.extracted_text or doc.raw_extracted_text or ""
                 if not source_text or not source_text.strip():
                     raise ValueError(f"Document {doc_id} has no extracted text")
+
+                def _progress(step, pct, idx=idx):
+                    base = 5.0 + (idx / total_docs) * 75.0
+                    span = 75.0 / total_docs
+                    update_build(step, base + (pct / 100.0) * span)
+
                 await ingestion_engine.process_document_scoped_from_text(
                     source_text,
                     doc_id,
                     llm_config=llm_config,
                     extraction_max_chars=payload.extraction_max_chars,
-                    chunk_size=payload.chunk_size
+                    chunk_size=payload.chunk_size,
+                    on_progress=_progress
+                )
+        elif payload.build_mode == "rebuild":
+            for idx, doc_id in enumerate(doc_ids):
+                doc = db.query(Document).filter(Document.id == doc_id).first()
+                if not doc:
+                    raise ValueError(f"Document {doc_id} not found")
+                if payload.source_mode == "raw":
+                    source_text = doc.raw_extracted_text or doc.extracted_text or ""
+                else:
+                    source_text = doc.filtered_extracted_text or doc.extracted_text or doc.raw_extracted_text or ""
+                if not source_text or not source_text.strip():
+                    raise ValueError(f"Document {doc_id} has no extracted text")
+
+                def _progress(step, pct, idx=idx):
+                    base = 10.0 + (idx / total_docs) * 70.0
+                    span = 70.0 / total_docs
+                    update_build(step, base + (pct / 100.0) * span)
+
+                await ingestion_engine.process_document_scoped_from_text(
+                    source_text,
+                    doc_id,
+                    llm_config=llm_config,
+                    extraction_max_chars=payload.extraction_max_chars,
+                    chunk_size=payload.chunk_size,
+                    on_progress=_progress
                 )
         else:
             raise ValueError("Invalid build_mode. Use 'existing' or 'rebuild'.")

@@ -176,6 +176,12 @@ def _test_postgres_connection(host: str, port: int, database: str, user: str, pa
         return False
 
 
+
+
+def _build_neo4j_uri(host: str, port: int, scheme: str = "bolt") -> str:
+    return f"{scheme}://{host}:{port}"
+
+
 def get_neo4j_connection_endpoints(port: int = 7688) -> List[Tuple[str, str]]:
     """
     Get a list of potential Neo4j connection endpoints to try.
@@ -189,28 +195,28 @@ def get_neo4j_connection_endpoints(port: int = 7688) -> List[Tuple[str, str]]:
         endpoints.append(("env_override", explicit_uri))
 
     # 2. Try localhost first (fastest when WSL port forwarding works)
-    endpoints.append(("localhost", f"neo4j://localhost:{port}"))
+    endpoints.append(("localhost", _build_neo4j_uri("localhost", port)))
 
     # 3. Try 127.0.0.1 explicitly
-    endpoints.append(("loopback", f"neo4j://127.0.0.1:{port}"))
+    endpoints.append(("loopback", _build_neo4j_uri("127.0.0.1", port)))
 
     # 4. Try WSL IP from Windows side
     wsl_ip = _get_wsl_ip_from_windows()
     if wsl_ip:
-        endpoints.append(("wsl_windows", f"neo4j://{wsl_ip}:{port}"))
+        endpoints.append(("wsl_windows", _build_neo4j_uri(wsl_ip, port)))
 
     # 5. Try WSL IP from route detection
     wsl_route_ip = _get_wsl_ip_from_route()
     if wsl_route_ip and wsl_route_ip != wsl_ip:
-        endpoints.append(("wsl_route", f"neo4j://{wsl_route_ip}:{port}"))
+        endpoints.append(("wsl_route", _build_neo4j_uri(wsl_route_ip, port)))
 
     # 6. Try Docker Desktop internal IP
     docker_ip = _get_docker_desktop_ip()
     if docker_ip:
-        endpoints.append(("docker_desktop", f"neo4j://{docker_ip}:{port}"))
+        endpoints.append(("docker_desktop", _build_neo4j_uri(docker_ip, port)))
 
     # 7. Try host.docker.internal
-    endpoints.append(("docker_internal", f"neo4j://host.docker.internal:{port}"))
+    endpoints.append(("docker_internal", _build_neo4j_uri("host.docker.internal", port)))
 
     return endpoints
 
@@ -282,7 +288,7 @@ def find_working_neo4j_uri(user: str, password: str, port: int = 7688, max_retri
 
     # If nothing works, return localhost as default (will fail with proper error)
     logger.error("Could not find working Neo4j connection, returning default")
-    return f"neo4j://localhost:{port}"
+    return _build_neo4j_uri("localhost", port)
 
 
 def find_working_postgres_host(port: int = 5433, database: str = "learnfast",
