@@ -72,7 +72,7 @@ Learning is usually fragmented across notes, videos, and flashcards, with little
   <br/><br/>
 
   <h3>Personalised learning</h3>
-  <img src="frontend/src/assets/screen.png" width="800" alt="Knowledge Graph Visualization">
+  <img src="frontend/src/assets/welcome.png" width="800" alt="Knowledge Graph Visualization">
 </div>
 
 ---
