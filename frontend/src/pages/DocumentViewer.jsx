@@ -49,14 +49,6 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 
-/**
- * Helper to extract filename from a full system path.
- */
-const getFileName = (path) => {
-    if (!path) return '';
-    return path.split(/[/\\]/).pop();
-};
-
 const ensureTrailingSlash = (value) => {
     if (!value) return value;
     return value.endsWith('/') ? value : `${value}/`;
@@ -205,12 +197,14 @@ const DocumentViewer = () => {
 
     const apiOrigin = apiBaseUrl ? apiBaseUrl.replace(/\/$/, '') : '';
     const apiPrefix = apiOrigin ? `${apiOrigin}/api` : '/api';
-    const uploadsPrefix = apiOrigin ? `${apiOrigin}/uploads` : '/uploads';
-    const fileName = useMemo(() => getFileName(studyDoc?.file_path), [studyDoc?.file_path]);
-    const encodedFileName = useMemo(() => (fileName ? encodeURIComponent(fileName) : ''), [fileName]);
+    const downloadUrl = useMemo(
+        () => (id ? `${apiPrefix}/documents/${id}/download` : ''),
+        [apiPrefix, id]
+    );
+    const isLink = studyDoc?.file_type === 'link';
     const pdfFile = useMemo(
-        () => (encodedFileName ? `${uploadsPrefix}/${encodedFileName}` : null),
-        [uploadsPrefix, encodedFileName]
+        () => (isLink ? studyDoc?.file_path : (downloadUrl || null)),
+        [isLink, studyDoc?.file_path, downloadUrl]
     );
     const pdfOptions = useMemo(() => {
         const assetBase = ensureTrailingSlash('/pdfjs/');
@@ -518,8 +512,7 @@ const DocumentViewer = () => {
         );
     }
 
-    const isLink = studyDoc?.file_type === 'link';
-    const fileUrl = isLink ? studyDoc.file_path : (encodedFileName ? `${uploadsPrefix}/${encodedFileName}` : '');
+    const fileUrl = isLink ? studyDoc.file_path : downloadUrl;
 
     return (
         <div className={`flex flex-col bg-dark-950 transition-all duration-300 ${isFocusMode ? 'fixed inset-0 z-[60] p-0 h-screen' : 'h-[calc(100vh-4rem)]'}`}>

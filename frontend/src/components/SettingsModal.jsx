@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Save, RefreshCw, Key, Globe, Lock, Cpu, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getUserId } from '@/lib/utils/user-id';
 
 const SettingsModal = ({ isOpen, onClose }) => {
     // Prevent background scrolling when modal is open
@@ -42,7 +43,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
     const fetchConfig = async () => {
         try {
             setLoading(true);
-            const response = await fetch('/api/config/llm');
+            const userId = getUserId();
+            const response = await fetch(`/api/config/llm?user_id=${encodeURIComponent(userId)}`);
             if (response.ok) {
                 const data = await response.json();
                 setConfig(prev => ({
@@ -60,7 +62,8 @@ const SettingsModal = ({ isOpen, onClose }) => {
     const handleSave = async () => {
         try {
             setSaving(true);
-            const response = await fetch('/api/config/llm', {
+            const userId = getUserId();
+            const response = await fetch(`/api/config/llm?user_id=${encodeURIComponent(userId)}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ config }),
