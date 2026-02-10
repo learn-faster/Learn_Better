@@ -39,25 +39,25 @@ const SOURCE_TYPE_ICONS = {
 const getStatusConfig = (t) => ({
   new: {
     icon: Clock,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    color: 'text-primary-700',
+    bgColor: 'bg-primary-50',
+    borderColor: 'border-primary-200',
     label: t.sources.statusProcessing,
     description: t.sources.statusPreparingDesc
   },
   queued: {
     icon: Clock,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    color: 'text-primary-700',
+    bgColor: 'bg-primary-50',
+    borderColor: 'border-primary-200',
     label: t.sources.statusQueued,
     description: t.sources.statusQueuedDesc
   },
   running: {
     icon: Loader2,
-    color: 'text-blue-600',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    color: 'text-primary-700',
+    bgColor: 'bg-primary-50',
+    borderColor: 'border-primary-200',
     label: t.sources.statusProcessing,
     description: t.sources.statusProcessingDesc
   },
@@ -361,7 +361,7 @@ export function SourceCard({
             </div>
             <div className="w-full bg-gray-200 rounded-full h-1.5">
               <div
-                className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                className="bg-primary-500 h-1.5 rounded-full transition-all duration-300"
                 style={{ width: `${statusData.processing_info.progress}%` }}
               />
             </div>

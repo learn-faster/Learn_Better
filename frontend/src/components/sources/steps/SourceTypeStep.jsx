@@ -259,8 +259,8 @@ export function SourceTypeStep({ control, register, setValue, errors, urlValidat
                     <div>
                       <Label htmlFor="content" className="mb-2 block">{t.sources.textContentLabel}</Label>
                       {hasHtmlContent && (
-                        <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
-                          <p className="text-sm text-blue-700 dark:text-blue-300">
+                        <div className="mb-2 p-2 bg-primary-50 dark:bg-primary-950 border border-primary-200 dark:border-primary-700 rounded-md">
+                          <p className="text-sm text-primary-700 dark:text-primary-300">
                             {t.sources.htmlDetected}
                           </p>
                         </div>

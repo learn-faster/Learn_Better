@@ -31,6 +31,7 @@ export default defineConfig(({ mode }) => {
           target: targetUrl,
           changeOrigin: true,
           secure: false,
+          ws: true,
         },
         '/uploads': {
           target: targetUrl,

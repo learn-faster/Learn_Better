@@ -412,9 +412,9 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
                         </div>
 
                         {gradeResult && (
-                            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-3 text-xs">
-                                <div className="font-bold text-emerald-300">Score: {Math.round((gradeResult.score || 0) * 100)}%</div>
-                                <div className="text-emerald-100/80 mt-1">{gradeResult.feedback}</div>
+                            <div className="rounded-2xl border border-primary-500/30 bg-primary-500/10 p-3 text-xs">
+                                <div className="font-bold text-primary-300">Score: {Math.round((gradeResult.score || 0) * 100)}%</div>
+                                <div className="text-primary-100/80 mt-1">{gradeResult.feedback}</div>
                             </div>
                         )}
                     </div>

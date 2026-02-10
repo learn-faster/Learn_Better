@@ -85,6 +85,7 @@ const LazyPage = ({ pageNumber, pageWidth, handleTextSelection }) => {
     return (
         <div
             ref={elementRef}
+            id={`page-${pageNumber}`}
             className="shadow-2xl mb-8 relative group bg-white rounded-2xl overflow-hidden transition-all border border-black/5"
             style={{
                 minHeight: isVisible ? 'auto' : `${placeholderHeight}px`,
@@ -116,6 +117,64 @@ const LazyPage = ({ pageNumber, pageWidth, handleTextSelection }) => {
                     Loading Page {pageNumber}...
                 </div>
             )}
+        </div>
+    );
+};
+
+const ThumbnailPage = ({ pageNumber, onSelect }) => {
+    const [isVisible, setIsVisible] = useState(false);
+    const elementRef = React.useRef(null);
+    const thumbnailWidth = 140;
+    const placeholderHeight = Math.max(180, Math.round(thumbnailWidth * 1.414));
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            ([entry]) => {
+                setIsVisible(entry.isIntersecting);
+            },
+            {
+                root: document.getElementById('document-thumbnail-container'),
+                rootMargin: '100% 0px',
+                threshold: 0
+            }
+        );
+
+        if (elementRef.current) {
+            observer.observe(elementRef.current);
+        }
+
+        return () => {
+            if (elementRef.current) {
+                observer.unobserve(elementRef.current);
+            }
+        };
+    }, []);
+
+    return (
+        <div
+            ref={elementRef}
+            className="rounded-xl border border-white/10 bg-white/5 overflow-hidden hover:border-primary-500/40 transition-colors cursor-pointer"
+            onClick={onSelect}
+        >
+            {isVisible ? (
+                <Page
+                    pageNumber={pageNumber}
+                    width={thumbnailWidth}
+                    renderTextLayer={false}
+                    renderAnnotationLayer={false}
+                    loading={<div style={{ height: placeholderHeight }} className="bg-white/5 animate-pulse" />}
+                />
+            ) : (
+                <div
+                    className="bg-white/5 animate-pulse flex items-center justify-center text-dark-500 text-[10px] font-bold uppercase tracking-widest"
+                    style={{ height: `${placeholderHeight}px` }}
+                >
+                    Page {pageNumber}
+                </div>
+            )}
+            <div className="px-2 py-1 text-[9px] uppercase tracking-widest text-dark-400 text-center border-t border-white/5">
+                {pageNumber}
+            </div>
         </div>
     );
 };
@@ -159,6 +218,8 @@ const DocumentViewer = () => {
     const [quality, setQuality] = useState(null);
     const [ingestionJob, setIngestionJob] = useState(null);
     const [isSectionBusy, setIsSectionBusy] = useState(false);
+    const [navMode, setNavMode] = useState('sections');
+    const [pageJump, setPageJump] = useState('');
 
     // Flashcard State
     const [flashcardFront, setFlashcardFront] = useState('');
@@ -206,6 +267,9 @@ const DocumentViewer = () => {
         () => (isLink ? studyDoc?.file_path : (downloadUrl || null)),
         [isLink, studyDoc?.file_path, downloadUrl]
     );
+    const isPdf = !!(studyDoc?.file_type === 'pdf'
+        || studyDoc?.filename?.toLowerCase().endsWith('.pdf')
+        || studyDoc?.file_path?.toLowerCase().endsWith('.pdf'));
     const pdfOptions = useMemo(() => {
         const assetBase = ensureTrailingSlash('/pdfjs/');
         return {
@@ -337,6 +401,12 @@ const DocumentViewer = () => {
         }
     }, [initialTab]);
 
+    useEffect(() => {
+        if (!isPdf && navMode === 'thumbnails') {
+            setNavMode('sections');
+        }
+    }, [isPdf, navMode]);
+
 
     const handleScroll = useCallback((e) => {
         const container = e.target;
@@ -347,6 +417,42 @@ const DocumentViewer = () => {
             setProgress(newProgress);
         }
     }, [progress]);
+
+    const scrollToPage = useCallback((pageNumber) => {
+        const container = window.document.getElementById('document-scroll-container');
+        const target = window.document.getElementById(`page-${pageNumber}`);
+        if (!container) return;
+        if (target) {
+            const containerRect = container.getBoundingClientRect();
+            const targetRect = target.getBoundingClientRect();
+            container.scrollTo({
+                top: container.scrollTop + (targetRect.top - containerRect.top) - 24,
+                behavior: 'smooth'
+            });
+        } else {
+            container.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    }, []);
+
+    const handleJump = () => {
+        const pageNum = parseInt(pageJump, 10);
+        if (!pageNum || pageNum < 1) return;
+        const totalPages = numPages || studyDoc?.page_count || 0;
+        const clamped = totalPages ? Math.min(pageNum, totalPages) : pageNum;
+        scrollToPage(clamped);
+        setPageJump('');
+    };
+
+    const pageForSection = useCallback((section, index) => {
+        if (section?.page_start) {
+            return section.page_start;
+        }
+        const totalPages = numPages || studyDoc?.page_count || 0;
+        if (!totalPages) return 1;
+        const totalSections = Math.max(sections.length - 1, 1);
+        const idx = section?.section_index ?? index;
+        return Math.max(1, Math.round((idx / totalSections) * (totalPages - 1)) + 1);
+    }, [numPages, studyDoc?.page_count, sections.length]);
 
     const onDocumentLoadSuccess = ({ numPages }) => {
         setNumPages(numPages);
@@ -567,7 +673,7 @@ const DocumentViewer = () => {
                                 <div className="flex items-center gap-2 mt-1">
                                     <button
                                         onClick={togglePlayPause}
-                                        className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${isTimerActive ? 'bg-amber-500/10 text-amber-500' : 'bg-primary-500/10 text-primary-500'}`}
+                                        className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${isTimerActive ? 'bg-primary-500/10 text-primary-300' : 'bg-primary-500/10 text-primary-500'}`}
                                     >
                                         {isTimerActive ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3 ml-0.5" />}
                                     </button>
@@ -614,85 +720,204 @@ const DocumentViewer = () => {
                 <Group direction="horizontal">
                     {/* Left Panel: Document */}
                     <Panel defaultSize={60} minSize={30} className="flex flex-col bg-dark-900/50">
-                        <div
-                            id="document-scroll-container"
-                            ref={leftPanelContainerRef}
-                            className="flex-1 overflow-auto custom-scrollbar"
-                            onScroll={handleScroll}
-                        >
-                            {ingestionError && (
-                                <div className="mx-6 mt-6 mb-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-200 px-4 py-3 text-sm">
-                                    {ingestionError}
-                                </div>
-                            )}
-                            <div className={`min-w-full min-h-full flex flex-col ${['pdf', 'image'].includes(studyDoc?.file_type) ? 'items-center py-10' : ''}`}>
-                                {(studyDoc?.file_type === 'pdf' || studyDoc?.filename?.toLowerCase().endsWith('.pdf') || studyDoc?.file_path?.toLowerCase().endsWith('.pdf')) ? (
-                                    <div className="w-full flex flex-col items-center py-8 px-4">
-                                        {pdfFile ? (
-                                            <ErrorBoundary fallback={PdfErrorFallback}>
-                                                <Document
-                                                    file={pdfFile}
-                                                    onLoadSuccess={onDocumentLoadSuccess}
-                                                    className="flex flex-col items-center gap-4"
-                                                    loading={<div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 my-20"></div>}
-                                                    onLoadError={(err) => {
-                                                        console.error('PDF load error', err);
-                                                        setPdfError(err?.message || 'Failed to load PDF');
-                                                    }}
-                                                    onSourceError={(err) => {
-                                                        console.error('PDF source error', err);
-                                                        setPdfError(err?.message || 'Failed to load PDF source');
-                                                    }}
-                                                    options={pdfOptions}
-                                                >
-                                                    {pdfError && (
-                                                        <div className="w-full max-w-2xl bg-red-500/10 border border-red-500/20 text-red-200 px-4 py-3 rounded-xl text-sm">
-                                                            {pdfError}
-                                                        </div>
-                                                    )}
-                                                    {numPages && !pdfError && Array.from({ length: numPages }, (el, index) => (
-                                                        <LazyPage
-                                                            key={`page_${index + 1}`}
-                                                            pageNumber={index + 1}
-                                                            pageWidth={Math.max(320, Math.floor((panelWidth || 900) * 0.92 * zoom))}
-                                                            handleTextSelection={handleTextSelection}
-                                                        />
-                                                    ))}
-                                                    {!numPages && !pdfError && (
-                                                        <div className="text-dark-400 text-sm py-10">Preparing pages...</div>
-                                                    )}
-                                                </Document>
-                                            </ErrorBoundary>
-                                        ) : (
-                                            <div className="text-dark-400 text-sm py-10">
-                                                PDF file not available.
-                                            </div>
+                        <div className="flex-1 flex overflow-hidden">
+                            <aside className="hidden lg:flex w-64 flex-col border-r border-white/5 bg-dark-900/80">
+                                <div className="px-4 pt-5 pb-3 border-b border-white/5">
+                                    <p className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Navigator</p>
+                                    <div className="mt-3 flex bg-white/5 p-1 rounded-lg">
+                                        <button
+                                            onClick={() => setNavMode('pages')}
+                                            className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${navMode === 'pages' ? 'bg-white/10 text-white' : 'text-dark-400 hover:text-white'}`}
+                                        >
+                                            Pages
+                                        </button>
+                                        <button
+                                            onClick={() => setNavMode('sections')}
+                                            className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${navMode === 'sections' ? 'bg-white/10 text-white' : 'text-dark-400 hover:text-white'}`}
+                                        >
+                                            Sections
+                                        </button>
+                                        {isPdf && (
+                                            <button
+                                                onClick={() => setNavMode('thumbnails')}
+                                                className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${navMode === 'thumbnails' ? 'bg-white/10 text-white' : 'text-dark-400 hover:text-white'}`}
+                                            >
+                                                Thumbs
+                                            </button>
                                         )}
                                     </div>
-                                ) : studyDoc?.file_type === 'link' ? (
-                                    <div className="flex-1 w-full bg-white relative">
-                                        <iframe src={fileUrl} className="absolute inset-0 w-full h-full border-none" title={studyDoc.title} />
+                                </div>
+                                <div className="flex-1 overflow-y-auto custom-scrollbar px-4 py-4 space-y-4">
+                                    {navMode === 'pages' ? (
+                                        <div className="space-y-3">
+                                            <label className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Jump to Page</label>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    value={pageJump}
+                                                    onChange={(e) => setPageJump(e.target.value)}
+                                                    className="w-full bg-dark-900/60 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-center font-bold"
+                                                />
+                                                <button onClick={handleJump} className="btn-secondary px-3 py-2 text-xs">Go</button>
+                                            </div>
+                                            <div className="flex items-center gap-2">
+                                                <button
+                                                    onClick={() => scrollToPage(1)}
+                                                    className="flex-1 text-[10px] font-bold uppercase tracking-widest bg-white/5 hover:bg-white/10 rounded-lg py-2"
+                                                >
+                                                    Top
+                                                </button>
+                                                <button
+                                                    onClick={() => scrollToPage(numPages || studyDoc?.page_count || 1)}
+                                                    className="flex-1 text-[10px] font-bold uppercase tracking-widest bg-white/5 hover:bg-white/10 rounded-lg py-2"
+                                                >
+                                                    End
+                                                </button>
+                                            </div>
+                                            {numPages && numPages <= 24 && (
+                                                <div className="grid grid-cols-6 gap-2 text-[10px]">
+                                                    {Array.from({ length: numPages }, (_, idx) => (
+                                                        <button
+                                                            key={`nav_${idx + 1}`}
+                                                            onClick={() => scrollToPage(idx + 1)}
+                                                            className="py-1 rounded-md bg-dark-900/60 border border-white/10 hover:border-primary-500/40 text-dark-200"
+                                                        >
+                                                            {idx + 1}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : navMode === 'thumbnails' && isPdf && pdfFile ? (
+                                        <div id="document-thumbnail-container" className="space-y-3">
+                                            {numPages ? (
+                                                <Document
+                                                    file={pdfFile}
+                                                    options={pdfOptions}
+                                                    loading={<div className="text-xs text-dark-500">Loading thumbnails...</div>}
+                                                >
+                                                    {Array.from({ length: numPages }, (_, idx) => (
+                                                        <ThumbnailPage
+                                                            key={`thumb_${idx + 1}`}
+                                                            pageNumber={idx + 1}
+                                                            onSelect={() => scrollToPage(idx + 1)}
+                                                        />
+                                                    ))}
+                                                </Document>
+                                            ) : (
+                                                <div className="text-xs text-dark-500">Preparing thumbnails...</div>
+                                            )}
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            {sections.length === 0 && (
+                                                <div className="text-xs text-dark-500">No sections available yet.</div>
+                                            )}
+                                            {sections.map((section, index) => (
+                                                <button
+                                                    key={section.id}
+                                                    onClick={() => scrollToPage(pageForSection(section, index))}
+                                                    className="w-full text-left p-3 rounded-xl bg-dark-900/50 border border-white/5 hover:border-primary-500/40 transition-all"
+                                                >
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <p className="text-xs font-bold text-white truncate">
+                                                            {section.title || `Section ${section.section_index + 1}`}
+                                                        </p>
+                                                        <span className={`text-[9px] uppercase tracking-widest font-bold ${section.included ? 'text-primary-300' : 'text-dark-500'}`}>
+                                                            {section.included ? 'Included' : 'Optional'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-[10px] text-dark-400 line-clamp-2 mt-1">
+                                                        {section.excerpt || section.content?.slice(0, 120)}
+                                                    </p>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </aside>
+
+                            <div
+                                id="document-scroll-container"
+                                ref={leftPanelContainerRef}
+                                className="flex-1 overflow-auto custom-scrollbar"
+                                onScroll={handleScroll}
+                            >
+                                {ingestionError && (
+                                    <div className="mx-6 mt-6 mb-2 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-200 px-4 py-3 text-sm">
+                                        {ingestionError}
                                     </div>
-                                ) : (studyDoc.file_type === 'markdown' || studyDoc.file_type === 'text') ? (
-                                    <div className="w-full flex-1 flex flex-col items-center py-10 px-6">
-                                        <div
-                                            className="w-full max-w-5xl bg-dark-900/50 backdrop-blur-md rounded-[2.5rem] border border-white/10 shadow-2xl p-8 md:p-14 relative"
-                                            onMouseUp={handleTextSelection}
-                                        >
-                                            <div className="markdown-content">
-                                                {studyDoc.file_type === 'markdown' ? (
-                                                    <ReactMarkdown>{studyDoc.extracted_text}</ReactMarkdown>
-                                                ) : <pre className="whitespace-pre-wrap font-sans text-lg">{studyDoc.extracted_text}</pre>}
+                                )}
+                                <div className={`min-w-full min-h-full flex flex-col ${['pdf', 'image'].includes(studyDoc?.file_type) ? 'items-center py-10' : ''}`}>
+                                    {(studyDoc?.file_type === 'pdf' || studyDoc?.filename?.toLowerCase().endsWith('.pdf') || studyDoc?.file_path?.toLowerCase().endsWith('.pdf')) ? (
+                                        <div className="w-full flex flex-col items-center py-8 px-4">
+                                            {pdfFile ? (
+                                                <ErrorBoundary fallback={PdfErrorFallback}>
+                                                    <Document
+                                                        file={pdfFile}
+                                                        onLoadSuccess={onDocumentLoadSuccess}
+                                                        className="flex flex-col items-center gap-4"
+                                                        loading={<div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 my-20"></div>}
+                                                        onLoadError={(err) => {
+                                                            console.error('PDF load error', err);
+                                                            setPdfError(err?.message || 'Failed to load PDF');
+                                                        }}
+                                                        onSourceError={(err) => {
+                                                            console.error('PDF source error', err);
+                                                            setPdfError(err?.message || 'Failed to load PDF source');
+                                                        }}
+                                                        options={pdfOptions}
+                                                    >
+                                                        {pdfError && (
+                                                            <div className="w-full max-w-2xl bg-red-500/10 border border-red-500/20 text-red-200 px-4 py-3 rounded-xl text-sm">
+                                                                {pdfError}
+                                                            </div>
+                                                        )}
+                                                        {numPages && !pdfError && Array.from({ length: numPages }, (el, index) => (
+                                                            <LazyPage
+                                                                key={`page_${index + 1}`}
+                                                                pageNumber={index + 1}
+                                                                pageWidth={Math.max(320, Math.floor((panelWidth || 900) * 0.92 * zoom))}
+                                                                handleTextSelection={handleTextSelection}
+                                                            />
+                                                        ))}
+                                                        {!numPages && !pdfError && (
+                                                            <div className="text-dark-400 text-sm py-10">Preparing pages...</div>
+                                                        )}
+                                                    </Document>
+                                                </ErrorBoundary>
+                                            ) : (
+                                                <div className="text-dark-400 text-sm py-10">
+                                                    PDF file not available.
+                                                </div>
+                                            )}
+                                        </div>
+                                    ) : studyDoc?.file_type === 'link' ? (
+                                        <div className="flex-1 w-full bg-white relative">
+                                            <iframe src={fileUrl} className="absolute inset-0 w-full h-full border-none" title={studyDoc.title} />
+                                        </div>
+                                    ) : (studyDoc.file_type === 'markdown' || studyDoc.file_type === 'text') ? (
+                                        <div className="w-full flex-1 flex flex-col items-center py-10 px-6">
+                                            <div
+                                                className="w-full max-w-5xl bg-dark-900/50 backdrop-blur-md rounded-[2.5rem] border border-white/10 shadow-2xl p-8 md:p-14 relative"
+                                                onMouseUp={handleTextSelection}
+                                            >
+                                                <div className="markdown-content">
+                                                    {studyDoc.file_type === 'markdown' ? (
+                                                        <ReactMarkdown>{studyDoc.extracted_text}</ReactMarkdown>
+                                                    ) : <pre className="whitespace-pre-wrap font-sans text-lg">{studyDoc.extracted_text}</pre>}
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                ) : (studyDoc.file_type === 'image' || studyDoc?.filename?.match(/\.(jpg|jpeg|png|gif|webp)$/i)) ? (
-                                    <div className="p-8">
-                                        <img src={fileUrl} alt={studyDoc.title} className="max-w-full shadow-2xl rounded-lg ring-1 ring-white/10" onMouseUp={handleTextSelection} />
-                                    </div>
-                                ) : (
-                                    <pre className="whitespace-pre-wrap font-sans text-lg leading-relaxed text-dark-100 p-8">{studyDoc.extracted_text || "No content"}</pre>
-                                )}
+                                    ) : (studyDoc.file_type === 'image' || studyDoc?.filename?.match(/\.(jpg|jpeg|png|gif|webp)$/i)) ? (
+                                        <div className="p-8">
+                                            <img src={fileUrl} alt={studyDoc.title} className="max-w-full shadow-2xl rounded-lg ring-1 ring-white/10" onMouseUp={handleTextSelection} />
+                                        </div>
+                                    ) : (
+                                        <pre className="whitespace-pre-wrap font-sans text-lg leading-relaxed text-dark-100 p-8">{studyDoc.extracted_text || "No content"}</pre>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     </Panel>
@@ -739,6 +964,7 @@ const DocumentViewer = () => {
                                         ref={flashcardCreatorRef}
                                         studyDoc={studyDoc}
                                         selectedText={selectedText}
+                                        sections={sections}
                                         onComplete={() => {
                                             setSelectedText('');
                                             setFlashcardFront('');
@@ -816,7 +1042,7 @@ const DocumentViewer = () => {
                                                     <button
                                                         disabled={isSectionBusy}
                                                         onClick={() => handleToggleSection(section)}
-                                                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all ${section.included ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30' : 'bg-white/5 text-dark-400 border-white/10'}`}
+                                                        className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border transition-all ${section.included ? 'bg-primary-500/10 text-primary-300 border-primary-500/30' : 'bg-white/5 text-dark-400 border-white/10'}`}
                                                     >
                                                         {section.included ? 'Included' : 'Excluded'}
                                                     </button>

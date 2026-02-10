@@ -1,103 +1,21 @@
 import { create } from 'zustand';
 import api from '../services/api';
+import useFolderStore from './useFolderStore';
 
 /**
- * Store for managing documents and folders.
- * Handles fetching, creating, updating, and deleting documents and folders,
- * as well as managing the global selection state for the sidebar.
+ * Store for managing documents.
+ * Handles fetching, creating, updating, and deleting documents.
  * 
  * @typedef {Object} DocumentStore
  * @property {Array} documents - List of all documents.
- * @property {Array} folders - List of all folders.
- * @property {string|null} selectedFolderId - The currently selected folder ID (null for 'All').
  * @property {boolean} isLoading - Loading state for async operations.
  * @property {Error|null} error - Error state for failed requests.
  */
 const useDocumentStore = create((set, get) => ({
     documents: [],
-    folders: [],
-    selectedFolderId: null,  // null = "All Documents"
     isLoading: false,
     error: null,
     lastFetchedAt: 0,
-
-    /**
-     * Fetches all folders from the backend.
-     * @async
-     */
-    fetchFolders: async () => {
-        try {
-            const data = await api.get('/folders');
-            set({ folders: data });
-        } catch (err) {
-            set({ error: err });
-        }
-    },
-
-    /**
-     * Creates a new folder.
-     * @async
-     * @param {Object} folderData - The folder to create (name, color, icon).
-     * @returns {Promise<Object>} The created folder object.
-     */
-    createFolder: async (folderData) => {
-        try {
-            const newFolder = await api.post('/folders', folderData);
-            set((state) => ({
-                folders: [...state.folders, newFolder],
-            }));
-            return newFolder;
-        } catch (err) {
-            set({ error: err });
-            throw err;
-        }
-    },
-
-    /**
-     * Updates an existing folder.
-     * @async
-     * @param {string} id - The folder ID.
-     * @param {Object} data - The updated folder properties.
-     * @returns {Promise<Object>} The updated folder object.
-     */
-    updateFolder: async (id, data) => {
-        try {
-            const updated = await api.put(`/folders/${id}`, data);
-            set((state) => ({
-                folders: state.folders.map((f) => (f.id === id ? updated : f)),
-            }));
-            return updated;
-        } catch (err) {
-            set({ error: err });
-        }
-    },
-
-    /**
-     * Deletes a folder and refreshes the document list.
-     * @async
-     * @param {string} id - The folder ID.
-     */
-    deleteFolder: async (id) => {
-        try {
-            await api.delete(`/folders/${id}`);
-            set((state) => ({
-                folders: state.folders.filter((f) => f.id !== id),
-                selectedFolderId: state.selectedFolderId === id ? null : state.selectedFolderId,
-            }));
-            // Refresh documents since they may have been unfiled
-            get().fetchDocuments();
-        } catch (err) {
-            set({ error: err });
-        }
-    },
-
-    /**
-     * Sets the currently active folder in the UI.
-     * @param {string|null} folderId - The folder ID or null for 'All'.
-     */
-    setSelectedFolder: (folderId) => {
-        set({ selectedFolderId: folderId });
-    },
 
     /**
      * Moves a document to a different folder.
@@ -114,7 +32,7 @@ const useDocumentStore = create((set, get) => ({
                 ),
             }));
             // Refresh folders to update counts
-            get().fetchFolders();
+            useFolderStore.getState().fetchFolders();
         } catch (err) {
             set({ error: err });
         }
@@ -134,14 +52,26 @@ const useDocumentStore = create((set, get) => ({
         if (!silent) set({ isLoading: true, error: null });
         try {
             const data = await api.get('/documents');
+            const optimistic = get().documents.filter((doc) => {
+                if (!doc.isOptimistic) return false;
+                return !data.some((serverDoc) => {
+                    const serverTitle = serverDoc.title || serverDoc.filename || '';
+                    return serverTitle && serverTitle === doc.title;
+                });
+            });
             if (!silent) {
-                set({ documents: data, isLoading: false, lastFetchedAt: now });
+                set({ documents: [...optimistic, ...data], isLoading: false, lastFetchedAt: now });
             } else {
-                set({ documents: data, lastFetchedAt: now });
+                set({ documents: [...optimistic, ...data], lastFetchedAt: now });
             }
         } catch (err) {
             set({ error: err, isLoading: false });
         }
+    },
+
+    setDocumentsFromSocket: (docs) => {
+        if (!Array.isArray(docs)) return;
+        set({ documents: docs, lastFetchedAt: Date.now() });
     },
 
     /**
@@ -154,7 +84,7 @@ const useDocumentStore = create((set, get) => ({
         set({ error: null }); // Don't set global isLoading to true, it might flicker the list
 
         // 1. Optimistic Update
-        const tempId = `temp-${Date.now()}`;
+        const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const file = formData.get('file');
         const optimisticDoc = {
             id: tempId,
@@ -184,7 +114,7 @@ const useDocumentStore = create((set, get) => ({
             }));
 
             // Refresh folders to update counts
-            get().fetchFolders();
+            useFolderStore.getState().fetchFolders();
             return newDoc;
         } catch (err) {
             // 3. Rollback on Error
@@ -211,7 +141,7 @@ const useDocumentStore = create((set, get) => ({
                 isLoading: false,
             }));
             // Refresh folders to update counts
-            get().fetchFolders();
+            useFolderStore.getState().fetchFolders();
             return newDoc;
         } catch (err) {
             set({ error: err, isLoading: false });
@@ -232,7 +162,7 @@ const useDocumentStore = create((set, get) => ({
                 documents: state.documents.filter((doc) => doc.id !== id),
             }));
             // Refresh folders to update counts
-            get().fetchFolders();
+            useFolderStore.getState().fetchFolders();
         } catch (err) {
             set({ error: err });
             throw err;

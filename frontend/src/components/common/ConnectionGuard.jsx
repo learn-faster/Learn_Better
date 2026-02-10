@@ -125,11 +125,11 @@ function ConnectionStatusBanner({ error, onRetry }) {
     'API unreachable. You can continue, but features may not work.'
 
   return (
-    <div className="w-full bg-amber-100 text-amber-900 border-b border-amber-200 px-4 py-2 text-sm flex items-center justify-between">
+    <div className="w-full bg-primary-100 text-dark-900 border-b border-primary-200 px-4 py-2 text-sm flex items-center justify-between">
       <div className="truncate">{message}</div>
       <button
         onClick={onRetry}
-        className="ml-4 px-3 py-1 rounded border border-amber-300 hover:bg-amber-200"
+        className="ml-4 px-3 py-1 rounded border border-primary-300 hover:bg-primary-200"
       >
         Retry
       </button>

@@ -477,7 +477,7 @@ export function SourceDetailContent({
                       href={source.asset.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="hover:underline text-blue-600"
+                      className="hover:underline text-primary-400"
                     >
                       {source.asset.url}
                     </a>
@@ -511,7 +511,7 @@ export function SourceDetailContent({
                     )}
                   </div>
                 )}
-                <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-blue-600 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
+                <div className="prose prose-sm prose-neutral dark:prose-invert max-w-none prose-headings:font-semibold prose-a:text-primary-400 prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-p:mb-4 prose-p:leading-7 prose-li:mb-2">
                   <ReactMarkdown
                     remarkPlugins={[remarkGfm]}
                     components={{

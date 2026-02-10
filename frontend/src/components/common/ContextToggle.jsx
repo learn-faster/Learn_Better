@@ -24,8 +24,8 @@ export function ContextToggle({ mode, hasInsights = false, onChange, className }
     insights: {
       icon: Lightbulb,
       label: t.common.contextModes.insights,
-      color: 'text-amber-600',
-      bgColor: 'hover:bg-amber-50'
+      color: 'text-primary',
+      bgColor: 'hover:bg-primary/10'
     },
     full: {
       icon: FileText,
