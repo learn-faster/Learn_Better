@@ -18,13 +18,17 @@ from src.models.schemas import (
     PracticeHistoryItem,
 )
 from src.services.practice_engine_service import practice_engine_service
+from src.dependencies import get_request_user_id
 
 router = APIRouter(prefix="/api/practice", tags=["practice"])
 
 
 @router.post("/session", response_model=PracticeSessionStartResponse)
-def create_practice_session(payload: PracticeSessionCreate, db: Session = Depends(get_db)):
-    user_id = "default_user"
+def create_practice_session(
+    payload: PracticeSessionCreate,
+    user_id: str = Depends(get_request_user_id),
+    db: Session = Depends(get_db)
+):
     comp = practice_engine_service.compose_session(
         db=db,
         user_id=user_id,
@@ -98,9 +102,14 @@ def end_practice_session(session_id: str, payload: PracticeSessionEnd, db: Sessi
 
 
 @router.get("/history", response_model=PracticeHistoryResponse)
-def get_practice_history(limit: int = 20, db: Session = Depends(get_db)):
+def get_practice_history(
+    limit: int = 20,
+    user_id: str = Depends(get_request_user_id),
+    db: Session = Depends(get_db)
+):
     sessions = (
         db.query(PracticeSession)
+        .filter(PracticeSession.user_id == user_id)
         .order_by(PracticeSession.start_time.desc())
         .limit(limit)
         .all()

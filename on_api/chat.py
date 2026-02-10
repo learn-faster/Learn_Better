@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
@@ -6,8 +6,9 @@ from datetime import datetime, timezone
 from .router_main import db
 from .db_utils import normalize_id, unwrap_query_result, first_record
 from src.services.llm_service import llm_service
-from src.models.schemas import LLMConfig
-from src.config import settings
+from src.services.llm_config_resolver import resolve_llm_config
+from src.database.orm import get_db
+from sqlalchemy.orm import Session
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -18,13 +19,14 @@ class ChatRequest(BaseModel):
     context: Optional[str] = None
     model_override: Optional[str] = None
     history: Optional[List[dict]] = []
+    user_id: Optional[str] = None
 
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 @router.post("/execute")
-async def execute_chat(request: ChatRequest):
+async def execute_chat(request: ChatRequest, db_session: Session = Depends(get_db)):
     """Main chat execution point (matching frontend expectations)."""
     session_id = normalize_id("chat_session", request.session_id) if request.session_id else None
     session = None
@@ -76,13 +78,14 @@ async def execute_chat(request: ChatRequest):
     # Current user message
     messages_payload.append({"role": "user", "content": request.message})
 
-    llm_config = None
+    user_id = request.user_id or "default_user"
+    llm_config = resolve_llm_config(
+        db_session,
+        user_id,
+        config_type="chat"
+    )
     if request.model_override:
-        llm_config = LLMConfig(
-            provider=settings.llm_provider,
-            model=request.model_override,
-            base_url=settings.ollama_base_url if settings.llm_provider == "ollama" else None
-        )
+        llm_config.model = request.model_override
 
     try:
         assistant_content = await llm_service.get_chat_completion(

@@ -18,7 +18,7 @@ from src.services.document_service import document_service
 from src.utils.logger import logger
 from src.path_resolution.path_resolver import PathResolver
 from src.models.schemas import LearningPath, PathRequest, LLMConfig
-from src.dependencies import get_path_resolver
+from src.dependencies import get_path_resolver, get_request_user_id
 from src.config import settings
 
 router = APIRouter(prefix="/api/ai", tags=["AI Generation"])
@@ -38,18 +38,24 @@ class GenerateRequest(BaseModel):
 
 
 @router.post("/generate-flashcards")
-async def generate_flashcards(request: GenerateRequest, db: Session = Depends(get_db)):
+async def generate_flashcards(
+    request: GenerateRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """
     Generates flashcards from a document.
     """
     # Get text using centralized service
-    text = await document_service.get_extracted_text(db, request.document_id)
+    text, did_update = await document_service.get_extracted_text(db, request.document_id)
     if not text:
         raise HTTPException(status_code=400, detail="Document has no text content available for generation")
+    if did_update:
+        db.commit()
 
     try:
         # Resolve LLM config using shared resolver
-        config = resolve_llm_config(db, "default_user", override=request.llm_config, config_type="flashcards")
+        config = resolve_llm_config(db, user_id, override=request.llm_config, config_type="flashcards")
 
         flashcards = await llm_service.generate_flashcards(text, request.count, config)
         return flashcards
@@ -59,18 +65,24 @@ async def generate_flashcards(request: GenerateRequest, db: Session = Depends(ge
 
 
 @router.post("/generate-questions")
-async def generate_questions(request: GenerateRequest, db: Session = Depends(get_db)):
+async def generate_questions(
+    request: GenerateRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """
     Generates multiple-choice questions from a document.
     """
     # Get text using centralized service
-    text = await document_service.get_extracted_text(db, request.document_id)
+    text, did_update = await document_service.get_extracted_text(db, request.document_id)
     if not text:
         raise HTTPException(status_code=400, detail="Document has no text content available for generation")
+    if did_update:
+        db.commit()
 
     try:
         # Resolve LLM config using shared resolver
-        config = resolve_llm_config(db, "default_user", override=request.llm_config, config_type="quiz")
+        config = resolve_llm_config(db, user_id, override=request.llm_config, config_type="quiz")
 
         questions = await llm_service.generate_questions(text, request.count, config)
         return questions
@@ -83,7 +95,8 @@ async def generate_questions(request: GenerateRequest, db: Session = Depends(get
 async def generate_learning_path(
     request: PathRequest,
     db: Session = Depends(get_db),
-    path_resolver: PathResolver = Depends(get_path_resolver)
+    path_resolver: PathResolver = Depends(get_path_resolver),
+    user_id: str = Depends(get_request_user_id)
 ):
     """
     Generates a structured learning path/curriculum.
@@ -103,8 +116,9 @@ async def generate_learning_path(
         graph_exists = concept_check and concept_check[0]["cnt"] > 0
 
         # Use provided time budget
+        effective_user_id = request.user_id or user_id
         graph_path = path_resolver.resolve_path(
-            request.user_id,
+            effective_user_id,
             request.target_concept,
             time_budget_minutes=request.time_budget_minutes
         )
@@ -126,7 +140,10 @@ async def generate_learning_path(
 
     text = ""
     if request.document_id:
-        text = await document_service.get_extracted_text(db, request.document_id) or ""
+        text, did_update = await document_service.get_extracted_text(db, request.document_id)
+        if did_update:
+            db.commit()
+        text = text or ""
 
     if not request.target_concept:
          raise HTTPException(status_code=400, detail="Target concept (goal) is required")
@@ -134,7 +151,8 @@ async def generate_learning_path(
     try:
         # Mapping target_concept to 'goal' for LLM
         # Resolve LLM config using shared resolver
-        config = resolve_llm_config(db, "default_user", config_type="curriculum")
+        effective_user_id = request.user_id or user_id
+        config = resolve_llm_config(db, effective_user_id, config_type="curriculum")
 
         path = await llm_service.generate_learning_path(text, request.target_concept, config=config)
         return path
@@ -144,18 +162,24 @@ async def generate_learning_path(
 
 
 @router.post("/extract-concepts")
-async def extract_concepts(request: GenerateRequest, db: Session = Depends(get_db)):
+async def extract_concepts(
+    request: GenerateRequest,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """
     Extracts concepts and relationships from a document and updates the graph.
     """
     # Get text using centralized service
-    text = await document_service.get_extracted_text(db, request.document_id)
+    text, did_update = await document_service.get_extracted_text(db, request.document_id)
     if not text:
         raise HTTPException(status_code=400, detail="Document has no text content available for extraction")
+    if did_update:
+        db.commit()
 
     try:
         # Resolve LLM config using shared resolver
-        config = resolve_llm_config(db, "default_user", override=request.llm_config, config_type="extraction")
+        config = resolve_llm_config(db, user_id, override=request.llm_config, config_type="extraction")
 
         # Extract structured data
         extraction = await llm_service.extract_concepts(text, config)

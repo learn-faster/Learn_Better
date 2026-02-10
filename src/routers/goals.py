@@ -12,6 +12,7 @@ from src.config import settings
 from src.observability.opik import build_opik_config, init_opik
 
 from src.database.orm import get_db
+from src.dependencies import get_request_user_id
 from src.models.orm import Goal, FocusSession, DailyPlanEntry, AgentEmailMessage
 from src.models.schemas import (
     GoalCreate, GoalUpdate, GoalResponse,
@@ -23,10 +24,15 @@ router = APIRouter(prefix="/api/goals", tags=["goals"])
 
 
 @router.post("/", response_model=GoalResponse)
-def create_goal(goal_data: GoalCreate, db: Session = Depends(get_db)):
+def create_goal(
+    goal_data: GoalCreate,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """Creates a new goal."""
     goal = Goal(
         id=str(uuid.uuid4()),
+        user_id=user_id,
         **goal_data.model_dump()
     )
     db.add(goal)
@@ -39,10 +45,11 @@ def create_goal(goal_data: GoalCreate, db: Session = Depends(get_db)):
 def get_goals(
     status: Optional[str] = None,
     domain: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
 ):
     """Retrieves all goals with optional filtering."""
-    query = db.query(Goal).filter(Goal.user_id == "default_user")
+    query = db.query(Goal).filter(Goal.user_id == user_id)
     if status:
         query = query.filter(Goal.status == status)
     if domain:
@@ -52,13 +59,13 @@ def get_goals(
 
 
 @router.get("/daily-plan", response_model=DailyPlanResponse)
-def get_daily_plan(user_id: str = "default_user", db: Session = Depends(get_db)):
+def get_daily_plan(user_id: str = Depends(get_request_user_id), db: Session = Depends(get_db)):
     from src.services.daily_plan_service import daily_plan_service
     return daily_plan_service.build_daily_plan(db, user_id)
 
 
 @router.patch("/daily-plan/{entry_id}")
-def update_daily_plan_entry(entry_id: str, payload: DailyPlanEntryUpdate, db: Session = Depends(get_db), user_id: str = "default_user"):
+def update_daily_plan_entry(entry_id: str, payload: DailyPlanEntryUpdate, db: Session = Depends(get_db), user_id: str = Depends(get_request_user_id)):
     entry = db.query(DailyPlanEntry).filter(DailyPlanEntry.id == entry_id, DailyPlanEntry.user_id == user_id).first()
     if not entry:
         raise HTTPException(status_code=404, detail="Daily plan entry not found")
@@ -77,7 +84,7 @@ def update_daily_plan_entry(entry_id: str, payload: DailyPlanEntryUpdate, db: Se
 def create_daily_plan_entry(
     payload: DailyPlanEntryCreate,
     db: Session = Depends(get_db),
-    user_id: str = "default_user"
+    user_id: str = Depends(get_request_user_id)
 ):
     plan_date = payload.date or datetime.utcnow().date()
     entry = DailyPlanEntry(
@@ -112,7 +119,7 @@ def get_daily_plan_history(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     completed: Optional[bool] = None,
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
     query = db.query(DailyPlanEntry).filter(DailyPlanEntry.user_id == user_id)
@@ -289,7 +296,7 @@ from src.models.agent import (
 @router.post("/agent/chat", response_model=AgentResponse)
 async def chat_with_agent(
     chat_input: ChatInput,
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)  
 ):
     """
@@ -310,7 +317,7 @@ async def chat_with_agent(
 @router.post("/agent/settings")
 async def update_agent_settings(
     settings: AgentSettings,
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db),
     request: Request = None
 ):
@@ -404,7 +411,7 @@ async def update_agent_settings(
 
 @router.get("/agent/settings")
 async def get_agent_settings(
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -500,7 +507,7 @@ async def get_agent_settings(
 
 @router.get("/agent/status", response_model=AgentStatusResponse)
 async def get_agent_status(
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
     from src.models.orm import UserSettings
@@ -554,19 +561,19 @@ async def get_agent_status(
 
 
 @router.get("/agent/history")
-async def get_agent_history(user_id: str = "default_user"):
+async def get_agent_history(user_id: str = Depends(get_request_user_id)):
     return {"history": memory_service.get_chat_history(user_id, limit=50)}
 
 
 @router.get("/agent/negotiation-summary")
-def get_negotiation_summary(user_id: str = "default_user", db: Session = Depends(get_db)):
+def get_negotiation_summary(user_id: str = Depends(get_request_user_id), db: Session = Depends(get_db)):
     from src.services.goal_negotiation_service import goal_negotiation_service
     goals = db.query(Goal).filter(Goal.user_id == user_id).order_by(Goal.priority.asc()).all()
     return {"pacing": goal_negotiation_service.compute_goal_pacing(goals)}
 
 
 @router.get("/agent/email/logs")
-def get_agent_email_logs(limit: int = 50, user_id: Optional[str] = None, db: Session = Depends(get_db)):
+def get_agent_email_logs(limit: int = 50, user_id: Optional[str] = Depends(get_request_user_id), db: Session = Depends(get_db)):
     query = db.query(AgentEmailMessage)
     if user_id:
         query = query.filter(AgentEmailMessage.user_id == user_id)
@@ -606,15 +613,17 @@ async def inbound_agent_email(request: Request, db: Session = Depends(get_db)):
     message_id = payload.get("message_id") or payload.get("message-id") or payload.get("Message-Id")
 
     user_id = "default_user"
+    parsed_user_id = None
     if to_email and "+" in to_email:
         try:
             local = to_email.split("@")[0]
             token = local.split("+")[1]
             if token:
+                parsed_user_id = token
                 user_id = token
         except Exception:
             pass
-    if payload.get("user_id"):
+    if payload.get("user_id") and parsed_user_id and payload.get("user_id") == parsed_user_id:
         user_id = payload.get("user_id")
 
     inbound = AgentEmailMessage(
@@ -671,7 +680,7 @@ async def inbound_agent_email(request: Request, db: Session = Depends(get_db)):
 @router.post("/agent/onboarding")
 async def save_agent_onboarding(
     payload: AgentOnboardingRequest,
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
     from src.models.orm import UserSettings, Goal as GoalORM
@@ -715,7 +724,7 @@ async def save_agent_onboarding(
 @router.post("/agent/tools/screenshot")
 async def agent_screenshot_tool(
     payload: AgentScreenshotRequest,
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
     from src.models.orm import UserSettings
@@ -757,7 +766,7 @@ async def agent_screenshot_tool(
 @router.post("/agent/tools/email")
 async def agent_email_tool(
     payload: AgentEmailRequest,
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
     from src.models.orm import UserSettings
@@ -785,7 +794,7 @@ async def agent_email_tool(
 @router.post("/agent/tools/scratchpad")
 async def agent_scratchpad_tool(
     payload: AgentScratchpadRequest,
-    user_id: str = "default_user"
+    user_id: str = Depends(get_request_user_id)
 ):
     from src.services.memory_service import memory_service
     memory_service.update_scratchpad(payload.content, user_id=user_id)

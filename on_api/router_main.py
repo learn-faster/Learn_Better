@@ -54,12 +54,12 @@ class LLMConfigUpdate(BaseModel):
     config: Dict[str, Any]
 
 @router.get("/config/llm")
-async def get_llm_config(db: Session = Depends(get_db)):
-    """Get LLM configuration for the default user."""
-    user_settings = db.query(UserSettings).filter(UserSettings.user_id == "default_user").first()
+async def get_llm_config(user_id: str = "default_user", db: Session = Depends(get_db)):
+    """Get LLM configuration for the specified user."""
+    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
     if not user_settings:
         # Create default settings if not exists
-        user_settings = UserSettings(user_id="default_user", llm_config={})
+        user_settings = UserSettings(user_id=user_id, llm_config={})
         db.add(user_settings)
         db.commit()
         db.refresh(user_settings)
@@ -67,11 +67,11 @@ async def get_llm_config(db: Session = Depends(get_db)):
     return user_settings.llm_config or {}
 
 @router.post("/config/llm")
-async def update_llm_config(update: LLMConfigUpdate, db: Session = Depends(get_db)):
+async def update_llm_config(update: LLMConfigUpdate, user_id: str = "default_user", db: Session = Depends(get_db)):
     """Update LLM configuration."""
-    user_settings = db.query(UserSettings).filter(UserSettings.user_id == "default_user").first()
+    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
     if not user_settings:
-        user_settings = UserSettings(user_id="default_user", llm_config=update.config)
+        user_settings = UserSettings(user_id=user_id, llm_config=update.config)
         db.add(user_settings)
     else:
         user_settings.llm_config = update.config
