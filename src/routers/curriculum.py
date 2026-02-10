@@ -22,6 +22,7 @@ import uuid
 import json
 import re
 from src.services.curriculum_service import curriculum_service
+from src.dependencies import get_request_user_id
 
 router = APIRouter(prefix="/api/curriculum", tags=["Curriculum"])
 
@@ -54,7 +55,7 @@ async def generate_curriculum(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/", response_model=List[CurriculumResponse])
-def list_curriculums(user_id: str = "default_user", db: Session = Depends(get_db)):
+def list_curriculums(user_id: str = Depends(get_request_user_id), db: Session = Depends(get_db)):
     return curriculum_service.get_user_curriculums(db, user_id)
 
 @router.get("/{curriculum_id}", response_model=CurriculumResponse)

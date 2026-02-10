@@ -38,6 +38,7 @@ from src.database.orm import SessionLocal
 from src.models.orm import UserSettings
 from src.queue.ingestion_queue import get_redis, get_queue_health
 from src.observability.opik import build_opik_config, init_opik, get_trace_context_manager, get_opik_context
+from src.dependencies import get_request_user_id
 
 # Import new routers
 from src.routers import (
@@ -71,6 +72,56 @@ user_tracker: Optional[UserProgressTracker] = None
 path_resolver: Optional[PathResolver] = None
 content_retriever: Optional[ContentRetriever] = None
 document_store: Optional[DocumentStore] = None
+
+async def run_worker_supervisor(app: FastAPI, stop_event: asyncio.Event) -> None:
+    backoff_seconds = 2
+    warned_missing = False
+
+    while not stop_event.is_set():
+        if not os.path.exists("open_notebook/commands"):
+            if not warned_missing:
+                logger.warning("open_notebook/commands not found, skipping worker startup")
+                warned_missing = True
+            await asyncio.sleep(30)
+            continue
+
+        worker_command = ["uv", "run", "surreal-commands-worker", "--import-modules", "open_notebook.commands"]
+        try:
+            logger.info("Starting Open Notebook Command Worker...")
+            worker_process = subprocess.Popen(
+                worker_command,
+                cwd=os.getcwd(),
+                env=os.environ.copy()
+            )
+            app.state.worker_process = worker_process
+            logger.info(f"Worker started with PID {worker_process.pid}")
+        except Exception as e:
+            logger.error(f"Failed to start worker: {e}")
+            await asyncio.sleep(backoff_seconds)
+            backoff_seconds = min(backoff_seconds * 2, 60)
+            continue
+
+        backoff_seconds = 2
+        while not stop_event.is_set():
+            if worker_process.poll() is not None:
+                logger.error(f"Worker exited with code {worker_process.returncode}")
+                break
+            await asyncio.sleep(2)
+
+        if stop_event.is_set():
+            break
+
+        await asyncio.sleep(backoff_seconds)
+
+    worker_process = getattr(app.state, "worker_process", None)
+    if worker_process and worker_process.poll() is None:
+        logger.info("Stopping Open Notebook Command Worker...")
+        worker_process.terminate()
+        try:
+            worker_process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            worker_process.kill()
+        logger.info("Worker stopped")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -179,24 +230,11 @@ async def lifespan(app: FastAPI):
     app.state.negotiation_stop = negotiation_stop_event
     logger.info("Negotiation scheduler started.")
     
-    # Start Open Notebook Command Worker
-    worker_process = None
-    try:
-        logger.info("Starting Open Notebook Command Worker...")
-        # Check if commands module exists at expected path
-        if os.path.exists("open_notebook/commands"):
-            worker_command = ["uv", "run", "surreal-commands-worker", "--import-modules", "open_notebook.commands"]
-            worker_process = subprocess.Popen(
-                worker_command,
-                cwd=os.getcwd(),
-                # stdout=subprocess.DEVNULL, # Keep stdout for debugging for now
-                env=os.environ.copy()
-            )
-            logger.info(f"Worker started with PID {worker_process.pid}")
-        else:
-            logger.warning("open_notebook/commands not found, skipping worker startup")
-    except Exception as e:
-        logger.error(f"Failed to start worker: {e}")
+    # Start Open Notebook Command Worker (supervised)
+    worker_stop_event = asyncio.Event()
+    worker_task = asyncio.create_task(run_worker_supervisor(app, worker_stop_event))
+    app.state.worker_stop = worker_stop_event
+    app.state.worker_task = worker_task
 
     yield
     
@@ -215,15 +253,14 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass
 
-    # Shutdown worker
-    if worker_process:
-        logger.info("Stopping Open Notebook Command Worker...")
-        worker_process.terminate()
+    # Shutdown worker supervisor
+    if worker_stop_event:
+        worker_stop_event.set()
+    if worker_task:
         try:
-            worker_process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            worker_process.kill()
-        logger.info("Worker stopped")
+            await worker_task
+        except Exception:
+            pass
         
     logger.info("Shutting down LearnFast Core Engine...")
 
@@ -248,7 +285,7 @@ class OpikTraceMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         trace_name = f"{request.method} {request.url.path}"
-        user_id = request.query_params.get("user_id") or "default_user"
+        user_id = get_request_user_id(request)
         metadata = {"path": request.url.path, "method": request.method, "user_id": user_id}
 
         with trace_cm(name=trace_name, metadata=metadata, tags=["api"]):
@@ -286,7 +323,7 @@ app.add_middleware(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins or ["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -31,3 +31,7 @@ def get_content_retriever(request: Request):
     if not hasattr(request.app.state, "content_retriever") or not request.app.state.content_retriever:
         raise HTTPException(status_code=503, detail="Content Retriever not initialized")
     return request.app.state.content_retriever
+
+def get_request_user_id(request: Request) -> str:
+    user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id")
+    return user_id or "default_user"

@@ -27,21 +27,34 @@ const AgentChat = ({ status, onOpenSettings }) => {
     scrollToBottomIfNearEnd('smooth');
   }, [messages, isLoading, scrollToBottomIfNearEnd]);
 
+  const makeMessageId = (seed) => {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return crypto.randomUUID();
+    }
+    const randomPart = Math.random().toString(36).slice(2, 10);
+    return `msg_${Date.now()}_${seed || randomPart}`;
+  };
+
+  const normalizeMessages = (history) => history.map((msg, idx) => ({
+    ...msg,
+    id: msg.id || makeMessageId(idx)
+  }));
+
   useEffect(() => {
     const loadHistory = async () => {
       try {
         const data = await agentApi.history();
-        const history = data?.history || [];
+        const history = normalizeMessages(data?.history || []);
         if (history.length > 0) {
           setMessages(history);
         } else {
           setMessages([
-            { role: 'assistant', content: 'Hi! I’m your Goal Agent. Tell me what you want to achieve and I’ll build a plan.' }
+            { id: makeMessageId('welcome'), role: 'assistant', content: 'Hi! I’m your Goal Agent. Tell me what you want to achieve and I’ll build a plan.' }
           ]);
         }
       } catch {
         setMessages([
-          { role: 'assistant', content: 'Hi! I’m your Goal Agent. Tell me what you want to achieve and I’ll build a plan.' }
+          { id: makeMessageId('welcome'), role: 'assistant', content: 'Hi! I’m your Goal Agent. Tell me what you want to achieve and I’ll build a plan.' }
         ]);
       }
     };
@@ -51,7 +64,7 @@ const AgentChat = ({ status, onOpenSettings }) => {
   const sendMessage = async (overrideText) => {
     const text = (overrideText ?? input).trim();
     if (!text || isLoading) return;
-    const userMsg = { role: 'user', content: text };
+    const userMsg = { id: makeMessageId('user'), role: 'user', content: text };
     setMessages((prev) => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
@@ -59,6 +72,7 @@ const AgentChat = ({ status, onOpenSettings }) => {
     try {
       const data = await agentApi.chat({ message: userMsg.content });
       const agentMsg = {
+        id: makeMessageId('agent'),
         role: 'assistant',
         content: data.message,
         guardrail: data.guardrail,
@@ -67,7 +81,7 @@ const AgentChat = ({ status, onOpenSettings }) => {
       };
       setMessages((prev) => [...prev, agentMsg]);
     } catch (e) {
-      setMessages((prev) => [...prev, { role: 'assistant', content: 'Sorry — something went wrong. Try again in a moment.' }]);
+      setMessages((prev) => [...prev, { id: makeMessageId('error'), role: 'assistant', content: 'Sorry — something went wrong. Try again in a moment.' }]);
     } finally {
       setIsLoading(false);
     }
@@ -84,12 +98,12 @@ const AgentChat = ({ status, onOpenSettings }) => {
     sendMessage(text);
   };
 
-  const ensureSaveState = (idx) => {
+  const ensureSaveState = (messageId) => {
     setSaveState((prev) => {
-      if (prev[idx]) return prev;
+      if (prev[messageId]) return prev;
       return {
         ...prev,
-        [idx]: {
+        [messageId]: {
           selected: [],
           duration: 30,
           targetDay: 'today',
@@ -99,38 +113,38 @@ const AgentChat = ({ status, onOpenSettings }) => {
     });
   };
 
-  const toggleActionSelection = (idx, action) => {
-    ensureSaveState(idx);
+  const toggleActionSelection = (messageId, action) => {
+    ensureSaveState(messageId);
     setSaveState((prev) => {
-      const current = prev[idx] || { selected: [], duration: 30, targetDay: 'today', status: 'idle' };
+      const current = prev[messageId] || { selected: [], duration: 30, targetDay: 'today', status: 'idle' };
       const exists = current.selected.includes(action);
       const selected = exists
         ? current.selected.filter((a) => a !== action)
         : [...current.selected, action];
       return {
         ...prev,
-        [idx]: { ...current, selected }
+        [messageId]: { ...current, selected }
       };
     });
   };
 
-  const updateSaveConfig = (idx, field, value) => {
-    ensureSaveState(idx);
+  const updateSaveConfig = (messageId, field, value) => {
+    ensureSaveState(messageId);
     setSaveState((prev) => {
-      const current = prev[idx] || { selected: [], duration: 30, targetDay: 'today', status: 'idle' };
+      const current = prev[messageId] || { selected: [], duration: 30, targetDay: 'today', status: 'idle' };
       return {
         ...prev,
-        [idx]: { ...current, [field]: value }
+        [messageId]: { ...current, [field]: value }
       };
     });
   };
 
-  const handleSaveSelected = async (idx) => {
-    const current = saveState[idx];
+  const handleSaveSelected = async (messageId) => {
+    const current = saveState[messageId];
     if (!current || current.selected.length === 0) return;
     setSaveState((prev) => ({
       ...prev,
-      [idx]: { ...prev[idx], status: 'saving' }
+      [messageId]: { ...prev[messageId], status: 'saving' }
     }));
 
     const targetDate = (() => {
@@ -155,12 +169,12 @@ const AgentChat = ({ status, onOpenSettings }) => {
       );
       setSaveState((prev) => ({
         ...prev,
-        [idx]: { ...prev[idx], status: 'saved' }
+        [messageId]: { ...prev[messageId], status: 'saved' }
       }));
     } catch (e) {
       setSaveState((prev) => ({
         ...prev,
-        [idx]: { ...prev[idx], status: 'error' }
+        [messageId]: { ...prev[messageId], status: 'error' }
       }));
     }
   };
@@ -210,15 +224,15 @@ const AgentChat = ({ status, onOpenSettings }) => {
           </div>
 
           <div className="rounded-[24px] bg-dark-950/60 border border-white/10 shadow-[0_0_32px_rgba(0,0,0,0.35)] p-4 space-y-4">
-            {messages.map((msg, idx) => (
+            {messages.map((msg) => (
               <MessageBubble
-                key={idx}
+                key={msg.id}
                 message={msg}
                 onQuickAction={handleQuickAction}
-                saveConfig={saveState[idx]}
-                onToggleAction={(action) => toggleActionSelection(idx, action)}
-                onSaveSelected={() => handleSaveSelected(idx)}
-                onUpdateSaveConfig={(field, value) => updateSaveConfig(idx, field, value)}
+                saveConfig={saveState[msg.id]}
+                onToggleAction={(action) => toggleActionSelection(msg.id, action)}
+                onSaveSelected={() => handleSaveSelected(msg.id)}
+                onUpdateSaveConfig={(field, value) => updateSaveConfig(msg.id, field, value)}
               />
             ))}
             {isLoading && (

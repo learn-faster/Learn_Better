@@ -30,7 +30,7 @@ from src.models.schemas import (
     LLMConfig
 )
 from src.services.knowledge_graph_service import KnowledgeGraphService
-from src.dependencies import get_ingestion_engine
+from src.dependencies import get_ingestion_engine, get_request_user_id
 from src.services.llm_service import llm_service
 
 logger = logging.getLogger(__name__)
@@ -273,16 +273,20 @@ async def get_graph_statistics():
 # ===========================
 
 @router.get("", response_model=List[KnowledgeGraphResponse])
-async def list_graphs(user_id: str = "default_user", db: Session = Depends(get_db)):
+async def list_graphs(user_id: str = Depends(get_request_user_id), db: Session = Depends(get_db)):
     graphs = KnowledgeGraphService.list_graphs(db, user_id)
     return [_to_response(g) for g in graphs]
 
 
 @router.post("", response_model=KnowledgeGraphResponse)
-async def create_graph(payload: KnowledgeGraphCreate, db: Session = Depends(get_db)):
+async def create_graph(
+    payload: KnowledgeGraphCreate,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     graph = KnowledgeGraphService.create_graph(
         db=db,
-        user_id=payload.user_id,
+        user_id=user_id,
         name=payload.name,
         description=payload.description,
         document_ids=payload.document_ids,

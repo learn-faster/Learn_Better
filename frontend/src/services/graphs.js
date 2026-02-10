@@ -1,7 +1,8 @@
 import api from './api';
+import { getUserId } from '../lib/utils/user-id';
 
 const GraphService = {
-    listGraphs: async (userId = 'default_user') => {
+    listGraphs: async (userId = getUserId()) => {
         return await api.get(`/graphs?user_id=${encodeURIComponent(userId)}`);
     },
     createGraph: async (payload) => {

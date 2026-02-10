@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { getHealth } from '../lib/config';
 import { formatApiErrorMessage } from '../lib/utils/api-error';
 import InlineErrorBanner from '../components/common/InlineErrorBanner';
+import { getUserId } from '../lib/utils/user-id';
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -83,12 +84,13 @@ const Settings = () => {
     setErrorMessage('');
     try {
       // 1. Fetch Fitbit Status
-      const statusRes = await fetch('/api/fitbit/status');
+      const userId = getUserId();
+      const statusRes = await fetch(`/api/fitbit/status?user_id=${encodeURIComponent(userId)}`);
       const statusData = await statusRes.json();
       setConnected(statusData.connected);
 
       // 2. Fetch Agent Settings (which now includes use_biometrics)
-      const settingsRes = await fetch('/api/goals/agent/settings');
+      const settingsRes = await fetch(`/api/goals/agent/settings?user_id=${encodeURIComponent(userId)}`);
       const settingsData = await settingsRes.json();
       setSettings(prev => ({
         ...prev,
@@ -111,7 +113,8 @@ const Settings = () => {
     setSaveStatus(null);
     setErrorMessage('');
     try {
-      const response = await fetch('/api/goals/agent/settings', {
+      const userId = getUserId();
+      const response = await fetch(`/api/goals/agent/settings?user_id=${encodeURIComponent(userId)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(settings)
@@ -133,12 +136,14 @@ const Settings = () => {
   };
 
   const handleConnectFitbit = () => {
-    window.location.href = '/api/fitbit/auth';
+    const userId = getUserId();
+    window.location.href = `/api/fitbit/auth?user_id=${encodeURIComponent(userId)}`;
   };
 
   const handleDisconnectFitbit = async () => {
     try {
-      const response = await fetch('/api/fitbit/disconnect', {
+      const userId = getUserId();
+      const response = await fetch(`/api/fitbit/disconnect?user_id=${encodeURIComponent(userId)}`, {
         method: 'DELETE',
         credentials: 'include'
       });

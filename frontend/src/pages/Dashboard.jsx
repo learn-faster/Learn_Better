@@ -20,6 +20,7 @@ import GoalProgress from '../components/GoalProgress';
 import StreakProtection from '../components/analytics/StreakProtection';
 import AbstractBackground from '../components/ui/AbstractBackground';
 import InlineErrorBanner from '../components/common/InlineErrorBanner';
+import { getUserId } from '../lib/utils/user-id';
 
 /**
  * Dashboard Page Component - Redesigned
@@ -45,9 +46,10 @@ const Dashboard = () => {
     useEffect(() => {
         const fetchDashboardData = async () => {
             try {
+                const userId = getUserId();
                 const [dashboardData, activityData] = await Promise.all([
-                    api.get('/dashboard/overview'),
-                    api.get('/analytics/activity?limit=4'),
+                    api.get('/dashboard/overview', { params: { user_id: userId } }),
+                    api.get('/analytics/activity?limit=4', { params: { user_id: userId } }),
                 ]);
                 setDashboard(dashboardData);
                 setActivities(activityData);
@@ -64,7 +66,7 @@ const Dashboard = () => {
 
     const toggleDailyPlan = async (itemId, completed) => {
         try {
-            const res = await api.patch(`/goals/daily-plan/${itemId}`, { completed: !completed });
+            const res = await api.patch(`/goals/daily-plan/${itemId}`, { completed: !completed }, { params: { user_id: getUserId() } });
             setDashboard((prev) => {
                 if (!prev || !prev.today_plan) return prev;
                 const updatedItems = prev.today_plan.items.map((it) =>

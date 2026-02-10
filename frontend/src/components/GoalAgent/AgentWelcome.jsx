@@ -24,6 +24,7 @@ const AgentWelcome = ({ onStart, onSkip }) => {
     provider,
     apiKey,
     ollamaUrl,
+    baseUrl,
     model,
     isConfigured,
     isLoaded,
@@ -31,8 +32,15 @@ const AgentWelcome = ({ onStart, onSkip }) => {
     setProvider,
     setApiKey,
     setOllamaUrl,
+    setBaseUrl,
     setModel
   } = useLLMConfig();
+
+  useEffect(() => {
+    if (provider === 'ollama' || provider === 'ollama_cloud') {
+      setBaseUrl(ollamaUrl);
+    }
+  }, [provider, ollamaUrl]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -166,6 +174,7 @@ const AgentWelcome = ({ onStart, onSkip }) => {
 
   const needsBaseUrl = provider === 'ollama' || provider === 'ollama_cloud' || provider === 'custom' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface'].includes(provider);
   const needsApiKey = provider !== 'ollama';
+  const effectiveBaseUrl = provider === 'ollama' || provider === 'ollama_cloud' ? ollamaUrl : baseUrl;
 
   const handleActivateCore = async () => {
     setConfigError('');
@@ -174,14 +183,15 @@ const AgentWelcome = ({ onStart, onSkip }) => {
       saveConfig({
         provider,
         apiKey,
-        ollamaUrl,
+        ollamaUrl: provider === 'ollama' || provider === 'ollama_cloud' ? ollamaUrl : undefined,
+        baseUrl: provider === 'ollama' || provider === 'ollama_cloud' ? undefined : baseUrl,
         model
       });
       const llmConfig = {
         provider,
         api_key: apiKey,
         model,
-        ...(needsBaseUrl ? { base_url: ollamaUrl } : {})
+        ...(needsBaseUrl ? { base_url: effectiveBaseUrl } : {})
       };
       await agentApi.saveSettings({ llm_config: llmConfig });
       await cognitiveService.updateSettings({ llm_config: llmConfig });
@@ -312,8 +322,15 @@ const AgentWelcome = ({ onStart, onSkip }) => {
                   <div>
                     <label className="block text-[10px] uppercase tracking-[0.3em] text-amber-200/70 font-black mb-2">Base URL</label>
                     <input
-                      value={ollamaUrl}
-                      onChange={(e) => setOllamaUrl(e.target.value)}
+                      value={effectiveBaseUrl}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (provider === 'ollama' || provider === 'ollama_cloud') {
+                          setOllamaUrl(value);
+                        } else {
+                          setBaseUrl(value);
+                        }
+                      }}
                       placeholder="https://api.openai.com/v1"
                       className="w-full rounded-2xl bg-dark-950/80 border border-amber-500/30 text-sm text-white px-4 py-3 focus:border-amber-400/80 focus:ring-2 focus:ring-amber-500/30"
                     />
@@ -324,7 +341,7 @@ const AgentWelcome = ({ onStart, onSkip }) => {
                 )}
                 <button
                   onClick={handleActivateCore}
-                  disabled={isSavingConfig || (needsApiKey && !apiKey.trim()) || !model.trim()}
+                  disabled={isSavingConfig || (needsApiKey && !apiKey.trim()) || (needsBaseUrl && !effectiveBaseUrl.trim()) || !model.trim()}
                   className="w-full mt-2 px-4 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-orange-500 text-white font-bold uppercase tracking-[0.2em] text-[11px] disabled:opacity-40"
                 >
                   {isSavingConfig ? 'Activating...' : 'Activate Core'}

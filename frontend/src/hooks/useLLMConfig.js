@@ -10,6 +10,7 @@ const useLLMConfig = () => {
     const [provider, setProvider] = useState('groq');
     const [apiKey, setApiKey] = useState('');
     const [ollamaUrl, setOllamaUrl] = useState('http://localhost:11434');
+    const [baseUrl, setBaseUrl] = useState('');
     const [model, setModel] = useState('qwen/qwen3-32b');
     const [isLoaded, setIsLoaded] = useState(false);
 
@@ -18,11 +19,13 @@ const useLLMConfig = () => {
         const savedKey = localStorage.getItem('llm_api_key') || '';
         const savedUrl = localStorage.getItem('ollama_base_url') || 'http://localhost:11434';
         const savedModel = localStorage.getItem('llm_model') || 'qwen/qwen3-32b';
+        const savedBaseUrl = localStorage.getItem('llm_base_url') || '';
 
         setProvider(savedProvider);
         setApiKey(savedKey);
         setOllamaUrl(savedUrl);
         setModel(savedModel);
+        setBaseUrl(savedBaseUrl);
     }, []);
 
     // Load from localStorage on mount
@@ -38,13 +41,13 @@ const useLLMConfig = () => {
     const getConfig = useCallback(() => ({
         provider,
         api_key: apiKey,
-        base_url: ollamaUrl,
+        base_url: provider === 'ollama' || provider === 'ollama_cloud' ? ollamaUrl : baseUrl,
         model
-    }), [provider, apiKey, ollamaUrl, model]);
+    }), [provider, apiKey, ollamaUrl, baseUrl, model]);
 
     // Save all settings to localStorage
     const saveConfig = useCallback((newConfig) => {
-        const { provider: p, apiKey: k, ollamaUrl: u, model: m } = newConfig;
+        const { provider: p, apiKey: k, ollamaUrl: u, model: m, baseUrl: b } = newConfig;
 
         if (p !== undefined) {
             setProvider(p);
@@ -62,6 +65,10 @@ const useLLMConfig = () => {
             setModel(m);
             localStorage.setItem('llm_model', m);
         }
+        if (b !== undefined) {
+            setBaseUrl(b);
+            localStorage.setItem('llm_base_url', b);
+        }
     }, []);
 
     // Quick save just the API key
@@ -74,6 +81,7 @@ const useLLMConfig = () => {
         provider,
         apiKey,
         ollamaUrl,
+        baseUrl,
         model,
         isConfigured,
         isLoaded,
@@ -83,6 +91,7 @@ const useLLMConfig = () => {
         setProvider,
         setApiKey,
         setOllamaUrl,
+        setBaseUrl,
         setModel,
         refresh
     };

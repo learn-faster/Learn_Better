@@ -210,7 +210,7 @@ const KnowledgeGraph = () => {
 
     const loadGraphs = async () => {
         try {
-            const data = await GraphService.listGraphs('default_user');
+            const data = await GraphService.listGraphs();
             setGraphs(data || []);
             if (!selectedGraphId && data && data.length > 0) {
                 setSelectedGraphId(data[0].id);
@@ -256,7 +256,7 @@ const KnowledgeGraph = () => {
             if (editingGraph) {
                 saved = await GraphService.updateGraph(editingGraph.id, payload);
             } else {
-                saved = await GraphService.createGraph({ ...payload, user_id: 'default_user' });
+                saved = await GraphService.createGraph(payload);
             }
             await loadGraphs();
             setSelectedGraphId(saved.id);

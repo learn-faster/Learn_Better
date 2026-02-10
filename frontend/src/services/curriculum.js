@@ -1,4 +1,5 @@
 import api from './api';
+import { getUserId } from '../lib/utils/user-id';
 
 /**
  * Service for managing Curriculums.
@@ -11,7 +12,7 @@ const generateCurriculum = async (payload) => {
     return api.post('/curriculum/generate', {
         title: payload.title,
         document_ids: payload.document_ids || [],
-        user_id: payload.user_id || 'default_user',
+        user_id: payload.user_id || getUserId(),
         time_budget_hours_per_week: payload.time_budget_hours_per_week || 5,
         duration_weeks: payload.duration_weeks || 4,
         start_date: payload.start_date || null,
@@ -24,7 +25,9 @@ const generateCurriculum = async (payload) => {
  * Fetches all curriculums for the user.
  */
 const getCurriculums = async () => {
-    return api.get('/curriculum/');
+    return api.get('/curriculum/', {
+        params: { user_id: getUserId() }
+    });
 };
 
 /**

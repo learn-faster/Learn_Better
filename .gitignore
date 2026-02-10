@@ -31,5 +31,5 @@ Ai-notes/
 *.swp
 
 # Documentation
-docs/existing-backend.md
-docs\audit_report.md
+docs/audit_report.md
+docs/ai_settings_plan.md

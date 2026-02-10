@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Check, Loader2, Sparkles, AlertCircle, BrainCircuit, Settings, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { toast } from 'sonner';
 import useFlashcardStore from '../../stores/useFlashcardStore';
 import useLLMConfig from '../../hooks/useLLMConfig';
 import ApiKeySetup from '../ApiKeySetup';
@@ -97,17 +98,7 @@ const FlashcardCreator = React.forwardRef(({ studyDoc, selectedText, onComplete,
     const handleGenerate = async (type) => { // type: 'flashcards' or 'questions'
         setGenerating(true);
         try {
-            const savedProvider = localStorage.getItem('llm_provider') || 'openai';
-            const savedKey = localStorage.getItem('llm_api_key') || '';
-            const savedUrl = localStorage.getItem('ollama_base_url') || 'http://localhost:11434';
-            const savedModel = localStorage.getItem('llm_model') || 'gpt-3.5-turbo';
-
-            const llm_config = {
-                provider: savedProvider,
-                api_key: savedKey,
-                base_url: savedUrl,
-                model: savedModel
-            };
+            const llm_config = getConfig();
 
             const endpoint = type === 'flashcards' ? '/ai/generate-flashcards' : '/ai/generate-questions';
 
@@ -160,13 +151,13 @@ const FlashcardCreator = React.forwardRef(({ studyDoc, selectedText, onComplete,
             console.error('AI Generation failed:', err);
             // Handle different error types given our API interceptor returns strings sometimes
             if (typeof err === 'string') {
-                alert(`AI Generation failed: ${err}`);
+                toast.error('AI Generation failed', { description: err });
             } else if (err.response) {
-                alert(`AI Generation failed: ${err.response.data?.detail || err.response.statusText || 'Server error'}`);
+                toast.error('AI Generation failed', { description: err.response.data?.detail || err.response.statusText || 'Server error' });
             } else if (err.request) {
-                alert(`AI Generation failed: Network error - please check your connection`);
+                toast.error('AI Generation failed', { description: 'Network error - please check your connection' });
             } else {
-                alert(`AI Generation failed: ${err.message || 'Unknown error'}`);
+                toast.error('AI Generation failed', { description: err.message || 'Unknown error' });
             }
         } finally {
             setGenerating(false);
@@ -239,248 +230,328 @@ const FlashcardCreator = React.forwardRef(({ studyDoc, selectedText, onComplete,
             </div>
 
             {view === 'ai' ? (
-                <div className="flex-1 flex flex-col gap-4 overflow-y-auto">
-                    {/* Show API Key Setup if not configured */}
-                    {isLoaded && !isConfigured ? (
-                        <ApiKeySetup
-                            compact
-                            onConfigured={() => {
-                                refresh();
-                                setShowingSetup(false);
-                            }}
-                        />
-                    ) : (
-                        <>
-                            {/* Retrieval Mode Selection */}
-                            <div className="flex bg-white/5 p-1 rounded-lg">
-                                <button
-                                    onClick={() => setRetrievalMode('manual_range')}
-                                    className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${retrievalMode === 'manual_range' ? 'bg-white/10 text-white' : 'text-dark-400 hover:text-white'}`}
-                                >
-                                    Page Range
-                                </button>
-                                <button
-                                    onClick={() => setRetrievalMode('rag')}
-                                    className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${retrievalMode === 'rag' ? 'bg-primary-500 text-white shadow' : 'text-dark-400 hover:text-white'}`}
-                                >
-                                    AI Tutor (RAG)
-                                </button>
-                            </div>
-
-                            {retrievalMode === 'rag' && !discoveryProfile ? (
-                                <div className="p-4 bg-primary-500/5 border border-primary-500/10 rounded-xl flex-1">
-                                    <DiscoveryAgent
-                                        documentId={documentId}
-                                        onProfileGenerated={(profile) => {
-                                            setDiscoveryProfile(profile);
-                                            setRequirements(profile);
-                                        }}
-                                    />
-                                </div>
-                            ) : (
-                                <>
-                                    <div className="p-4 bg-primary-500/10 border border-primary-500/20 rounded-2xl">
-                                        <div className="flex items-center justify-between mb-3">
-                                            <div className="flex items-center gap-3">
-                                                <BrainCircuit className="w-6 h-6 text-primary-400" />
-                                                <div>
-                                                    <h4 className="font-bold text-white text-sm">
-                                                        {retrievalMode === 'rag' ? 'Multimodal RAG' : 'AI Assistant'}
-                                                    </h4>
-                                                    <p className="text-[10px] text-primary-200/70">Using {provider}</p>
-                                                </div>
-                                            </div>
-                                            <button
-                                                onClick={() => setShowingSetup(!showingSetup)}
-                                                className="p-2 hover:bg-white/10 rounded-lg text-dark-400 hover:text-white transition-colors"
-                                                title="Change AI Settings"
-                                            >
-                                                <Settings className="w-4 h-4" />
-                                            </button>
-                                        </div>
-
-                                        {showingSetup && (
-                                            <div className="mb-4">
-                                                <ApiKeySetup
-                                                    compact
-                                                    onConfigured={() => {
-                                                        refresh();
-                                                        setShowingSetup(false);
-                                                    }}
-                                                />
-                                            </div>
-                                        )}
-
-                                        {/* Requirements / Generation Profile */}
-                                        <div className="mb-4">
-                                            <label className="block text-[10px] font-bold text-primary-300 uppercase tracking-wider mb-2">
-                                                Generation Requirements
-                                            </label>
-                                            <textarea
-                                                rows={3}
-                                                value={requirements}
-                                                onChange={(e) => setRequirements(e.target.value)}
-                                                className="w-full bg-dark-900/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-dark-500"
-                                                placeholder="e.g. Focus on definitions, explain simply..."
-                                            />
-                                            {discoveryProfile && retrievalMode === 'rag' && (
-                                                <p className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1">
-                                                    <CheckCircle2 className="w-3 h-3" /> Profile built by Discovery Agent
-                                                </p>
-                                            )}
-                                        </div>
-
-                                        {/* Page/Section Range Controls (Only for manual_range) */}
-                                        {retrievalMode === 'manual_range' && !showingSetup && (
-                                            <div className={`space-y-4 ${activeSelection ? 'opacity-50 pointer-events-none' : ''}`}>
-                                                <div className="flex gap-4">
-                                                    <div className="flex-1">
-                                                        <label className="block text-[10px] font-bold text-primary-300 uppercase tracking-wider mb-1">
-                                                            {pageCount > 0 ? 'Start Page' : 'Start Section'}
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            min="1"
-                                                            max={pageCount || 999}
-                                                            value={startPage}
-                                                            onChange={(e) => setStartPage(Math.max(1, Math.min(parseInt(e.target.value) || 1, endPage)))}
-                                                            className="w-full bg-dark-900/60 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-center font-bold"
-                                                        />
-                                                    </div>
-                                                    <div className="flex-1">
-                                                        <label className="block text-[10px] font-bold text-primary-300 uppercase tracking-wider mb-1">
-                                                            {pageCount > 0 ? 'End Page' : 'End Section'}
-                                                        </label>
-                                                        <input
-                                                            type="number"
-                                                            min={startPage}
-                                                            max={pageCount || 999}
-                                                            value={endPage}
-                                                            onChange={(e) => setEndPage(Math.max(startPage, parseInt(e.target.value) || startPage))}
-                                                            className="w-full bg-dark-900/60 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-center font-bold"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Selected Text Override */}
-                                        {activeSelection && (
-                                            <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center justify-between gap-2 mt-3">
-                                                <div className="flex items-center gap-2">
-                                                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                                                    <span>Using selected text</span>
-                                                </div>
-                                                <button
-                                                    onClick={clearSelection}
-                                                    className="text-emerald-300 hover:text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 transition-colors"
-                                                >
-                                                    Clear
-                                                </button>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    <button
-                                        onClick={() => handleGenerate('flashcards')}
-                                        disabled={generating || !isConfigured}
-                                        className="btn-secondary w-full py-3.5 justify-center disabled:opacity-50"
-                                    >
-                                        {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Generate 5 Flashcards"}
-                                    </button>
-
-                                    <button
-                                        onClick={() => handleGenerate('questions')}
-                                        disabled={generating || !isConfigured}
-                                        className="btn-secondary w-full py-3.5 justify-center disabled:opacity-50"
-                                    >
-                                        {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Generate 5 Quiz Questions"}
-                                    </button>
-                                </>
-                            )}
-                        </>
-                    )}
-                </div>
+                <AIGenerationPanel
+                    isLoaded={isLoaded}
+                    isConfigured={isConfigured}
+                    refresh={refresh}
+                    showingSetup={showingSetup}
+                    setShowingSetup={setShowingSetup}
+                    retrievalMode={retrievalMode}
+                    setRetrievalMode={setRetrievalMode}
+                    discoveryProfile={discoveryProfile}
+                    setDiscoveryProfile={setDiscoveryProfile}
+                    requirements={requirements}
+                    setRequirements={setRequirements}
+                    documentId={documentId}
+                    provider={provider}
+                    activeSelection={activeSelection}
+                    clearSelection={clearSelection}
+                    pageCount={pageCount}
+                    startPage={startPage}
+                    endPage={endPage}
+                    setStartPage={setStartPage}
+                    setEndPage={setEndPage}
+                    onGenerate={handleGenerate}
+                    generating={generating}
+                />
             ) : (
-                /* Manual Form */
-                <form onSubmit={handleSubmit} className="space-y-4 flex-1 flex flex-col">
-                    <div>
-                        <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">Front (Question)</label>
-                        <textarea
-                            rows={4}
-                            value={front}
-                            onChange={(e) => setFront(e.target.value)}
-                            className="w-full resize-none bg-dark-900/60 border border-white/10 rounded-xl px-3 py-2 text-sm"
-                            placeholder="Enter the question or concept..."
-                            required
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">Back (Answer)</label>
-                        <textarea
-                            rows={4}
-                            value={back}
-                            onChange={(e) => setBack(e.target.value)}
-                            className="w-full resize-none bg-dark-900/60 border border-white/10 rounded-xl px-3 py-2 text-sm"
-                            placeholder="Enter the answer or explanation..."
-                            required
-                        />
-                    </div>
-
-                    <div>
-                        <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">Tags (Optional)</label>
-                        <input
-                            type="text"
-                            value={tags}
-                            onChange={(e) => setTags(e.target.value)}
-                            className="w-full bg-dark-900/60 border border-white/10 rounded-xl px-3 py-2 text-sm"
-                            placeholder="e.g. math, principle, exam"
-                        />
-                        <p className="text-[10px] text-dark-500 mt-1 uppercase">Separate tags with commas</p>
-                    </div>
-
-                    {selectedText && !success && (
-                        <div className="p-3 rounded-lg bg-primary-500/10 border border-primary-500/20 text-xs text-primary-200/70 flex gap-2 animate-fade-in">
-                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                            Creating card from selected text
-                        </div>
-                    )}
-
-                    <div className="mt-auto pt-4 relative">
-                        <AnimatePresence>
-                            {success && (
-                                <motion.div
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0 }}
-                                    className="absolute inset-0 bg-emerald-500 rounded-xl flex items-center justify-center gap-2 z-10 shadow-lg shadow-emerald-500/20"
-                                >
-                                    <CheckCircle2 className="w-6 h-6 text-white" />
-                                    <span className="text-white font-black uppercase tracking-widest text-sm">Successfully Added</span>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-
-                        <button
-                            type="submit"
-                            disabled={isCreating || !front || !back || success}
-                            className={`btn-primary w-full transition-all ${success ? 'opacity-0 scale-95' : ''}`}
-                        >
-                            {isCreating ? (
-                                <Loader2 className="w-5 h-5 animate-spin" />
-                            ) : (
-                                <>
-                                    <Plus className="w-5 h-5" />
-                                    Add to Study Deck
-                                </>
-                            )}
-                        </button>
-                    </div>
-                </form>
+                <ManualFlashcardForm
+                    front={front}
+                    setFront={setFront}
+                    back={back}
+                    setBack={setBack}
+                    tags={tags}
+                    setTags={setTags}
+                    selectedText={selectedText}
+                    success={success}
+                    isCreating={isCreating}
+                    onSubmit={handleSubmit}
+                />
             )}
         </div>
     );
 });
+
+
+const AIGenerationPanel = ({
+    isLoaded,
+    isConfigured,
+    refresh,
+    showingSetup,
+    setShowingSetup,
+    retrievalMode,
+    setRetrievalMode,
+    discoveryProfile,
+    setDiscoveryProfile,
+    requirements,
+    setRequirements,
+    documentId,
+    provider,
+    activeSelection,
+    clearSelection,
+    pageCount,
+    startPage,
+    endPage,
+    setStartPage,
+    setEndPage,
+    onGenerate,
+    generating
+}) => {
+    return (
+        <div className="flex-1 flex flex-col gap-4 overflow-y-auto">
+            {/* Show API Key Setup if not configured */}
+            {isLoaded && !isConfigured ? (
+                <ApiKeySetup
+                    compact
+                    onConfigured={() => {
+                        refresh();
+                        setShowingSetup(false);
+                    }}
+                />
+            ) : (
+                <>
+                    {/* Retrieval Mode Selection */}
+                    <div className="flex bg-white/5 p-1 rounded-lg">
+                        <button
+                            onClick={() => setRetrievalMode('manual_range')}
+                            className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${retrievalMode === 'manual_range' ? 'bg-white/10 text-white' : 'text-dark-400 hover:text-white'}`}
+                        >
+                            Page Range
+                        </button>
+                        <button
+                            onClick={() => setRetrievalMode('rag')}
+                            className={`flex-1 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${retrievalMode === 'rag' ? 'bg-primary-500 text-white shadow' : 'text-dark-400 hover:text-white'}`}
+                        >
+                            AI Tutor (RAG)
+                        </button>
+                    </div>
+
+                    {retrievalMode === 'rag' && !discoveryProfile ? (
+                        <div className="p-4 bg-primary-500/5 border border-primary-500/10 rounded-xl flex-1">
+                            <DiscoveryAgent
+                                documentId={documentId}
+                                onProfileGenerated={(profile) => {
+                                    setDiscoveryProfile(profile);
+                                    setRequirements(profile);
+                                }}
+                            />
+                        </div>
+                    ) : (
+                        <>
+                            <div className="p-4 bg-primary-500/10 border border-primary-500/20 rounded-2xl">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="flex items-center gap-3">
+                                        <BrainCircuit className="w-6 h-6 text-primary-400" />
+                                        <div>
+                                            <h4 className="font-bold text-white text-sm">
+                                                {retrievalMode === 'rag' ? 'Multimodal RAG' : 'AI Assistant'}
+                                            </h4>
+                                            <p className="text-[10px] text-primary-200/70">Using {provider}</p>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => setShowingSetup(!showingSetup)}
+                                        className="p-2 hover:bg-white/10 rounded-lg text-dark-400 hover:text-white transition-colors"
+                                        title="Change AI Settings"
+                                    >
+                                        <Settings className="w-4 h-4" />
+                                    </button>
+                                </div>
+
+                                {showingSetup && (
+                                    <div className="mb-4">
+                                        <ApiKeySetup
+                                            compact
+                                            onConfigured={() => {
+                                                refresh();
+                                                setShowingSetup(false);
+                                            }}
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Requirements / Generation Profile */}
+                                <div className="mb-4">
+                                    <label className="block text-[10px] font-bold text-primary-300 uppercase tracking-wider mb-2">
+                                        Generation Requirements
+                                    </label>
+                                    <textarea
+                                        rows={3}
+                                        value={requirements}
+                                        onChange={(e) => setRequirements(e.target.value)}
+                                        className="w-full bg-dark-900/60 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder:text-dark-500"
+                                        placeholder="e.g. Focus on definitions, explain simply..."
+                                    />
+                                    {discoveryProfile && retrievalMode === 'rag' && (
+                                        <p className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1">
+                                            <CheckCircle2 className="w-3 h-3" /> Profile built by Discovery Agent
+                                        </p>
+                                    )}
+                                </div>
+
+                                {/* Page/Section Range Controls (Only for manual_range) */}
+                                {retrievalMode === 'manual_range' && !showingSetup && (
+                                    <div className={`space-y-4 ${activeSelection ? 'opacity-50 pointer-events-none' : ''}`}>
+                                        <div className="flex gap-4">
+                                            <div className="flex-1">
+                                                <label className="block text-[10px] font-bold text-primary-300 uppercase tracking-wider mb-1">
+                                                    {pageCount > 0 ? 'Start Page' : 'Start Section'}
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    max={pageCount || 999}
+                                                    value={startPage}
+                                                    onChange={(e) => setStartPage(Math.max(1, Math.min(parseInt(e.target.value) || 1, endPage)))}
+                                                    className="w-full bg-dark-900/60 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-center font-bold"
+                                                />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="block text-[10px] font-bold text-primary-300 uppercase tracking-wider mb-1">
+                                                    {pageCount > 0 ? 'End Page' : 'End Section'}
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    min={startPage}
+                                                    max={pageCount || 999}
+                                                    value={endPage}
+                                                    onChange={(e) => setEndPage(Math.max(startPage, parseInt(e.target.value) || startPage))}
+                                                    className="w-full bg-dark-900/60 border border-white/10 rounded-lg px-2 py-1.5 text-sm text-center font-bold"
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Selected Text Override */}
+                                {activeSelection && (
+                                    <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs flex items-center justify-between gap-2 mt-3">
+                                        <div className="flex items-center gap-2">
+                                            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                                            <span>Using selected text</span>
+                                        </div>
+                                        <button
+                                            onClick={clearSelection}
+                                            className="text-emerald-300 hover:text-white text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/40 transition-colors"
+                                        >
+                                            Clear
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => onGenerate('flashcards')}
+                                disabled={generating || !isConfigured}
+                                className="btn-secondary w-full py-3.5 justify-center disabled:opacity-50"
+                            >
+                                {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Generate 5 Flashcards"}
+                            </button>
+
+                            <button
+                                onClick={() => onGenerate('questions')}
+                                disabled={generating || !isConfigured}
+                                className="btn-secondary w-full py-3.5 justify-center disabled:opacity-50"
+                            >
+                                {generating ? <Loader2 className="w-5 h-5 animate-spin" /> : "Generate 5 Quiz Questions"}
+                            </button>
+                        </>
+                    )}
+                </>
+            )}
+        </div>
+    );
+};
+
+const ManualFlashcardForm = ({
+    front,
+    setFront,
+    back,
+    setBack,
+    tags,
+    setTags,
+    selectedText,
+    success,
+    isCreating,
+    onSubmit
+}) => {
+    return (
+        <form onSubmit={onSubmit} className="space-y-4 flex-1 flex flex-col">
+            <div>
+                <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">Front (Question)</label>
+                <textarea
+                    rows={4}
+                    value={front}
+                    onChange={(e) => setFront(e.target.value)}
+                    className="w-full resize-none bg-dark-900/60 border border-white/10 rounded-xl px-3 py-2 text-sm"
+                    placeholder="Enter the question or concept..."
+                    required
+                />
+            </div>
+
+            <div>
+                <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">Back (Answer)</label>
+                <textarea
+                    rows={4}
+                    value={back}
+                    onChange={(e) => setBack(e.target.value)}
+                    className="w-full resize-none bg-dark-900/60 border border-white/10 rounded-xl px-3 py-2 text-sm"
+                    placeholder="Enter the answer or explanation..."
+                    required
+                />
+            </div>
+
+            <div>
+                <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">Tags (Optional)</label>
+                <input
+                    type="text"
+                    value={tags}
+                    onChange={(e) => setTags(e.target.value)}
+                    className="w-full bg-dark-900/60 border border-white/10 rounded-xl px-3 py-2 text-sm"
+                    placeholder="e.g. math, principle, exam"
+                />
+                <p className="text-[10px] text-dark-500 mt-1 uppercase">Separate tags with commas</p>
+            </div>
+
+            {selectedText && !success && (
+                <div className="p-3 rounded-lg bg-primary-500/10 border border-primary-500/20 text-xs text-primary-200/70 flex gap-2 animate-fade-in">
+                    <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    Creating card from selected text
+                </div>
+            )}
+
+            <div className="mt-auto pt-4 relative">
+                <AnimatePresence>
+                    {success && (
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-emerald-500 rounded-xl flex items-center justify-center gap-2 z-10 shadow-lg shadow-emerald-500/20"
+                        >
+                            <CheckCircle2 className="w-6 h-6 text-white" />
+                            <span className="text-white font-black uppercase tracking-widest text-sm">Successfully Added</span>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+                <button
+                    type="submit"
+                    disabled={isCreating || !front || !back || success}
+                    className={`btn-primary w-full transition-all ${success ? 'opacity-0 scale-95' : ''}`}
+                >
+                    {isCreating ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                        <>
+                            <Plus className="w-5 h-5" />
+                            Add to Study Deck
+                        </>
+                    )}
+                </button>
+            </div>
+        </form>
+    );
+};
 
 export default FlashcardCreator;
