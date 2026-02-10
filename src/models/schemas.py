@@ -631,6 +631,8 @@ class KnowledgeGraphCreate(KnowledgeGraphBase):
     user_id: str = "default_user"
     document_ids: List[int] = []
     llm_config: Optional[LLMConfig] = None
+    extraction_max_chars: Optional[int] = None
+    chunk_size: Optional[int] = None
 
 
 class KnowledgeGraphUpdate(BaseModel):
@@ -638,6 +640,8 @@ class KnowledgeGraphUpdate(BaseModel):
     description: Optional[str] = None
     document_ids: Optional[List[int]] = None
     llm_config: Optional[LLMConfig] = None
+    extraction_max_chars: Optional[int] = None
+    chunk_size: Optional[int] = None
 
 
 class KnowledgeGraphResponse(KnowledgeGraphBase):
@@ -654,6 +658,8 @@ class KnowledgeGraphResponse(KnowledgeGraphBase):
     error_message: Optional[str] = None
     build_progress: Optional[float] = None
     build_stage: Optional[str] = None
+    extraction_max_chars: Optional[int] = None
+    chunk_size: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 

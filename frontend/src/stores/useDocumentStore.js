@@ -43,15 +43,25 @@ const useDocumentStore = create((set, get) => ({
      * @async
      */
     fetchDocuments: async (silent = false, options = {}) => {
-        const { minIntervalMs = 3000, force = false } = options || {};
+        const { minIntervalMs = 3000, force = false, timeout = 20000 } = options || {};
         const now = Date.now();
         const lastFetchedAt = get().lastFetchedAt || 0;
         if (!force && now - lastFetchedAt < minIntervalMs) {
             return;
         }
         if (!silent) set({ isLoading: true, error: null });
+
+        // Use AbortController for timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeout);
+
         try {
-            const data = await api.get('/documents');
+            const data = await api.get('/documents', {
+                signal: controller.signal,
+                headers: silent ? { 'X-Silent-Error': 'true' } : {}
+            });
+            clearTimeout(timeoutId);
+
             const optimistic = get().documents.filter((doc) => {
                 if (!doc.isOptimistic) return false;
                 return !data.some((serverDoc) => {
@@ -65,7 +75,14 @@ const useDocumentStore = create((set, get) => ({
                 set({ documents: [...optimistic, ...data], lastFetchedAt: now });
             }
         } catch (err) {
-            set({ error: err, isLoading: false });
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError' || err.code === 'ECONNABORTED') {
+                const timeoutErr = new Error('Request timed out. The server may be under heavy load.');
+                timeoutErr.userMessage = timeoutErr.message;
+                set({ error: timeoutErr, isLoading: false });
+            } else {
+                set({ error: err, isLoading: false });
+            }
         }
     },
 

@@ -311,7 +311,9 @@ def migrate_knowledge_graphs_table():
     cols_to_add = [
         ("error_message", "TEXT"),
         ("build_progress", "FLOAT DEFAULT 0.0"),
-        ("build_stage", "VARCHAR")
+        ("build_stage", "VARCHAR"),
+        ("extraction_max_chars", "INTEGER"),
+        ("chunk_size", "INTEGER")
     ]
     for col_name, col_type in cols_to_add:
         try:

@@ -125,13 +125,13 @@ const KnowledgeGraph = () => {
         name: '',
         description: '',
         document_ids: [],
-        llm_config: { provider: 'openai', model: '', base_url: '', api_key: '' }
+        llm_config: { provider: 'openai', model: '', base_url: '', api_key: '' },
+        extraction_max_chars: 4000,
+        chunk_size: 1500
     });
     const [buildMode, setBuildMode] = useState('existing');
     const [buildSourceMode, setBuildSourceMode] = useState('filtered');
     const [buildError, setBuildError] = useState('');
-    const [buildExtractionMaxChars, setBuildExtractionMaxChars] = useState('');
-    const [buildChunkSize, setBuildChunkSize] = useState('');
     const [showConnections, setShowConnections] = useState(false);
     const [showCrossLinks, setShowCrossLinks] = useState(true);
     const [targetGraphId, setTargetGraphId] = useState('');
@@ -244,7 +244,9 @@ const KnowledgeGraph = () => {
             name: '',
             description: '',
             document_ids: [],
-            llm_config: { provider: 'openai', model: '', base_url: '', api_key: '' }
+            llm_config: { provider: 'openai', model: '', base_url: '', api_key: '' },
+            extraction_max_chars: 4000,
+            chunk_size: 1500
         });
         setShowGraphModal(true);
     };
@@ -255,8 +257,12 @@ const KnowledgeGraph = () => {
             name: graph.name || '',
             description: graph.description || '',
             document_ids: graph.document_ids || [],
-            llm_config: graph.llm_config || { provider: 'openai', model: '', base_url: '', api_key: '' }
+            llm_config: graph.llm_config || { provider: 'openai', model: '', base_url: '', api_key: '' },
+            extraction_max_chars: graph.extraction_max_chars || 4000,
+            chunk_size: graph.chunk_size || 1500
         });
+        setBuildMode('existing');
+        setBuildSourceMode('filtered');
         setShowGraphModal(true);
     };
 
@@ -266,21 +272,75 @@ const KnowledgeGraph = () => {
                 name: graphForm.name,
                 description: graphForm.description,
                 document_ids: graphForm.document_ids,
-                llm_config: graphForm.llm_config
+                llm_config: graphForm.llm_config,
+                extraction_max_chars: graphForm.extraction_max_chars,
+                chunk_size: graphForm.chunk_size
             };
+            let saved;
+            if (editingGraph) {
+                saved = await GraphService.updateGraph(editingGraph.id, payload);
+                toast.success('Graph configuration updated.');
+            } else {
+                saved = await GraphService.createGraph(payload);
+                toast.success('Graph created successfully.');
+            }
+            await loadGraphs();
+            if (saved) setSelectedGraphId(saved.id);
+            setShowGraphModal(false);
+        } catch (error) {
+            const msg = error?.userMessage || error?.message || 'Failed to save graph.';
+            setGraphError(msg);
+            toast.error(msg);
+        }
+    };
+
+    const handleSaveAndBuild = async () => {
+        if (!graphForm.name.trim()) {
+            toast.error('Graph name is required');
+            return;
+        }
+        setBuildError('');
+        setIsGraphLoading(true);
+        try {
+            // 1. Save settings first
+            const payload = {
+                name: graphForm.name,
+                description: graphForm.description,
+                document_ids: graphForm.document_ids,
+                llm_config: graphForm.llm_config,
+                extraction_max_chars: graphForm.extraction_max_chars,
+                chunk_size: graphForm.chunk_size
+            };
+
             let saved;
             if (editingGraph) {
                 saved = await GraphService.updateGraph(editingGraph.id, payload);
             } else {
                 saved = await GraphService.createGraph(payload);
             }
+
+            const targetGraphId = saved.id;
             await loadGraphs();
-            setSelectedGraphId(saved.id);
+            setSelectedGraphId(targetGraphId);
+
+            // 2. Trigger build
+            const buildPayload = {
+                build_mode: buildMode,
+                source_mode: buildSourceMode,
+                extraction_max_chars: graphForm.extraction_max_chars,
+                chunk_size: graphForm.chunk_size
+            };
+
+            await GraphService.buildGraph(targetGraphId, buildPayload, { wait: false });
+            await fetchGraph(true);
             setShowGraphModal(false);
+            toast.success('Graph saved and build initiated.');
         } catch (error) {
-            const msg = error?.userMessage || error?.message || 'Failed to save graph.';
-            setGraphError(msg);
+            const msg = error?.userMessage || error?.message || 'Failed to save and build graph.';
+            setBuildError(msg);
             toast.error(msg);
+        } finally {
+            setIsGraphLoading(false);
         }
     };
 
@@ -738,914 +798,903 @@ const KnowledgeGraph = () => {
             />
 
             <div className="min-h-[calc(100vh-2rem)] flex flex-col gap-5 animate-fade-in relative z-10 font-sans pb-3 px-2 md:px-6">
-            {/* Header with Integrated Graph Controls */}
-            {!isFocusMode && (
-            <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-5 pointer-events-auto pt-2">
-                <div className="relative group">
-                    <h1 className="text-4xl md:text-5xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-white via-slate-200 to-white flex items-center gap-3">
-                        Knowledge Map
-                    </h1>
-                    <p className="text-sm text-slate-400 italic mt-2">Navigating your intellectual galaxy.</p>
-                    <div className="absolute -bottom-1 left-0 w-0 h-1 bg-white/70 group-hover:w-full transition-all duration-500 shadow-[0_0_15px_rgba(220,214,247,0.4)]" />
-                </div>
-
-                <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-3 glass-morphism border-white/5 rounded-2xl px-4 py-2.5">
-                        <Network className="w-4 h-4 text-white/70" />
-                        <select
-                            className="bg-transparent text-sm text-white focus:outline-none w-52"
-                            value={selectedGraphId || ''}
-                            onChange={(e) => setSelectedGraphId(e.target.value)}
-                        >
-                            <option value="" disabled className="text-dark-500">Select graph</option>
-                            {graphs.map((graph) => (
-                                <option key={graph.id} value={graph.id} className="bg-dark-900 text-white">
-                                    {graph.name}
-                                </option>
-                            ))}
-                        </select>
-                        <div ref={manageMenuRef} className="relative">
-                            <button
-                                onClick={() => setShowManageMenu((prev) => !prev)}
-                                className="px-3 py-1.5 rounded-lg hover:bg-white/5 text-white/80 text-xs font-black uppercase tracking-widest"
-                            >
-                                Manage
-                            </button>
-                            <AnimatePresence>
-                                {showManageMenu && (
-                                    <motion.div
-                                        initial={{ opacity: 0, y: 6 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: 6 }}
-                                        className="absolute right-0 mt-2 w-48 glass-dark border border-white/10 rounded-2xl overflow-hidden z-40"
-                                    >
-                                        <button
-                                            onClick={() => {
-                                                setShowManageMenu(false);
-                                                openCreateGraph();
-                                            }}
-                                            className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2"
-                                        >
-                                            <Plus className="w-4 h-4" /> Create Graph
-                                        </button>
-                                        <button
-                                            onClick={() => {
-                                                setShowManageMenu(false);
-                                                if (selectedGraph) openEditGraph(selectedGraph);
-                                            }}
-                                            disabled={!selectedGraph}
-                                            className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2 disabled:opacity-40"
-                                        >
-                                            <SlidersHorizontal className="w-4 h-4" /> Graph Settings
-                                        </button>
-                                    </motion.div>
-                                )}
-                            </AnimatePresence>
-                        </div>
-                    </div>
-
-                    {selectedGraph && (
-                        <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-white/5 bg-dark-900/40 text-[10px] font-black uppercase tracking-widest text-white/70">
-                            <span className={`w-2 h-2 rounded-full ${selectedGraph.status === 'ready' ? 'bg-white' : selectedGraph.status === 'building' ? 'bg-white/60' : selectedGraph.status === 'error' ? 'bg-rose-400' : 'bg-slate-500'}`} />
-                            {selectedGraph.status || 'draft'}
-                            <span className="text-white/30">·</span>
-                            {selectedGraph.node_count || 0} nodes
-                        </div>
-                    )}
-                    {lastGraphRefreshAt && (
-                        <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-white/5 bg-dark-900/40 text-[10px] font-black uppercase tracking-widest text-white/50">
-                            Updated {lastGraphRefreshAt.toLocaleTimeString()}
-                        </div>
-                    )}
-
-                    <button
-                        onClick={() => setShowBuildModal(true)}
-                        className="px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-black uppercase tracking-widest shadow-lg hover:scale-[1.02] transition-all border border-white/10"
-                        disabled={!selectedGraphId}
-                    >
-                        Build Graph
-                    </button>
-
-                    <button
-                        onClick={() => setShowConnections(true)}
-                        className="px-4 py-2.5 rounded-2xl glass-morphism border-white/5 text-white/80 text-xs font-black uppercase tracking-widest hover:bg-white/5 transition-all"
-                        disabled={!selectedGraphId}
-                    >
-                        Connections
-                    </button>
-
-                    <div ref={viewMenuRef} className="relative">
-                        <button
-                            onClick={() => setShowViewMenu((prev) => !prev)}
-                            className="px-4 py-2.5 rounded-2xl glass-morphism border-white/5 text-white/80 text-xs font-black uppercase tracking-widest hover:bg-white/5 transition-all"
-                        >
-                            View
-                        </button>
-                        <AnimatePresence>
-                            {showViewMenu && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 6 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 6 }}
-                                    className="absolute right-0 mt-2 w-56 glass-dark border border-white/10 rounded-2xl overflow-hidden z-40"
-                                >
-                                    <button
-                                        onClick={() => setShowCrossLinks(!showCrossLinks)}
-                                        className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2"
-                                    >
-                                        <Link2 className="w-4 h-4" />
-                                        Cross-Graph Links
-                                        <span className="ml-auto text-[10px] text-white/50">{showCrossLinks ? 'On' : 'Off'}</span>
-                                    </button>
-                                    <button
-                                        onClick={() => fgRef.current?.zoomToFit(1000)}
-                                        className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2"
-                                    >
-                                        <Compass className="w-4 h-4" /> Center Graph
-                                    </button>
-                                    <button
-                                        onClick={() => {
-                                            setShowGuide(true);
-                                            setShowViewMenu(false);
-                                        }}
-                                        className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2"
-                                    >
-                                        <HelpCircle className="w-4 h-4" /> Show Guide
-                                    </button>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
-
-                    {/* Smart Search Container */}
-                    <div className="relative w-72">
-                        <div className={`flex items-center gap-3 px-4 py-2.5 glass-morphism border-white/5 rounded-2xl transition-all ${searchQuery ? 'border-white/30' : ''}`}>
-                            <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-white' : 'text-dark-500'}`} />
-                            <input
-                                type="text"
-                                placeholder="Locate a neural node..."
-                                className="bg-transparent border-none text-sm text-white focus:outline-none w-full font-medium"
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                            />
-                            {searchQuery && (
-                                <button onClick={() => setSearchQuery('')} className="text-dark-500 hover:text-white">
-                                    <X className="w-3 h-3" />
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Suggestions Dropdown */}
-                        <AnimatePresence>
-                            {searchSuggestions.length > 0 && (
-                                <motion.div
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 10 }}
-                                    className="absolute top-full left-0 right-0 mt-2 glass-dark border border-white/5 rounded-2xl overflow-hidden z-50 shadow-2xl backdrop-blur-3xl"
-                                >
-                                    {searchSuggestions.map((node) => (
-                                        <button
-                                            key={node.id}
-                                            onClick={() => handleSelectSuggestion(node)}
-                                            className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left text-sm transition-colors group"
-                                        >
-                                            <div className={`w-2 h-2 rounded-full ${node.status === 'COMPLETED' ? 'bg-white/90' :
-                                                node.status === 'UNLOCKED' ? 'bg-white/70' : node.is_merged ? 'bg-white/50' : 'bg-slate-600'
-                                                } group-hover:scale-125 transition-transform`} />
-                                            <span className="text-white font-semibold flex-1">{node.name}</span>
-                                            <ChevronRight className="w-3 h-3 text-dark-600 group-hover:translate-x-1 transition-transform" />
-                                        </button>
-                                    ))}
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </div>
-
-                    <button
-                        onClick={toggleFocusMode}
-                        className="px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white text-xs font-black uppercase tracking-widest border border-white/10"
-                        title="Fullscreen Focus Mode"
-                    >
-                        <span className="inline-flex items-center gap-2">
-                            <Maximize2 className="w-4 h-4" />
-                            Focus
-                        </span>
-                    </button>
-                </div>
-            </header>
-            )}
-            <InlineErrorBanner
-                message={
-                    (selectedGraph && selectedGraph.status === 'error' && selectedGraph.error_message)
-                        ? selectedGraph.error_message
-                        : graphError
-                }
-                className="pointer-events-auto"
-            />
-
-            <div className="flex-1 flex gap-6 overflow-hidden relative">
-                {/* Construction HUD */}
+                {/* Header with Integrated Graph Controls */}
                 {!isFocusMode && (
-                    <AnimatePresence>
-                        <ConstructionHUD documents={documents.filter(d => d.status === 'ingesting' || d.status === 'processing' || (d.ingestion_step || '').toLowerCase() === 'rate_limited' || d.ingestion_job_status === 'paused')} />
-                    </AnimatePresence>
-                )}
+                    <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-5 pointer-events-auto pt-2">
+                        <div className="relative group">
+                            <h1 className="text-4xl md:text-5xl font-black tracking-tight bg-clip-text text-transparent bg-gradient-to-br from-white via-slate-200 to-white flex items-center gap-3">
+                                Knowledge Map
+                            </h1>
+                            <p className="text-sm text-slate-400 italic mt-2">Navigating your intellectual galaxy.</p>
+                            <div className="absolute -bottom-1 left-0 w-0 h-1 bg-white/70 group-hover:w-full transition-all duration-500 shadow-[0_0_15px_rgba(220,214,247,0.4)]" />
+                        </div>
 
-                {/* Main Viewport */}
-                <div ref={containerRef} className="flex-1 relative glass-dark rounded-[3rem] border border-white/5 overflow-hidden shadow-inner-white group">
-                    <Starfield />
+                        <div className="flex flex-wrap items-center gap-3">
+                            <div className="flex items-center gap-3 glass-morphism border-white/5 rounded-2xl px-4 py-2.5">
+                                <Network className="w-4 h-4 text-white/70" />
+                                <select
+                                    className="bg-transparent text-sm text-white focus:outline-none w-52"
+                                    value={selectedGraphId || ''}
+                                    onChange={(e) => setSelectedGraphId(e.target.value)}
+                                >
+                                    <option value="" disabled className="text-dark-500">Select graph</option>
+                                    {graphs.map((graph) => (
+                                        <option key={graph.id} value={graph.id} className="bg-dark-900 text-white">
+                                            {graph.name}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={selectedGraph ? () => openEditGraph(selectedGraph) : openCreateGraph}
+                                    className="px-4 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase tracking-[0.2em] border border-white/10 transition-all flex items-center gap-2"
+                                >
+                                    {selectedGraph ? (
+                                        <>
+                                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                                            Manage Graph
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Plus className="w-3.5 h-3.5" />
+                                            New Graph
+                                        </>
+                                    )}
+                                </button>
+                            </div>
 
-                    {/* Sidebar Toggle Button */}
-                    {!isFocusMode && (
-                        <button
-                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                            className={`absolute top-1/2 -translate-y-1/2 right-4 z-30 p-2 glass-morphism rounded-full border border-white/10 text-white/80 hover:scale-110 transition-all ${isSidebarOpen ? '' : 'rotate-180'}`}
-                        >
-                            <ChevronRight className="w-5 h-5" />
-                        </button>
-                    )}
+                            {selectedGraph && (
+                                <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-white/5 bg-dark-900/40 text-[10px] font-black uppercase tracking-widest text-white/70">
+                                    <span className={`w-2 h-2 rounded-full ${selectedGraph.status === 'ready' ? 'bg-white' : selectedGraph.status === 'building' ? 'bg-white/60' : selectedGraph.status === 'error' ? 'bg-rose-400' : 'bg-slate-500'}`} />
+                                    {selectedGraph.status || 'draft'}
+                                    <span className="text-white/30">·</span>
+                                    {selectedGraph.node_count || 0} nodes
+                                </div>
+                            )}
+                            {lastGraphRefreshAt && (
+                                <div className="flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-white/5 bg-dark-900/40 text-[10px] font-black uppercase tracking-widest text-white/50">
+                                    Updated {lastGraphRefreshAt.toLocaleTimeString()}
+                                </div>
+                            )}
 
-                    {!selectedGraphId ? (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-dark-950/20 backdrop-blur-md text-center p-10">
-                            <Network className="w-12 h-12 text-white/80 mb-4" />
-                            <h3 className="text-2xl font-black text-white mb-2">No Graph Selected</h3>
-                            <p className="text-xs text-dark-400 max-w-md">
-                                Create a graph, choose documents, and build to generate the neural map.
-                            </p>
                             <button
-                                onClick={openCreateGraph}
-                                className="mt-6 px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-black uppercase tracking-widest text-white border border-white/10"
+                                onClick={() => setShowConnections(true)}
+                                className="px-4 py-2.5 rounded-2xl glass-morphism border-white/5 text-white/80 text-xs font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                                disabled={!selectedGraphId}
                             >
-                                Create Graph
+                                Connections
+                            </button>
+
+                            <div ref={viewMenuRef} className="relative">
+                                <button
+                                    onClick={() => setShowViewMenu((prev) => !prev)}
+                                    className="px-4 py-2.5 rounded-2xl glass-morphism border-white/5 text-white/80 text-xs font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                                >
+                                    View
+                                </button>
+                                <AnimatePresence>
+                                    {showViewMenu && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 6 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 6 }}
+                                            className="absolute right-0 mt-2 w-56 glass-dark border border-white/10 rounded-2xl overflow-hidden z-40"
+                                        >
+                                            <button
+                                                onClick={() => setShowCrossLinks(!showCrossLinks)}
+                                                className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2"
+                                            >
+                                                <Link2 className="w-4 h-4" />
+                                                Cross-Graph Links
+                                                <span className="ml-auto text-[10px] text-white/50">{showCrossLinks ? 'On' : 'Off'}</span>
+                                            </button>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            {/* Smart Search Container */}
+                            <div className="relative w-72">
+                                <div className={`flex items-center gap-3 px-4 py-2.5 glass-morphism border-white/5 rounded-2xl transition-all ${searchQuery ? 'border-white/30' : ''}`}>
+                                    <Search className={`w-4 h-4 transition-colors ${searchQuery ? 'text-white' : 'text-dark-500'}`} />
+                                    <input
+                                        type="text"
+                                        placeholder="Locate a neural node..."
+                                        className="bg-transparent border-none text-sm text-white focus:outline-none w-full font-medium"
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                    {searchQuery && (
+                                        <button onClick={() => setSearchQuery('')} className="text-dark-500 hover:text-white">
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Suggestions Dropdown */}
+                                <AnimatePresence>
+                                    {searchSuggestions.length > 0 && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 10 }}
+                                            className="absolute top-full left-0 right-0 mt-2 glass-dark border border-white/5 rounded-2xl overflow-hidden z-50 shadow-2xl backdrop-blur-3xl"
+                                        >
+                                            {searchSuggestions.map((node) => (
+                                                <button
+                                                    key={node.id}
+                                                    onClick={() => handleSelectSuggestion(node)}
+                                                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-white/5 text-left text-sm transition-colors group"
+                                                >
+                                                    <div className={`w-2 h-2 rounded-full ${node.status === 'COMPLETED' ? 'bg-white/90' :
+                                                        node.status === 'UNLOCKED' ? 'bg-white/70' : node.is_merged ? 'bg-white/50' : 'bg-slate-600'
+                                                        } group-hover:scale-125 transition-transform`} />
+                                                    <span className="text-white font-semibold flex-1">{node.name}</span>
+                                                    <ChevronRight className="w-3 h-3 text-dark-600 group-hover:translate-x-1 transition-transform" />
+                                                </button>
+                                            ))}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+
+                            <button
+                                onClick={toggleFocusMode}
+                                className="px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white text-xs font-black uppercase tracking-widest border border-white/10"
+                                title="Fullscreen Focus Mode"
+                            >
+                                <span className="inline-flex items-center gap-2">
+                                    <Maximize2 className="w-4 h-4" />
+                                    Focus
+                                </span>
                             </button>
                         </div>
-                    ) : isLoading ? (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-dark-950/20 backdrop-blur-md">
-                            <motion.div
-                                animate={{ rotate: 360 }}
-                                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-                                className="w-20 h-20 border-t-2 border-r-2 border-white/70 rounded-full"
-                            />
-                            <p className="mt-8 text-[10px] font-black uppercase tracking-[0.5em] text-white/40">Synchronizing Synapses</p>
-                        </div>
-                    ) : (
-                        <ForceGraph2D
-                            ref={fgRef}
-                            graphData={graphData}
-                            nodeCanvasObject={paintNode}
-                            onNodeClick={handleNodeFocus}
-                            linkColor={(link) => {
-                                if (link?.relationship === 'cross_graph') return 'rgba(220, 214, 247, 0.5)';
-                                if (!selectedNode || !link) return 'rgba(220, 214, 247, 0.2)'; // Brighter default
-                                const sId = String(link.source?.id || link.source);
-                                const tId = String(link.target?.id || link.target);
-                                const nId = String(selectedNode.id);
-                                const isConnected = sId === nId || tId === nId;
-                                return isConnected ? 'rgba(194, 239, 179, 0.6)' : 'rgba(220, 214, 247, 0.08)';
-                            }}
-                            linkWidth={(link) => {
-                                if (link?.relationship === 'cross_graph') return 2.5;
-                                if (!selectedNode || !link) return 1.5; // Wider default
-                                const sId = String(link.source?.id || link.source);
-                                const tId = String(link.target?.id || link.target);
-                                const nId = String(selectedNode.id);
-                                const isConnected = sId === nId || tId === nId;
-                                return isConnected ? 3 : 1.0;
-                            }}
-                            linkDirectionalParticles={(link) => {
-                                if (!selectedNode || !link) return 0;
-                                const sId = String(link.source?.id || link.source);
-                                const tId = String(link.target?.id || link.target);
-                                const nId = String(selectedNode.id);
-                                return (sId === nId || tId === nId) ? 6 : 0;
-                            }}
-                            linkDirectionalParticleSpeed={selectedNode ? 0.014 : 0.003}
-                            linkDirectionalParticleColor={(link) => {
-                                if (!selectedNode || !link) return 'rgba(220,214,247,0.2)';
-                                const sId = String(link.source?.id || link.source);
-                                const tId = String(link.target?.id || link.target);
-                                const nId = String(selectedNode.id);
-                                return (sId === nId || tId === nId) ? 'rgba(194, 239, 179, 0.9)' : 'rgba(220,214,247,0.08)';
-                            }}
-                            linkDirectionalParticleWidth={(link) => {
-                                if (!selectedNode || !link) return 1;
-                                const sId = String(link.source?.id || link.source);
-                                const tId = String(link.target?.id || link.target);
-                                const nId = String(selectedNode.id);
-                                return (sId === nId || tId === nId) ? 2 : 0;
-                            }}
-                            width={dimensions.width}
-                            height={dimensions.height}
-                            backgroundColor="transparent"
-                            d3AlphaDecay={0.02}
-                            d3VelocityDecay={0.3}
-                            cooldownTicks={100}
-                            onEngineStop={() => {
-                                // Final adjustment zoom if not already focused
-                                if (!selectedNode && fgRef.current) {
-                                    fgRef.current.zoomToFit(400, 40);
-                                }
-                            }}
-                        />
-                    )}
+                    </header>
+                )}
+                <InlineErrorBanner
+                    message={
+                        (selectedGraph && selectedGraph.status === 'error' && selectedGraph.error_message)
+                            ? selectedGraph.error_message
+                            : graphError
+                    }
+                    className="pointer-events-auto"
+                />
 
-                    {selectedGraphId && !isLoading && graphData.nodes.length === 0 && (
-                        <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-dark-950/10 backdrop-blur-sm text-center p-10">
-                            <h3 className="text-xl font-black text-white mb-2">Graph Empty</h3>
-                            <p className="text-xs text-dark-400 max-w-md">
-                                Build the graph from existing document graphs or rebuild with LLM extraction.
-                            </p>
-                            <p className="mt-6 text-[10px] font-black uppercase tracking-[0.4em] text-white/40">
-                                Use Build in the header
-                            </p>
-                        </div>
-                    )}
-
-                    {/* Controls Overlay */}
+                <div className="flex-1 flex gap-6 overflow-hidden relative">
+                    {/* Construction HUD */}
                     {!isFocusMode && (
-                        <div className="absolute bottom-10 left-10 flex gap-3 z-10 p-2 glass-morphism rounded-3xl border-white/10 border backdrop-blur-md">
-                            {[
-                                { icon: Compass, label: 'Center', action: () => fgRef.current?.zoomToFit(1000) },
-                                { icon: HelpCircle, label: 'Guide', action: () => setShowGuide(true) }
-                            ].map((btn) => (
+                        <AnimatePresence>
+                            <ConstructionHUD documents={documents.filter(d => d.status === 'ingesting' || d.status === 'processing' || (d.ingestion_step || '').toLowerCase() === 'rate_limited' || d.ingestion_job_status === 'paused')} />
+                        </AnimatePresence>
+                    )}
+
+                    {/* Main Viewport */}
+                    <div ref={containerRef} className="flex-1 relative glass-dark rounded-[3rem] border border-white/5 overflow-hidden shadow-inner-white group">
+                        <Starfield />
+
+                        {/* Sidebar Toggle Button */}
+                        {!isFocusMode && (
+                            <button
+                                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                                className={`absolute top-1/2 -translate-y-1/2 right-4 z-30 p-2 glass-morphism rounded-full border border-white/10 text-white/80 hover:scale-110 transition-all ${isSidebarOpen ? '' : 'rotate-180'}`}
+                            >
+                                <ChevronRight className="w-5 h-5" />
+                            </button>
+                        )}
+
+                        {!selectedGraphId ? (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-dark-950/20 backdrop-blur-md text-center p-10">
+                                <Network className="w-12 h-12 text-white/80 mb-4" />
+                                <h3 className="text-2xl font-black text-white mb-2">No Graph Selected</h3>
+                                <p className="text-xs text-dark-400 max-w-md">
+                                    Create a graph, choose documents, and build to generate the neural map.
+                                </p>
                                 <button
-                                    key={btn.label}
-                                    onClick={(e) => { e.stopPropagation(); btn.action(); }}
-                                    className="p-3 text-white/50 hover:text-white hover:bg-white/5 rounded-2xl transition-all group relative"
+                                    onClick={openCreateGraph}
+                                    className="mt-6 px-5 py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-black uppercase tracking-widest text-white border border-white/10"
                                 >
-                                    <btn.icon className="w-5 h-5" />
-                                    <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-900 border border-white/10 rounded text-[9px] font-bold uppercase opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                                        {btn.label}
-                                    </span>
+                                    Create Graph
                                 </button>
-                            ))}
-                        </div>
-                    )}
+                            </div>
+                        ) : isLoading ? (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-dark-950/20 backdrop-blur-md">
+                                <motion.div
+                                    animate={{ rotate: 360 }}
+                                    transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                                    className="w-20 h-20 border-t-2 border-r-2 border-white/70 rounded-full"
+                                />
+                                <p className="mt-8 text-[10px] font-black uppercase tracking-[0.5em] text-white/40">Synchronizing Synapses</p>
+                            </div>
+                        ) : (
+                            <ForceGraph2D
+                                ref={fgRef}
+                                graphData={graphData}
+                                nodeCanvasObject={paintNode}
+                                onNodeClick={handleNodeFocus}
+                                linkColor={(link) => {
+                                    if (link?.relationship === 'cross_graph') return 'rgba(220, 214, 247, 0.5)';
+                                    if (!selectedNode || !link) return 'rgba(220, 214, 247, 0.2)'; // Brighter default
+                                    const sId = String(link.source?.id || link.source);
+                                    const tId = String(link.target?.id || link.target);
+                                    const nId = String(selectedNode.id);
+                                    const isConnected = sId === nId || tId === nId;
+                                    return isConnected ? 'rgba(194, 239, 179, 0.6)' : 'rgba(220, 214, 247, 0.08)';
+                                }}
+                                linkWidth={(link) => {
+                                    if (link?.relationship === 'cross_graph') return 2.5;
+                                    if (!selectedNode || !link) return 1.5; // Wider default
+                                    const sId = String(link.source?.id || link.source);
+                                    const tId = String(link.target?.id || link.target);
+                                    const nId = String(selectedNode.id);
+                                    const isConnected = sId === nId || tId === nId;
+                                    return isConnected ? 3 : 1.0;
+                                }}
+                                linkDirectionalParticles={(link) => {
+                                    if (!selectedNode || !link) return 0;
+                                    const sId = String(link.source?.id || link.source);
+                                    const tId = String(link.target?.id || link.target);
+                                    const nId = String(selectedNode.id);
+                                    return (sId === nId || tId === nId) ? 6 : 0;
+                                }}
+                                linkDirectionalParticleSpeed={selectedNode ? 0.014 : 0.003}
+                                linkDirectionalParticleColor={(link) => {
+                                    if (!selectedNode || !link) return 'rgba(220,214,247,0.2)';
+                                    const sId = String(link.source?.id || link.source);
+                                    const tId = String(link.target?.id || link.target);
+                                    const nId = String(selectedNode.id);
+                                    return (sId === nId || tId === nId) ? 'rgba(194, 239, 179, 0.9)' : 'rgba(220,214,247,0.08)';
+                                }}
+                                linkDirectionalParticleWidth={(link) => {
+                                    if (!selectedNode || !link) return 1;
+                                    const sId = String(link.source?.id || link.source);
+                                    const tId = String(link.target?.id || link.target);
+                                    const nId = String(selectedNode.id);
+                                    return (sId === nId || tId === nId) ? 2 : 0;
+                                }}
+                                width={dimensions.width}
+                                height={dimensions.height}
+                                backgroundColor="transparent"
+                                d3AlphaDecay={0.02}
+                                d3VelocityDecay={0.3}
+                                cooldownTicks={100}
+                                onEngineStop={() => {
+                                    // Final adjustment zoom if not already focused
+                                    if (!selectedNode && fgRef.current) {
+                                        fgRef.current.zoomToFit(400, 40);
+                                    }
+                                }}
+                            />
+                        )}
 
-                    {/* Integrated Legend Pill */}
-                    {!isFocusMode && (
-                        <div className="absolute top-6 right-6 flex items-center gap-3 z-30 p-2 glass-morphism rounded-2xl border-white/5 opacity-40 hover:opacity-100 transition-opacity pointer-events-auto">
-                            {[
-                                { color: 'bg-white', label: 'Frontier' },
-                                { color: 'bg-white/70', label: 'Masteries' },
-                                { color: 'bg-white/40', label: 'Linked' },
-                                { color: 'bg-slate-700', label: 'Locked' }
-                            ].map(item => (
-                                <div key={item.label} className="flex items-center gap-2 px-2 border-r border-white/5 last:border-0 cursor-help group/pill">
-                                    <div className={`w-1.5 h-1.5 rounded-full ${item.color} shadow-[0_0_8px_rgba(220,214,247,0.2)]`} />
-                                    <span className="text-[10px] font-black text-white/60 uppercase tracking-tighter">{item.label}</span>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                        {selectedGraphId && !isLoading && graphData.nodes.length === 0 && (
+                            <div className="absolute inset-0 flex flex-col items-center justify-center z-20 bg-dark-950/10 backdrop-blur-sm text-center p-10">
+                                <h3 className="text-xl font-black text-white mb-2">Graph Empty</h3>
+                                <p className="text-xs text-dark-400 max-w-md">
+                                    Build the graph from existing document graphs or rebuild with LLM extraction.
+                                </p>
+                                <p className="mt-6 text-[10px] font-black uppercase tracking-[0.4em] text-white/40">
+                                    Use Build in the header
+                                </p>
+                            </div>
+                        )}
 
-                    {isFocusMode && (
-                        <button
-                            onClick={toggleFocusMode}
-                            className="absolute top-5 right-5 z-40 px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-black uppercase tracking-widest border border-white/10"
-                        >
-                            Exit Focus
-                        </button>
-                    )}
+                        {/* Controls Overlay */}
+                        {!isFocusMode && (
+                            <div className="absolute bottom-10 left-10 flex gap-3 z-10 p-2 glass-morphism rounded-3xl border-white/10 border backdrop-blur-md">
+                                {[
+                                    { icon: Compass, label: 'Center', action: () => fgRef.current?.zoomToFit(1000) },
+                                    { icon: HelpCircle, label: 'Guide', action: () => setShowGuide(true) }
+                                ].map((btn) => (
+                                    <button
+                                        key={btn.label}
+                                        onClick={(e) => { e.stopPropagation(); btn.action(); }}
+                                        className="p-3 text-white/50 hover:text-white hover:bg-white/5 rounded-2xl transition-all group relative"
+                                    >
+                                        <btn.icon className="w-5 h-5" />
+                                        <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 bg-dark-900 border border-white/10 rounded text-[9px] font-bold uppercase opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                                            {btn.label}
+                                        </span>
+                                    </button>
+                                ))}
+                            </div>
+                        )}
 
+                        {/* Integrated Legend Pill */}
+                        {!isFocusMode && (
+                            <div className="absolute top-6 right-6 flex items-center gap-3 z-30 p-2 glass-morphism rounded-2xl border-white/5 opacity-40 hover:opacity-100 transition-opacity pointer-events-auto">
+                                {[
+                                    { color: 'bg-white', label: 'Frontier' },
+                                    { color: 'bg-white/70', label: 'Masteries' },
+                                    { color: 'bg-white/40', label: 'Linked' },
+                                    { color: 'bg-slate-700', label: 'Locked' }
+                                ].map(item => (
+                                    <div key={item.label} className="flex items-center gap-2 px-2 border-r border-white/5 last:border-0 cursor-help group/pill">
+                                        <div className={`w-1.5 h-1.5 rounded-full ${item.color} shadow-[0_0_8px_rgba(220,214,247,0.2)]`} />
+                                        <span className="text-[10px] font-black text-white/60 uppercase tracking-tighter">{item.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {isFocusMode && (
+                            <button
+                                onClick={toggleFocusMode}
+                                className="absolute top-5 right-5 z-40 px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white text-xs font-black uppercase tracking-widest border border-white/10"
+                            >
+                                Exit Focus
+                            </button>
+                        )}
+
+                    </div>
+
+                    {/* Sidebar Panel */}
+                    <AnimatePresence>
+                        {isSidebarOpen && !isFocusMode && (
+                            <motion.div
+                                initial={{ width: 0, opacity: 0 }}
+                                animate={{ width: "20rem", opacity: 1 }}
+                                exit={{ width: 0, opacity: 0 }}
+                                className="flex flex-col gap-6 overflow-hidden"
+                            >
+                                <AnimatePresence mode="wait">
+                                    {selectedNode ? (
+                                        <motion.div
+                                            key={selectedNode.id}
+                                            initial={{ opacity: 0, x: 20 }}
+                                            animate={{ opacity: 1, x: 0 }}
+                                            exit={{ opacity: 0, x: 20 }}
+                                            className="h-full flex flex-col"
+                                        >
+                                            <Card className="flex-1 flex flex-col bg-dark-950/40 border-white/5 backdrop-blur-2xl rounded-[3rem] p-0 overflow-hidden">
+                                                {/* Header Splash */}
+                                                <div className={`h-1.5 w-full ${selectedNode.status === 'COMPLETED' ? 'bg-white' :
+                                                    selectedNode.status === 'UNLOCKED' ? 'bg-white/70' : 'bg-slate-700'
+                                                    }`} />
+
+                                                <div className="p-8 flex flex-col h-full">
+                                                    <div className="flex justify-between items-start mb-6">
+                                                        <div className="px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] font-black uppercase tracking-[0.2em] text-white/80 flex items-center gap-2">
+                                                            <Target className="w-3 h-3" />
+                                                            Active Focus
+                                                        </div>
+                                                        <button onClick={() => setSelectedNode(null)} className="p-2 hover:bg-white/5 rounded-xl text-dark-500">
+                                                            <X className="w-5 h-5" />
+                                                        </button>
+                                                    </div>
+
+                                                    <h2 className="text-3xl font-black text-white tracking-tight mb-4 drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">
+                                                        {selectedNode.name}
+                                                    </h2>
+
+                                                    {/* Navigation Tabs */}
+                                                    <div className="flex gap-1 p-1 bg-dark-900/50 rounded-2xl mb-8 border border-white/5">
+                                                        <button
+                                                            onClick={() => setActiveTab('overview')}
+                                                            className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${activeTab === 'overview' ? 'bg-white/10 text-white shadow-lg' : 'text-dark-500 hover:text-white'}`}
+                                                        >
+                                                            Intelligence
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setActiveTab('intel')}
+                                                            className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${activeTab === 'intel' ? 'bg-white/10 text-white shadow-lg' : 'text-dark-500 hover:text-white'}`}
+                                                        >
+                                                            Active Intel
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Content Viewport */}
+                                                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-4">
+                                                        {activeTab === 'overview' ? (
+                                                            <div className="space-y-8">
+                                                                <div>
+                                                                    <h4 className="text-[10px] font-black uppercase tracking-widest text-dark-600 mb-2 flex items-center gap-2">
+                                                                        <Compass className="w-3 h-3" /> Philosophical Overview
+                                                                    </h4>
+                                                                    <p className="text-sm text-dark-300 leading-relaxed font-medium">
+                                                                        {selectedNode.description || 'This concept represents a pivotal junction in the neural lattice. Mastering it will unlock pathwards to more complex domains.'}
+                                                                    </p>
+                                                                </div>
+
+                                                                <div className="grid grid-cols-2 gap-4">
+                                                                    <button
+                                                                        onClick={handleStartFocus}
+                                                                        className="flex flex-col items-center justify-center p-6 glass-morphism border-white/5 rounded-[2rem] hover:border-white/40 transition-all group"
+                                                                    >
+                                                                        <Timer className="w-6 h-6 text-white mb-2 group-hover:scale-110 transition-transform" />
+                                                                        <span className="text-[10px] font-black uppercase tracking-widest text-white/70">Deep Focus</span>
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => navigate('/practice', { state: { searchTarget: selectedNode.name } })}
+                                                                        className="flex flex-col items-center justify-center p-6 glass-morphism border-white/5 rounded-[2rem] hover:border-white/40 transition-all group"
+                                                                    >
+                                                                        <Zap className="w-6 h-6 text-white mb-2 group-hover:scale-110 transition-transform" />
+                                                                        <span className="text-[10px] font-black uppercase tracking-widest text-white/70">Neural Stress</span>
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="space-y-6">
+                                                                {isLoadingIntel ? (
+                                                                    <div className="py-20 flex flex-col items-center justify-center opacity-50">
+                                                                        <Sparkles className="w-10 h-10 text-white/80 animate-pulse mb-4" />
+                                                                        <p className="text-[9px] font-black uppercase tracking-widest">Generating Active Intel</p>
+                                                                    </div>
+                                                                ) : activeIntel ? (
+                                                                    <div className="space-y-4 animate-fade-in">
+                                                                        {/* Insight Card */}
+                                                                        <div className="p-5 bg-gradient-to-br from-white/10 to-transparent rounded-3xl border border-white/10">
+                                                                            <div className="flex items-center gap-2 mb-3">
+                                                                                <Sparkles className="w-4 h-4 text-white/80" />
+                                                                                <h4 className="text-[10px] font-black uppercase tracking-widest text-white/80">Key Insight</h4>
+                                                                            </div>
+                                                                            <p className="text-white text-sm font-medium leading-relaxed">
+                                                                                "{activeIntel.insight}"
+                                                                            </p>
+                                                                        </div>
+
+                                                                        {/* Analogy Card */}
+                                                                        <div className="p-5 bg-gradient-to-br from-white/10 to-transparent rounded-3xl border border-white/10">
+                                                                            <div className="flex items-center gap-2 mb-3">
+                                                                                <Compass className="w-4 h-4 text-white/80" />
+                                                                                <h4 className="text-[10px] font-black uppercase tracking-widest text-white/80">Mental Model</h4>
+                                                                            </div>
+                                                                            <p className="text-white text-sm font-medium leading-relaxed italic">
+                                                                                {activeIntel.analogy}
+                                                                            </p>
+                                                                        </div>
+
+                                                                        {/* Socratic Question */}
+                                                                        <div className="p-5 bg-gradient-to-br from-white/10 to-transparent rounded-3xl border border-white/10">
+                                                                            <div className="flex items-center gap-2 mb-3">
+                                                                                <HelpCircle className="w-4 h-4 text-white/80" />
+                                                                                <h4 className="text-[10px] font-black uppercase tracking-widest text-white/80">Challenge</h4>
+                                                                            </div>
+                                                                            <p className="text-white text-sm font-bold leading-relaxed">
+                                                                                {activeIntel.question}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="text-center py-10 opacity-50 text-xs">
+                                                                        No intel available for this node.
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </Card>
+                                        </motion.div>
+                                    ) : (
+                                        <div className="h-full glass-dark rounded-[3rem] border border-dashed border-white/10 flex flex-col items-center justify-center p-8 text-center group">
+                                            <div className="w-20 h-20 bg-dark-900 border border-white/5 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-all duration-500 shadow-xl group-hover:shadow-white/20">
+                                                <Network className="w-8 h-8 text-dark-600 group-hover:text-white/80 transition-colors" />
+                                            </div>
+                                            <h4 className="text-white text-[10px] font-black uppercase tracking-[0.2em] mb-3">Select Node</h4>
+                                            <p className="text-[10px] text-dark-500 leading-relaxed font-medium max-w-[180px] mb-8">
+                                                Intercept a neural packet from the tree to examine properties.
+                                            </p>
+
+                                            {/* Integrated Legend */}
+                                            <div className="flex flex-col gap-3 w-full max-w-[160px]">
+                                                {[
+                                                    { color: 'bg-white', label: 'Frontier', desc: 'Unlocked Concepts' },
+                                                    { color: 'bg-white/70', label: 'Mastered', desc: 'Core Stability' },
+                                                    { color: 'bg-slate-700', label: 'Locked', desc: 'Hidden Nodes' }
+                                                ].map(item => (
+                                                    <div key={item.label} className="flex items-center gap-3 p-2 bg-white/5 rounded-xl border border-white/5">
+                                                        <div className={`w-2 h-2 rounded-full ${item.color} shadow-[0_0_8px_rgba(220,214,247,0.2)]`} />
+                                                        <div className="text-left">
+                                                            <p className="text-[9px] font-black text-white uppercase tracking-tighter leading-none">{item.label}</p>
+                                                            <p className="text-[8px] text-dark-500 font-medium leading-none mt-1">{item.desc}</p>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </AnimatePresence>
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
                 </div>
 
-                {/* Sidebar Panel */}
+                {/* Graph Create/Edit Modal */}
                 <AnimatePresence>
-                    {isSidebarOpen && !isFocusMode && (
+                    {showGraphModal && (
                         <motion.div
-                            initial={{ width: 0, opacity: 0 }}
-                            animate={{ width: "20rem", opacity: 1 }}
-                            exit={{ width: 0, opacity: 0 }}
-                            className="flex flex-col gap-6 overflow-hidden"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-dark-950/90 backdrop-blur-3xl"
                         >
-                            <AnimatePresence mode="wait">
-                                {selectedNode ? (
-                                    <motion.div
-                                        key={selectedNode.id}
-                                        initial={{ opacity: 0, x: 20 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        exit={{ opacity: 0, x: 20 }}
-                                        className="h-full flex flex-col"
-                                    >
-                                        <Card className="flex-1 flex flex-col bg-dark-950/40 border-white/5 backdrop-blur-2xl rounded-[3rem] p-0 overflow-hidden">
-                                            {/* Header Splash */}
-                                            <div className={`h-1.5 w-full ${selectedNode.status === 'COMPLETED' ? 'bg-white' :
-                                                selectedNode.status === 'UNLOCKED' ? 'bg-white/70' : 'bg-slate-700'
-                                                }`} />
+                            <motion.div
+                                initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
+                                className="w-full max-w-3xl glass-morphism p-10 rounded-[3rem] relative border border-white/10 shadow-2xl max-h-[90vh] overflow-y-auto custom-scrollbar"
+                            >
+                                <button onClick={() => setShowGraphModal(false)} className="absolute top-8 right-8 text-dark-400 hover:text-white transition-colors">
+                                    <X className="w-6 h-6" />
+                                </button>
+                                <h3 className="text-3xl font-black text-white mb-6 tracking-tighter">
+                                    {editingGraph ? 'Edit Graph' : 'Create Graph'}
+                                </h3>
 
-                                            <div className="p-8 flex flex-col h-full">
-                                                <div className="flex justify-between items-start mb-6">
-                                                    <div className="px-3 py-1 rounded-full bg-white/5 border border-white/5 text-[10px] font-black uppercase tracking-[0.2em] text-white/80 flex items-center gap-2">
-                                                        <Target className="w-3 h-3" />
-                                                        Active Focus
-                                                    </div>
-                                                    <button onClick={() => setSelectedNode(null)} className="p-2 hover:bg-white/5 rounded-xl text-dark-500">
-                                                        <X className="w-5 h-5" />
-                                                    </button>
-                                                </div>
-
-                                                <h2 className="text-3xl font-black text-white tracking-tight mb-4 drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">
-                                                    {selectedNode.name}
-                                                </h2>
-
-                                                {/* Navigation Tabs */}
-                                                <div className="flex gap-1 p-1 bg-dark-900/50 rounded-2xl mb-8 border border-white/5">
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <div className="space-y-4">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Graph Name</label>
+                                        <input
+                                            className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-white/40"
+                                            value={graphForm.name}
+                                            onChange={(e) => setGraphForm({ ...graphForm, name: e.target.value })}
+                                            placeholder="e.g. Biology Core"
+                                        />
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Description</label>
+                                        <textarea
+                                            rows={3}
+                                            className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-white/40"
+                                            value={graphForm.description}
+                                            onChange={(e) => setGraphForm({ ...graphForm, description: e.target.value })}
+                                            placeholder="Purpose and focus of this graph"
+                                        />
+                                        <div className="pt-2">
+                                            <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">LLM Settings</label>
+                                            <div className="grid grid-cols-1 gap-3 mt-2">
+                                                <input
+                                                    className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
+                                                    value={graphForm.llm_config.provider || ''}
+                                                    onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, provider: e.target.value } })}
+                                                    placeholder="provider (openai, groq, ollama)"
+                                                />
+                                                <input
+                                                    className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
+                                                    value={graphForm.llm_config.model || ''}
+                                                    onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, model: e.target.value } })}
+                                                    placeholder="model"
+                                                />
+                                                <input
+                                                    className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
+                                                    value={graphForm.llm_config.base_url || ''}
+                                                    onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, base_url: e.target.value } })}
+                                                    placeholder="base_url (optional)"
+                                                />
+                                                <div className="relative">
+                                                    <input
+                                                        type={showGraphApiKey ? "text" : "password"}
+                                                        className="w-full px-4 py-2 pr-20 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
+                                                        value={graphForm.llm_config.api_key || ''}
+                                                        onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, api_key: e.target.value } })}
+                                                        placeholder="api_key (optional)"
+                                                    />
                                                     <button
-                                                        onClick={() => setActiveTab('overview')}
-                                                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${activeTab === 'overview' ? 'bg-white/10 text-white shadow-lg' : 'text-dark-500 hover:text-white'}`}
+                                                        type="button"
+                                                        onClick={() => setShowGraphApiKey((prev) => !prev)}
+                                                        className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-xl bg-white/10 text-white/80 hover:bg-white/20"
                                                     >
-                                                        Intelligence
+                                                        {showGraphApiKey ? 'Hide' : 'Show'}
                                                     </button>
-                                                    <button
-                                                        onClick={() => setActiveTab('intel')}
-                                                        className={`flex-1 py-2 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all ${activeTab === 'intel' ? 'bg-white/10 text-white shadow-lg' : 'text-dark-500 hover:text-white'}`}
-                                                    >
-                                                        Active Intel
-                                                    </button>
-                                                </div>
-
-                                                {/* Content Viewport */}
-                                                <div className="flex-1 overflow-y-auto custom-scrollbar pr-4">
-                                                    {activeTab === 'overview' ? (
-                                                        <div className="space-y-8">
-                                                            <div>
-                                                                <h4 className="text-[10px] font-black uppercase tracking-widest text-dark-600 mb-2 flex items-center gap-2">
-                                                                    <Compass className="w-3 h-3" /> Philosophical Overview
-                                                                </h4>
-                                                                <p className="text-sm text-dark-300 leading-relaxed font-medium">
-                                                                    {selectedNode.description || 'This concept represents a pivotal junction in the neural lattice. Mastering it will unlock pathwards to more complex domains.'}
-                                                                </p>
-                                                            </div>
-
-                                                            <div className="grid grid-cols-2 gap-4">
-                                                                <button
-                                                                    onClick={handleStartFocus}
-                                                                    className="flex flex-col items-center justify-center p-6 glass-morphism border-white/5 rounded-[2rem] hover:border-white/40 transition-all group"
-                                                                >
-                                                                    <Timer className="w-6 h-6 text-white mb-2 group-hover:scale-110 transition-transform" />
-                                                                    <span className="text-[10px] font-black uppercase tracking-widest text-white/70">Deep Focus</span>
-                                                                </button>
-                                                                <button
-                                                                    onClick={() => navigate('/practice', { state: { searchTarget: selectedNode.name } })}
-                                                                    className="flex flex-col items-center justify-center p-6 glass-morphism border-white/5 rounded-[2rem] hover:border-white/40 transition-all group"
-                                                                >
-                                                                    <Zap className="w-6 h-6 text-white mb-2 group-hover:scale-110 transition-transform" />
-                                                                    <span className="text-[10px] font-black uppercase tracking-widest text-white/70">Neural Stress</span>
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    ) : (
-                                                        <div className="space-y-6">
-                                                            {isLoadingIntel ? (
-                                                                <div className="py-20 flex flex-col items-center justify-center opacity-50">
-                                                                    <Sparkles className="w-10 h-10 text-white/80 animate-pulse mb-4" />
-                                                                    <p className="text-[9px] font-black uppercase tracking-widest">Generating Active Intel</p>
-                                                                </div>
-                                                            ) : activeIntel ? (
-                                                                <div className="space-y-4 animate-fade-in">
-                                                                    {/* Insight Card */}
-                                                                    <div className="p-5 bg-gradient-to-br from-white/10 to-transparent rounded-3xl border border-white/10">
-                                                                        <div className="flex items-center gap-2 mb-3">
-                                                                            <Sparkles className="w-4 h-4 text-white/80" />
-                                                                            <h4 className="text-[10px] font-black uppercase tracking-widest text-white/80">Key Insight</h4>
-                                                                        </div>
-                                                                        <p className="text-white text-sm font-medium leading-relaxed">
-                                                                            "{activeIntel.insight}"
-                                                                        </p>
-                                                                    </div>
-
-                                                                    {/* Analogy Card */}
-                                                                    <div className="p-5 bg-gradient-to-br from-white/10 to-transparent rounded-3xl border border-white/10">
-                                                                        <div className="flex items-center gap-2 mb-3">
-                                                                            <Compass className="w-4 h-4 text-white/80" />
-                                                                            <h4 className="text-[10px] font-black uppercase tracking-widest text-white/80">Mental Model</h4>
-                                                                        </div>
-                                                                        <p className="text-white text-sm font-medium leading-relaxed italic">
-                                                                            {activeIntel.analogy}
-                                                                        </p>
-                                                                    </div>
-
-                                                                    {/* Socratic Question */}
-                                                                    <div className="p-5 bg-gradient-to-br from-white/10 to-transparent rounded-3xl border border-white/10">
-                                                                        <div className="flex items-center gap-2 mb-3">
-                                                                            <HelpCircle className="w-4 h-4 text-white/80" />
-                                                                            <h4 className="text-[10px] font-black uppercase tracking-widest text-white/80">Challenge</h4>
-                                                                        </div>
-                                                                        <p className="text-white text-sm font-bold leading-relaxed">
-                                                                            {activeIntel.question}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-                                                            ) : (
-                                                                <div className="text-center py-10 opacity-50 text-xs">
-                                                                    No intel available for this node.
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </div>
-                                        </Card>
-                                    </motion.div>
-                                ) : (
-                                    <div className="h-full glass-dark rounded-[3rem] border border-dashed border-white/10 flex flex-col items-center justify-center p-8 text-center group">
-                                                                <div className="w-20 h-20 bg-dark-900 border border-white/5 rounded-full flex items-center justify-center mb-6 group-hover:scale-110 transition-all duration-500 shadow-xl group-hover:shadow-white/20">
-                                            <Network className="w-8 h-8 text-dark-600 group-hover:text-white/80 transition-colors" />
                                         </div>
-                                        <h4 className="text-white text-[10px] font-black uppercase tracking-[0.2em] mb-3">Select Node</h4>
-                                        <p className="text-[10px] text-dark-500 leading-relaxed font-medium max-w-[180px] mb-8">
-                                            Intercept a neural packet from the tree to examine properties.
-                                        </p>
+                                        <div className="pt-2">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="space-y-2">
+                                                    <div className="flex flex-col">
+                                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Context Strength</label>
+                                                        <span className="text-[9px] text-dark-600 leading-tight">Determines how much surrounding text the AI "sees" to find connections.</span>
+                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
+                                                        value={graphForm.extraction_max_chars || 4000}
+                                                        onChange={(e) => setGraphForm({ ...graphForm, extraction_max_chars: parseInt(e.target.value) })}
+                                                        placeholder="4000"
+                                                    />
+                                                </div>
+                                                <div className="space-y-2">
+                                                    <div className="flex flex-col">
+                                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Detail Density</label>
+                                                        <span className="text-[9px] text-dark-600 leading-tight">Size of individual info blocks. Smaller blocks = finer detail.</span>
+                                                    </div>
+                                                    <input
+                                                        type="number"
+                                                        className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
+                                                        value={graphForm.chunk_size || 1500}
+                                                        onChange={(e) => setGraphForm({ ...graphForm, chunk_size: parseInt(e.target.value) })}
+                                                        placeholder="1500"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Documents</label>
+                                        <div className="mt-3 max-h-72 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+                                            {documents.length === 0 && (
+                                                <div className="text-xs text-dark-500 py-4">No documents found.</div>
+                                            )}
+                                            {documents.map((doc) => {
+                                                const phase = (doc.ingestion_step || '').toLowerCase();
+                                                const jobStatus = doc.ingestion_job_status;
+                                                const jobMessage = doc.ingestion_job_message || '';
+                                                const isRateLimited = phase === 'rate_limited'
+                                                    || jobStatus === 'paused'
+                                                    || jobMessage.toLowerCase().includes('rate limit');
+                                                return (
+                                                    <button
+                                                        key={doc.id}
+                                                        onClick={() => toggleDocumentSelection(doc.id)}
+                                                        className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${graphForm.document_ids.includes(doc.id) ? 'border-white/40 bg-white/10' : 'border-white/5 bg-dark-900/40 hover:bg-white/5'}`}
+                                                    >
+                                                        <div className="text-left">
+                                                            <div className="text-sm text-white font-semibold">{doc.title || doc.filename}</div>
+                                                            <div className="text-[10px] text-dark-400">
+                                                                {doc.status}
+                                                                {isRateLimited && (
+                                                                    <span className="ml-2 text-[9px] px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-200 border border-primary-500/30">
+                                                                        Paused (rate limited)
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                        <div className={`w-3 h-3 rounded-full ${graphForm.document_ids.includes(doc.id) ? 'bg-white' : 'bg-dark-700'}`} />
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                </div>
 
-                                        {/* Integrated Legend */}
-                                        <div className="flex flex-col gap-3 w-full max-w-[160px]">
-                                            {[
-                                                { color: 'bg-white', label: 'Frontier', desc: 'Unlocked Concepts' },
-                                                { color: 'bg-white/70', label: 'Mastered', desc: 'Core Stability' },
-                                                { color: 'bg-slate-700', label: 'Locked', desc: 'Hidden Nodes' }
-                                            ].map(item => (
-                                                <div key={item.label} className="flex items-center gap-3 p-2 bg-white/5 rounded-xl border border-white/5">
-                                                    <div className={`w-2 h-2 rounded-full ${item.color} shadow-[0_0_8px_rgba(220,214,247,0.2)]`} />
-                                                    <div className="text-left">
-                                                        <p className="text-[9px] font-black text-white uppercase tracking-tighter leading-none">{item.label}</p>
-                                                        <p className="text-[8px] text-dark-500 font-medium leading-none mt-1">{item.desc}</p>
+                                <div className="mt-8 pt-8 border-t border-white/5 space-y-6">
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                                        <div className="space-y-4">
+                                            <div className="flex flex-col">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Assembly Method</label>
+                                                <span className="text-[9px] text-dark-600 leading-tight">Controls how new documents are integrated into the graph.</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {[
+                                                    { id: 'existing', label: 'Smart Update', desc: 'Adds new docs while preserving existing data. Best for growing your map.' },
+                                                    { id: 'rebuild', label: 'Total Reset', desc: 'Re-scans everything to build a fresh, optimized graph.' }
+                                                ].map(mode => (
+                                                    <button
+                                                        key={mode.id}
+                                                        onClick={() => setBuildMode(mode.id)}
+                                                        className={`flex-1 flex flex-col p-4 rounded-2xl border transition-all text-left ${buildMode === mode.id ? 'border-white/40 bg-white/10' : 'border-white/5 bg-dark-900/40 hover:bg-white/5'}`}
+                                                    >
+                                                        <span className="text-xs font-black text-white uppercase tracking-tighter">{mode.label}</span>
+                                                        <span className="text-[8px] text-dark-500 leading-tight mt-1">{mode.desc}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-4">
+                                            <div className="flex flex-col">
+                                                <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Extraction Style</label>
+                                                <span className="text-[9px] text-dark-600 leading-tight">Sets the density and focus of information extracted.</span>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                {[
+                                                    { id: 'filtered', label: 'Focused', desc: 'Synthesizes key concepts for clear maps.' },
+                                                    { id: 'raw', label: 'Comprehensive', desc: 'Extracts every detail for exhaustive links.' }
+                                                ].map(mode => (
+                                                    <button
+                                                        key={mode.id}
+                                                        onClick={() => setBuildSourceMode(mode.id)}
+                                                        className={`flex-1 p-3 rounded-2xl border transition-all text-center ${buildSourceMode === mode.id ? 'bg-white/10 text-white border-white/40' : 'bg-dark-900/40 text-dark-500 border-white/5 hover:bg-white/5'}`}
+                                                    >
+                                                        <div className="text-[10px] font-black uppercase tracking-widest">{mode.label}</div>
+                                                        <div className="text-[8px] mt-0.5 opacity-60 lowercase">{mode.desc}</div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {isGraphLoading && (
+                                        <div className="p-4 rounded-2xl bg-white/5 border border-white/5 animate-pulse">
+                                            <div className="flex justify-between items-center mb-2">
+                                                <span className="text-[10px] font-black uppercase tracking-widest text-white/40">Neural Assembly Underway</span>
+                                                <span className="text-white font-black text-[10px]">{Math.round(selectedGraph?.build_progress || 0)}%</span>
+                                            </div>
+                                            <div className="h-1 w-full bg-dark-900 rounded-full overflow-hidden">
+                                                <div className="h-full bg-white transition-all duration-500" style={{ width: `${selectedGraph?.build_progress || 0}%` }} />
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    <InlineErrorBanner message={buildError} />
+                                </div>
+
+                                <div className="flex justify-between items-center mt-10">
+                                    {editingGraph && (
+                                        <button
+                                            onClick={async () => {
+                                                if (window.confirm('Erase this knowledge map forever?')) {
+                                                    await GraphService.deleteGraph(editingGraph.id);
+                                                    setShowGraphModal(false);
+                                                    setSelectedGraphId(null);
+                                                    loadGraphs();
+                                                    toast.success('Graph erased.');
+                                                }
+                                            }}
+                                            className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-rose-500/60 hover:text-rose-500 transition-colors"
+                                        >
+                                            Delete Graph
+                                        </button>
+                                    )}
+                                    <div className="flex gap-3 ml-auto">
+                                        <button onClick={() => setShowGraphModal(false)} className="px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest text-dark-400 hover:text-white transition-all">
+                                            Close
+                                        </button>
+                                        <button onClick={handleSaveGraph} className="px-6 py-3 rounded-2xl bg-white/5 hover:bg-white/10 text-[10px] font-black uppercase tracking-widest text-white/70 border border-white/5 transition-all">
+                                            Save Only
+                                        </button>
+                                        <button
+                                            onClick={handleSaveAndBuild}
+                                            disabled={isGraphLoading}
+                                            className="px-8 py-3 rounded-2xl bg-white text-dark-950 text-[10px] font-black uppercase tracking-widest shadow-xl hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50"
+                                        >
+                                            {isGraphLoading ? 'Building...' : 'Save & Build Graph'}
+                                        </button>
+                                    </div>
+                                </div>
+                            </motion.div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
+
+                {/* Connections Modal */}
+                <AnimatePresence>
+                    {showConnections && (
+                        <motion.div
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-dark-950/90 backdrop-blur-3xl"
+                        >
+                            <motion.div
+                                initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
+                                className="w-full max-w-4xl glass-morphism p-10 rounded-[3rem] relative border border-white/10 shadow-2xl"
+                            >
+                                <button onClick={() => setShowConnections(false)} className="absolute top-8 right-8 text-dark-400 hover:text-white transition-colors">
+                                    <X className="w-6 h-6" />
+                                </button>
+                                <h3 className="text-2xl font-black text-white mb-6 tracking-tighter">Cross-Graph Connections</h3>
+
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                    <div className="space-y-4">
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Target Graph</label>
+                                        <select
+                                            className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none"
+                                            value={targetGraphId}
+                                            onChange={(e) => setTargetGraphId(e.target.value)}
+                                        >
+                                            <option value="" disabled className="text-dark-500">Select target graph</option>
+                                            {graphs.filter(g => g.id !== selectedGraphId).map((graph) => (
+                                                <option key={graph.id} value={graph.id} className="bg-dark-900 text-white">
+                                                    {graph.name}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {graphs.filter(g => g.id !== selectedGraphId).length === 0 && (
+                                            <div className="text-[10px] text-dark-500">Create another graph to connect.</div>
+                                        )}
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Context</label>
+                                        <textarea
+                                            rows={4}
+                                            className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none"
+                                            value={connectionContext}
+                                            onChange={(e) => setConnectionContext(e.target.value)}
+                                            placeholder="Describe the context for linking these graphs"
+                                        />
+                                        <button
+                                            onClick={handleSuggestConnections}
+                                            className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-black uppercase tracking-widest text-white border border-white/10"
+                                            disabled={!targetGraphId || !connectionContext.trim() || isSuggesting}
+                                        >
+                                            {isSuggesting ? 'Analyzing...' : 'Suggest Connections'}
+                                        </button>
+                                    </div>
+
+                                    <div>
+                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Suggestions</label>
+                                        <div className="mt-3 max-h-72 overflow-y-auto custom-scrollbar space-y-2 pr-2">
+                                            {connectionSuggestions.length === 0 && (
+                                                <div className="text-xs text-dark-500 py-4">No suggestions yet.</div>
+                                            )}
+                                            {connectionSuggestions.map((conn, idx) => (
+                                                <div key={`${conn.from_scoped_id}-${conn.to_scoped_id}-${idx}`} className="p-3 rounded-2xl border border-white/5 bg-dark-900/50 flex items-start gap-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedConnections.has(idx)}
+                                                        onChange={() => {
+                                                            const next = new Set(selectedConnections);
+                                                            if (next.has(idx)) next.delete(idx);
+                                                            else next.add(idx);
+                                                            setSelectedConnections(next);
+                                                        }}
+                                                    />
+                                                    <div>
+                                                        <div className="text-xs text-white font-semibold">
+                                                            {conn.from_scoped_id} → {conn.to_scoped_id}
+                                                        </div>
+                                                        <div className="text-[10px] text-dark-400">{conn.rationale || 'Suggested link'}</div>
                                                     </div>
                                                 </div>
                                             ))}
                                         </div>
+                                        {connectionSuggestions.length > 0 && (
+                                            <div className="flex justify-end mt-4">
+                                                <button
+                                                    onClick={handleSaveConnections}
+                                                    className="px-5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-black uppercase tracking-widest text-white border border-white/10"
+                                                >
+                                                    Save Connections
+                                                </button>
+                                            </div>
+                                        )}
                                     </div>
-                                )}
-                            </AnimatePresence>
+                                </div>
+                            </motion.div>
                         </motion.div>
                     )}
                 </AnimatePresence>
-            </div>
 
-            {/* Graph Create/Edit Modal */}
-            <AnimatePresence>
-                {showGraphModal && (
-                    <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-dark-950/90 backdrop-blur-3xl"
-                    >
+                {/* Premium Guide Modal */}
+                <AnimatePresence>
+                    {showGuide && (
                         <motion.div
-                            initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
-                            className="w-full max-w-3xl glass-morphism p-10 rounded-[3rem] relative border border-white/10 shadow-2xl"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-dark-950/90 backdrop-blur-3xl"
                         >
-                            <button onClick={() => setShowGraphModal(false)} className="absolute top-8 right-8 text-dark-400 hover:text-white transition-colors">
-                                <X className="w-6 h-6" />
-                            </button>
-                            <h3 className="text-3xl font-black text-white mb-6 tracking-tighter">
-                                {editingGraph ? 'Edit Graph' : 'Create Graph'}
-                            </h3>
-
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Graph Name</label>
-                                    <input
-                                        className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-white/40"
-                                        value={graphForm.name}
-                                        onChange={(e) => setGraphForm({ ...graphForm, name: e.target.value })}
-                                        placeholder="e.g. Biology Core"
-                                    />
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Description</label>
-                                    <textarea
-                                        rows={3}
-                                        className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-white/40"
-                                        value={graphForm.description}
-                                        onChange={(e) => setGraphForm({ ...graphForm, description: e.target.value })}
-                                        placeholder="Purpose and focus of this graph"
-                                    />
-                                    <div className="pt-2">
-                                        <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">LLM Settings</label>
-                                        <div className="grid grid-cols-1 gap-3 mt-2">
-                                            <input
-                                                className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
-                                                value={graphForm.llm_config.provider || ''}
-                                                onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, provider: e.target.value } })}
-                                                placeholder="provider (openai, groq, ollama)"
-                                            />
-                                            <input
-                                                className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
-                                                value={graphForm.llm_config.model || ''}
-                                                onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, model: e.target.value } })}
-                                                placeholder="model"
-                                            />
-                                            <input
-                                                className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
-                                                value={graphForm.llm_config.base_url || ''}
-                                                onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, base_url: e.target.value } })}
-                                                placeholder="base_url (optional)"
-                                            />
-                                            <div className="relative">
-                                                <input
-                                                    type={showGraphApiKey ? "text" : "password"}
-                                                    className="w-full px-4 py-2 pr-20 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
-                                                    value={graphForm.llm_config.api_key || ''}
-                                                    onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, api_key: e.target.value } })}
-                                                    placeholder="api_key (optional)"
-                                                />
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setShowGraphApiKey((prev) => !prev)}
-                                                    className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-xl bg-white/10 text-white/80 hover:bg-white/20"
-                                                >
-                                                    {showGraphApiKey ? 'Hide' : 'Show'}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Documents</label>
-                                    <div className="mt-3 max-h-72 overflow-y-auto custom-scrollbar space-y-2 pr-2">
-                                    {documents.length === 0 && (
-                                        <div className="text-xs text-dark-500 py-4">No documents found.</div>
-                                    )}
-                                    {documents.map((doc) => {
-                                        const phase = (doc.ingestion_step || '').toLowerCase();
-                                        const jobStatus = doc.ingestion_job_status;
-                                        const jobMessage = doc.ingestion_job_message || '';
-                                        const isRateLimited = phase === 'rate_limited'
-                                            || jobStatus === 'paused'
-                                            || jobMessage.toLowerCase().includes('rate limit');
-                                        return (
-                                            <button
-                                                key={doc.id}
-                                                onClick={() => toggleDocumentSelection(doc.id)}
-                                                className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all ${graphForm.document_ids.includes(doc.id) ? 'border-white/40 bg-white/10' : 'border-white/5 bg-dark-900/40 hover:bg-white/5'}`}
-                                            >
-                                                <div className="text-left">
-                                                    <div className="text-sm text-white font-semibold">{doc.title || doc.filename}</div>
-                                                    <div className="text-[10px] text-dark-400">
-                                                        {doc.status}
-                                                        {isRateLimited && (
-                                                            <span className="ml-2 text-[9px] px-2 py-0.5 rounded-full bg-primary-500/20 text-primary-200 border border-primary-500/30">
-                                                                Paused (rate limited)
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                                <div className={`w-3 h-3 rounded-full ${graphForm.document_ids.includes(doc.id) ? 'bg-white' : 'bg-dark-700'}`} />
-                                            </button>
-                                        );
-                                    })}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end gap-3 mt-8">
-                                <button onClick={() => setShowGraphModal(false)} className="px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest text-dark-400 hover:text-white">
-                                    Cancel
-                                </button>
-                                <button onClick={handleSaveGraph} className="px-5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-black uppercase tracking-widest text-white border border-white/10">
-                                    Save Graph
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Build Modal */}
-            <AnimatePresence>
-                {showBuildModal && (
-                    <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-dark-950/90 backdrop-blur-3xl"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
-                            className="w-full max-w-xl glass-morphism p-10 rounded-[3rem] relative border border-white/10 shadow-2xl"
-                        >
-                            <button onClick={() => setShowBuildModal(false)} className="absolute top-8 right-8 text-dark-400 hover:text-white transition-colors">
-                                <X className="w-6 h-6" />
-                            </button>
-                            <h3 className="text-2xl font-black text-white mb-6 tracking-tighter">Build Mode</h3>
-                            <div className="space-y-4">
-                                <label className="flex items-center gap-3 p-4 rounded-2xl border border-white/5 bg-dark-900/50">
-                                    <input
-                                        type="radio"
-                                        name="buildMode"
-                                        value="existing"
-                                        checked={buildMode === 'existing'}
-                                        onChange={() => setBuildMode('existing')}
-                                    />
-                                    <div>
-                                        <div className="text-sm font-bold text-white">Use Existing</div>
-                                        <div className="text-[10px] text-dark-400">Build from existing document graphs</div>
-                                    </div>
-                                </label>
-                                <label className="flex items-center gap-3 p-4 rounded-2xl border border-white/5 bg-dark-900/50">
-                                    <input
-                                        type="radio"
-                                        name="buildMode"
-                                        value="rebuild"
-                                        checked={buildMode === 'rebuild'}
-                                        onChange={() => setBuildMode('rebuild')}
-                                    />
-                                    <div>
-                                        <div className="text-sm font-bold text-white">Rebuild</div>
-                                        <div className="text-[10px] text-dark-400">Re-run extraction with LLM</div>
-                                    </div>
-                                </label>
-                            </div>
-                            <div className="mt-6">
-                                <p className="text-xs font-bold uppercase tracking-widest text-dark-500 mb-3">Source Text</p>
-                                <div className="flex flex-wrap gap-3">
-                                    {[
-                                        { value: 'filtered', label: 'Filtered Core' },
-                                        { value: 'raw', label: 'Raw Full Text' }
-                                    ].map((option) => (
-                                        <button
-                                            key={option.value}
-                                            onClick={() => setBuildSourceMode(option.value)}
-                                            className={`px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest border transition-all ${buildSourceMode === option.value ? 'bg-white/10 text-white border-white/30' : 'bg-dark-900/40 text-dark-400 border-white/5 hover:border-white/10'}`}
-                                        >
-                                            {option.label}
-                                        </button>
-                                    ))}
-                                </div>
-                                <p className="text-[10px] text-dark-500 mt-3">
-                                    Filtered mode removes boilerplate and repeats to focus on key concepts.
-                                </p>
-                            </div>
-                            {buildMode === 'rebuild' && (
-                                <div className="mt-6">
-                                    <p className="text-xs font-bold uppercase tracking-widest text-dark-500 mb-3">Extraction Limits</p>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <label className="flex flex-col gap-2 text-[10px] uppercase tracking-widest text-dark-500 font-bold">
-                                            Max chars / window
-                                            <input
-                                                type="number"
-                                                min="1000"
-                                                placeholder="50000"
-                                                value={buildExtractionMaxChars}
-                                                onChange={(e) => setBuildExtractionMaxChars(e.target.value)}
-                                                className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white text-sm focus:outline-none"
-                                            />
-                                        </label>
-                                        <label className="flex flex-col gap-2 text-[10px] uppercase tracking-widest text-dark-500 font-bold">
-                                            Chunk size
-                                            <input
-                                                type="number"
-                                                min="250"
-                                                placeholder="1000"
-                                                value={buildChunkSize}
-                                                onChange={(e) => setBuildChunkSize(e.target.value)}
-                                                className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white text-sm focus:outline-none"
-                                            />
-                                        </label>
-                                    </div>
-                                    <p className="text-[10px] text-dark-500 mt-3">
-                                        Smaller windows reduce token usage and avoid rate limits. Larger windows capture more context.
-                                    </p>
-                                </div>
-                            )}
-                            <InlineErrorBanner message={buildError} className="mt-4" />
-                            {isGraphLoading && (
-                                <div className="mt-5">
-                                    <div className="flex items-center justify-between text-[10px] uppercase tracking-widest text-dark-500 font-bold mb-2">
-                                        <span>Building Graph</span>
-                                        <span className="text-white/80">
-                                            {selectedGraph?.build_progress ? `${Math.round(selectedGraph.build_progress)}%` : 'in progress'}
-                                        </span>
-                                    </div>
-                                    <div className="h-2 rounded-full bg-dark-900/60 border border-white/5 overflow-hidden">
-                                        <div
-                                            className="h-full bg-gradient-to-r from-white/40 via-white/70 to-white/40 animate-pulse"
-                                            style={{ width: `${Math.max(5, Math.min(100, selectedGraph?.build_progress || 10))}%` }}
-                                        />
-                                    </div>
-                                    <p className="text-[10px] text-dark-500 mt-2">
-                                        {selectedGraph?.build_stage
-                                            ? `Stage: ${selectedGraph.build_stage.replaceAll('_', ' ')}`
-                                            : 'LLM extraction is running. This can take a few minutes for large documents.'}
-                                    </p>
-                                </div>
-                            )}
-                            <div className="flex justify-end gap-3 mt-8">
-                                <button onClick={() => setShowBuildModal(false)} className="px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-widest text-dark-400 hover:text-white">
-                                    Cancel
-                                </button>
-                                <button onClick={handleBuildGraph} disabled={isGraphLoading} className="px-5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-black uppercase tracking-widest text-white border border-white/10">
-                                    {isGraphLoading ? 'Building...' : 'Build'}
-                                </button>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Connections Modal */}
-            <AnimatePresence>
-                {showConnections && (
-                    <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-dark-950/90 backdrop-blur-3xl"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
-                            className="w-full max-w-4xl glass-morphism p-10 rounded-[3rem] relative border border-white/10 shadow-2xl"
-                        >
-                            <button onClick={() => setShowConnections(false)} className="absolute top-8 right-8 text-dark-400 hover:text-white transition-colors">
-                                <X className="w-6 h-6" />
-                            </button>
-                            <h3 className="text-2xl font-black text-white mb-6 tracking-tighter">Cross-Graph Connections</h3>
-
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <div className="space-y-4">
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Target Graph</label>
-                                    <select
-                                        className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none"
-                                        value={targetGraphId}
-                                        onChange={(e) => setTargetGraphId(e.target.value)}
-                                    >
-                                        <option value="" disabled className="text-dark-500">Select target graph</option>
-                                        {graphs.filter(g => g.id !== selectedGraphId).map((graph) => (
-                                            <option key={graph.id} value={graph.id} className="bg-dark-900 text-white">
-                                                {graph.name}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    {graphs.filter(g => g.id !== selectedGraphId).length === 0 && (
-                                        <div className="text-[10px] text-dark-500">Create another graph to connect.</div>
-                                    )}
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Context</label>
-                                    <textarea
-                                        rows={4}
-                                        className="w-full px-4 py-3 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none"
-                                        value={connectionContext}
-                                        onChange={(e) => setConnectionContext(e.target.value)}
-                                        placeholder="Describe the context for linking these graphs"
-                                    />
+                            <motion.div
+                                initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
+                                className="max-w-xl w-full glass-morphism p-10 rounded-[3rem] relative border border-white/10 shadow-2xl overflow-hidden"
+                            >
+                                <div className="absolute top-0 right-0 p-8">
                                     <button
-                                        onClick={handleSuggestConnections}
-                                        className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-black uppercase tracking-widest text-white border border-white/10"
-                                        disabled={!targetGraphId || !connectionContext.trim() || isSuggesting}
+                                        onClick={() => {
+                                            setShowGuide(false);
+                                            setGuideDismissed(true);
+                                            if (typeof window !== 'undefined') {
+                                                localStorage.setItem('kgGuideDismissed', '1');
+                                            }
+                                        }}
+                                        className="text-dark-400 hover:text-white transition-colors"
                                     >
-                                        {isSuggesting ? 'Analyzing...' : 'Suggest Connections'}
+                                        <X className="w-6 h-6" />
                                     </button>
                                 </div>
 
-                                <div>
-                                    <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Suggestions</label>
-                                    <div className="mt-3 max-h-72 overflow-y-auto custom-scrollbar space-y-2 pr-2">
-                                        {connectionSuggestions.length === 0 && (
-                                            <div className="text-xs text-dark-500 py-4">No suggestions yet.</div>
-                                        )}
-                                        {connectionSuggestions.map((conn, idx) => (
-                                            <div key={`${conn.from_scoped_id}-${conn.to_scoped_id}-${idx}`} className="p-3 rounded-2xl border border-white/5 bg-dark-900/50 flex items-start gap-3">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedConnections.has(idx)}
-                                                    onChange={() => {
-                                                        const next = new Set(selectedConnections);
-                                                        if (next.has(idx)) next.delete(idx);
-                                                        else next.add(idx);
-                                                        setSelectedConnections(next);
-                                                    }}
-                                                />
-                                                <div>
-                                                    <div className="text-xs text-white font-semibold">
-                                                        {conn.from_scoped_id} → {conn.to_scoped_id}
-                                                    </div>
-                                                    <div className="text-[10px] text-dark-400">{conn.rationale || 'Suggested link'}</div>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    {connectionSuggestions.length > 0 && (
-                                        <div className="flex justify-end mt-4">
-                                            <button
-                                                onClick={handleSaveConnections}
-                                                className="px-5 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-xs font-black uppercase tracking-widest text-white border border-white/10"
-                                            >
-                                                Save Connections
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                                <h3 className="text-3xl font-black text-white mb-8 tracking-tighter">Tree Navigation</h3>
 
-            {/* Premium Guide Modal */}
-            <AnimatePresence>
-                {showGuide && (
-                    <motion.div
-                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex items-center justify-center p-8 bg-dark-950/90 backdrop-blur-3xl"
-                    >
-                        <motion.div
-                            initial={{ scale: 0.95, y: 20 }} animate={{ scale: 1, y: 0 }}
-                            className="max-w-xl w-full glass-morphism p-10 rounded-[3rem] relative border border-white/10 shadow-2xl overflow-hidden"
-                        >
-                            <div className="absolute top-0 right-0 p-8">
+                                <div className="space-y-8">
+                                    <div className="flex gap-6 items-start">
+                                        <div className="w-12 h-12 rounded-3xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
+                                            <Sparkles className="w-6 h-6 text-white/80" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-white font-black text-xs uppercase tracking-widest mb-2">The Frontier</h4>
+                                            <p className="text-xs text-dark-400 leading-relaxed">These are concepts you have unlocked. They are the next step in your cognitive evolution.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-6 items-start">
+                                        <div className="w-12 h-12 rounded-3xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
+                                            <CheckCircle2 className="w-6 h-6 text-white/80" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-white font-black text-xs uppercase tracking-widest mb-2">Stability</h4>
+                                            <p className="text-xs text-dark-400 leading-relaxed">Concepts you have already mastered. They form your intellectual core.</p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-6 items-start">
+                                        <div className="w-12 h-12 rounded-3xl bg-slate-700/20 flex items-center justify-center shrink-0 border border-slate-700/30">
+                                            <Lock className="w-6 h-6 text-slate-500" />
+                                        </div>
+                                        <div>
+                                            <h4 className="text-white font-black text-xs uppercase tracking-widest mb-2">Occlusion (Slate)</h4>
+                                            <p className="text-xs text-dark-400 leading-relaxed">Advanced domains that require masteries of preceding neural nodes.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
                                 <button
                                     onClick={() => {
                                         setShowGuide(false);
@@ -1654,60 +1703,14 @@ const KnowledgeGraph = () => {
                                             localStorage.setItem('kgGuideDismissed', '1');
                                         }
                                     }}
-                                    className="text-dark-400 hover:text-white transition-colors"
+                                    className="w-full mt-12 py-4 font-black text-xs uppercase tracking-[0.3em] rounded-3xl bg-white/10 hover:bg-white/20 text-white border border-white/10"
                                 >
-                                    <X className="w-6 h-6" />
+                                    Proceed to Nexus
                                 </button>
-                            </div>
-
-                            <h3 className="text-3xl font-black text-white mb-8 tracking-tighter">Tree Navigation</h3>
-
-                            <div className="space-y-8">
-                                <div className="flex gap-6 items-start">
-                                    <div className="w-12 h-12 rounded-3xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
-                                        <Sparkles className="w-6 h-6 text-white/80" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-white font-black text-xs uppercase tracking-widest mb-2">The Frontier</h4>
-                                        <p className="text-xs text-dark-400 leading-relaxed">These are concepts you have unlocked. They are the next step in your cognitive evolution.</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-6 items-start">
-                                    <div className="w-12 h-12 rounded-3xl bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
-                                        <CheckCircle2 className="w-6 h-6 text-white/80" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-white font-black text-xs uppercase tracking-widest mb-2">Stability</h4>
-                                        <p className="text-xs text-dark-400 leading-relaxed">Concepts you have already mastered. They form your intellectual core.</p>
-                                    </div>
-                                </div>
-                                <div className="flex gap-6 items-start">
-                                    <div className="w-12 h-12 rounded-3xl bg-slate-700/20 flex items-center justify-center shrink-0 border border-slate-700/30">
-                                        <Lock className="w-6 h-6 text-slate-500" />
-                                    </div>
-                                    <div>
-                                        <h4 className="text-white font-black text-xs uppercase tracking-widest mb-2">Occlusion (Slate)</h4>
-                                        <p className="text-xs text-dark-400 leading-relaxed">Advanced domains that require masteries of preceding neural nodes.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <button
-                                onClick={() => {
-                                    setShowGuide(false);
-                                    setGuideDismissed(true);
-                                    if (typeof window !== 'undefined') {
-                                        localStorage.setItem('kgGuideDismissed', '1');
-                                    }
-                                }}
-                                className="w-full mt-12 py-4 font-black text-xs uppercase tracking-[0.3em] rounded-3xl bg-white/10 hover:bg-white/20 text-white border border-white/10"
-                            >
-                                Proceed to Nexus
-                            </button>
+                            </motion.div>
                         </motion.div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );

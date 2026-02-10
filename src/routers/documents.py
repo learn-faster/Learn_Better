@@ -22,6 +22,7 @@ from pathlib import Path
 from datetime import datetime
 
 from src.database.orm import get_db
+from src.dependencies import get_request_user_id
 from src.models.orm import Document, UserSettings, DocumentQuizItem as DocumentQuizItemORM, DocumentQuizSession, DocumentQuizAttempt, DocumentStudySettings, DocumentSection, IngestionJob, KnowledgeGraphDocument
 from src.models.enums import FileType
 from src.models.schemas import DocumentResponse, DocumentCreate, TimeTrackingRequest, DocumentLinkCreate, DocumentQuizGenerateRequest, DocumentQuizSessionCreate, DocumentQuizSessionResponse, DocumentQuizGradeRequest, DocumentQuizGradeResponse, DocumentStudySettingsPayload, DocumentStudySettingsResponse, DocumentQuizStatsResponse, DocumentQuizItem as DocumentQuizItemResponse, LLMConfig, DocumentSectionResponse, DocumentSectionUpdate, DocumentQualityResponse, IngestionJobResponse
@@ -337,16 +338,31 @@ async def process_extraction_background(
     Background task for Phase 1: Text Extraction & Analysis.
     Fast, enables immediate reading.
     """
-    db = db_session_factory()
     heartbeat_event = asyncio.Event()
     heartbeat_task = None
+    
+    def _get_db():
+        return db_session_factory()
+
     try:
         logger.debug(f"Extraction started for {doc_id}")
-        document = db.query(Document).filter(Document.id == doc_id).first()
-        if not document:
-            return
-        job = _get_or_create_job(db, doc_id)
-        _update_job(db, job, status="running", phase="extracting", progress=10, message="Extracting text")
+        
+        # 0. Initial Status
+        db = _get_db()
+        try:
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if not document:
+                return
+            job = _get_or_create_job(db, doc_id)
+            _update_job(db, job, status="running", phase="extracting", progress=10, message="Extracting text")
+            
+            document.status = "processing"
+            document.ingestion_step = "extracting"
+            document.ingestion_progress = 10
+            db.commit()
+        finally:
+            db.close()
+
         heartbeat_task = asyncio.create_task(
             _extraction_heartbeat(doc_id, heartbeat_event, db_session_factory)
         )
@@ -357,6 +373,7 @@ async def process_extraction_background(
         db.commit()
 
         def _update_doc_progress(step: str, progress: float):
+            db = _get_db()
             try:
                 db.query(Document).filter(Document.id == doc_id).update({
                     "ingestion_step": step,
@@ -366,6 +383,17 @@ async def process_extraction_background(
             except Exception as e:
                 logger.warning(f"Failed to update document progress: {e}")
                 db.rollback()
+            finally:
+                db.close()
+
+        def _get_job_and_update(status=None, phase=None, progress=None, message=None, completed=False):
+            db = _get_db()
+            try:
+                job = db.query(IngestionJob).filter(IngestionJob.document_id == doc_id).order_by(IngestionJob.created_at.desc()).first()
+                if job:
+                    _update_job(db, job, status=status, phase=phase, progress=progress, message=message, completed=completed)
+            finally:
+                db.close()
 
         # 1. Extract Text
         extracted_text = ""
@@ -376,16 +404,23 @@ async def process_extraction_background(
                     extracted_text = f"[OCR failed for {os.path.basename(file_path)}. Image may be unreadable.]"
             elif os.path.exists(file_path):
                 extracted_text, _ = await run_in_threadpool(document_processor.convert_to_markdown, file_path)
-            _update_job(db, job, phase="extracting", progress=25, message="Text extracted")
+            
+            _get_job_and_update(phase="extracting", progress=25, message="Text extracted")
             _update_doc_progress("extracting", 25)
         except Exception as e:
             logger.error(f"Extraction failed: {e}")
-            document = db.query(Document).filter(Document.id == doc_id).first()
-            if document:
-                document.status = "failed"
-                document.extracted_text = f"Extraction Failed: {str(e)}"
-                db.commit()
-            _update_job(db, job, status="failed", phase="extracting", progress=0, message=str(e), completed=True)
+            db = _get_db()
+            try:
+                document = db.query(Document).filter(Document.id == doc_id).first()
+                if document:
+                    document.status = "failed"
+                    document.extracted_text = f"Extraction Failed: {str(e)}"
+                    db.commit()
+                job = db.query(IngestionJob).filter(IngestionJob.document_id == doc_id).order_by(IngestionJob.created_at.desc()).first()
+                if job:
+                    _update_job(db, job, status="failed", phase="extracting", progress=0, message=str(e), completed=True)
+            finally:
+                db.close()
             return
 
         if file_type == FileType.PDF and os.path.exists(file_path):
@@ -395,12 +430,12 @@ async def process_extraction_background(
         else:
             analysis = _basic_text_analysis(extracted_text, scanned_prob=0.0, page_count=1)
 
-        # 2. OCR fallback for scanned or empty extraction
+        # 2. OCR fallback for scanned or empty extraction (LONG RUNNING)
         ocr_status = "not_required"
         ocr_provider = None
         if file_type == FileType.PDF and (analysis.get("scanned_prob", 0) > 0.7 or "Text extraction failed" in (extracted_text or "")):
             ocr_status = "pending"
-            _update_job(db, job, phase="ocr", progress=25, message="Running OCR")
+            _get_job_and_update(phase="ocr", progress=25, message="Running OCR")
             _update_doc_progress("ocr", 25)
             ocr_text = await ocr_service.ocr_pdf(file_path, mode=settings.ocr_mode)
             if ocr_text and ocr_text.strip():
@@ -422,82 +457,87 @@ async def process_extraction_background(
             ocr_status = "completed" if extracted_text and extracted_text.strip() else "failed"
             ocr_provider = settings.ocr_mode if ocr_status == "completed" else None
 
-        # 3. Filter main content
-        _update_job(db, job, phase="filtering", progress=60, message="Filtering main content")
+        # 3. Filter main content (LONG RUNNING)
+        _get_job_and_update(phase="filtering", progress=60, message="Filtering main content")
         _update_doc_progress("filtering", 60)
         filter_result = await filter_document_content(extracted_text, page_count=analysis.get("page_count", 1))
 
-        # 4. Update DB
-        document = db.query(Document).filter(Document.id == doc_id).first()
-        if document:
-            existing_profile = document.content_profile or {}
-            auto_ingest = bool(existing_profile.get("auto_ingest"))
-            document.raw_extracted_text = extracted_text if extracted_text else ""
-            document.filtered_extracted_text = filter_result.filtered_text
-            document.extracted_text = filter_result.filtered_text or document.raw_extracted_text
-            document.page_count = analysis.get("page_count", 0)
+        # 4. Update DB (Finalize)
+        db = _get_db()
+        try:
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if document:
+                existing_profile = document.content_profile or {}
+                auto_ingest = bool(existing_profile.get("auto_ingest"))
+                document.raw_extracted_text = extracted_text if extracted_text else ""
+                document.filtered_extracted_text = filter_result.filtered_text
+                document.extracted_text = filter_result.filtered_text or document.raw_extracted_text
+                document.page_count = analysis.get("page_count", 0)
 
-            document.reading_time_min = analysis.get("reading_time_min")
-            document.reading_time_max = analysis.get("reading_time_max")
-            document.reading_time_median = analysis.get("reading_time_median")
-            document.word_count = analysis.get("word_count")
-            document.difficulty_score = analysis.get("difficulty_score")
-            document.language = analysis.get("language")
-            document.scanned_prob = analysis.get("scanned_prob")
-            document.ocr_status = ocr_status
-            document.ocr_provider = ocr_provider
-            document.content_profile = {
-                **(filter_result.stats or {}),
-                **({"auto_ingest": True} if auto_ingest else {})
-            }
+                document.reading_time_min = analysis.get("reading_time_min")
+                document.reading_time_max = analysis.get("reading_time_max")
+                document.reading_time_median = analysis.get("reading_time_median")
+                document.word_count = analysis.get("word_count")
+                document.difficulty_score = analysis.get("difficulty_score")
+                document.language = analysis.get("language")
+                document.scanned_prob = analysis.get("scanned_prob")
+                document.ocr_status = ocr_status
+                document.ocr_provider = ocr_provider
+                document.content_profile = {
+                    **(filter_result.stats or {}),
+                    **({"auto_ingest": True} if auto_ingest else {})
+                }
 
-            # Mark as extracted (Ready for reading, but graph pending)
-            document.status = "extracted"
-            document.ingestion_step = "ready_for_synthesis"
-            document.ingestion_progress = 100
-            db.commit()
+                document.status = "extracted"
+                document.ingestion_step = "ready_for_synthesis"
+                document.ingestion_progress = 100
+                db.commit()
 
-            # Replace sections
-            db.query(DocumentSection).filter(DocumentSection.document_id == doc_id).delete()
-            for section in filter_result.sections:
-                db.add(DocumentSection(
-                    id=str(uuid.uuid4()),
-                    document_id=doc_id,
-                    section_index=section.get("section_index", 0),
-                    title=section.get("title"),
-                    content=section.get("content", ""),
-                    excerpt=section.get("excerpt"),
-                    relevance_score=section.get("relevance_score", 0.0),
-                    included=section.get("included", True),
-                    page_start=section.get("page_start"),
-                    page_end=section.get("page_end")
-                ))
-            db.commit()
+                db.query(DocumentSection).filter(DocumentSection.document_id == doc_id).delete()
+                for section in filter_result.sections:
+                    db.add(DocumentSection(
+                        id=str(uuid.uuid4()),
+                        document_id=doc_id,
+                        section_index=section.get("section_index", 0),
+                        title=section.get("title"),
+                        content=section.get("content", ""),
+                        excerpt=section.get("excerpt"),
+                        relevance_score=section.get("relevance_score", 0.0),
+                        included=section.get("included", True),
+                        page_start=section.get("page_start"),
+                        page_end=section.get("page_end")
+                    ))
+                db.commit()
 
-            _update_job(db, job, status="completed", phase="ready", progress=100, message="Extraction complete", partial_ready=True, completed=True)
+                job = db.query(IngestionJob).filter(IngestionJob.document_id == doc_id).order_by(IngestionJob.created_at.desc()).first()
+                if job:
+                    _update_job(db, job, status="completed", phase="ready", progress=100, message="Extraction complete", partial_ready=True, completed=True)
 
-            logger.debug(f"Extraction complete for {doc_id}")
+                logger.debug(f"Extraction complete for {doc_id}")
 
-            # Sync to Open Notebook
-            try:
-                await sync_document_to_notebook(
-                    doc_id,
-                    document.title,
-                    document.extracted_text or "",
-                    file_path,
-                    str(file_type) if file_type else "text"
-                )
-            except Exception as e:
-                logger.error(f"Sync to Open Notebook failed: {e}")
-
-            if auto_ingest:
+                # Sync to Open Notebook (Fast)
                 try:
-                    await _auto_enqueue_ingestion(doc_id, document.file_path)
+                    await sync_document_to_notebook(
+                        doc_id,
+                        document.title,
+                        document.extracted_text or "",
+                        file_path,
+                        str(file_type) if file_type else "text"
+                    )
                 except Exception as e:
-                    logger.error(f"Auto-ingest failed for document {doc_id}: {e}")
+                    logger.error(f"Sync to Open Notebook failed: {e}")
+
+                if auto_ingest:
+                    try:
+                        await _auto_enqueue_ingestion(doc_id, document.file_path)
+                    except Exception as e:
+                        logger.error(f"Auto-ingest failed for document {doc_id}: {e}")
+        finally:
+            db.close()
 
     except Exception as e:
         logger.exception(f"Critical Failure in Extraction: {e}")
+        db = _get_db()
         try:
              document = db.query(Document).filter(Document.id == doc_id).first()
              if document:
@@ -505,6 +545,8 @@ async def process_extraction_background(
                  db.commit()
         except:
             pass
+        finally:
+            db.close()
     finally:
         heartbeat_event.set()
         if heartbeat_task:
@@ -512,7 +554,6 @@ async def process_extraction_background(
                 await heartbeat_task
             except Exception:
                 pass
-        db.close()
 
 async def _auto_enqueue_ingestion(
     doc_id: int,
@@ -574,56 +615,66 @@ async def process_ingestion_background(
 ):
     """
     Background task for Phase 2: Knowledge Graph Ingestion.
-    Slow, builds the graph incrementally.
+    Refactored to use short-lived sessions.
     """
-    db = db_session_factory()
+    def _get_db():
+        return db_session_factory()
+
+    job_id = None
     try:
         logger.debug(f"Ingestion started for {doc_id}")
         
-        # 1. Load Document State
-        document = db.query(Document).filter(Document.id == doc_id).first()
-        if not document or not (document.filtered_extracted_text or document.extracted_text or document.raw_extracted_text):
-            logger.error(f"Cannot ingest document {doc_id} - text missing.")
-            if document:
-                document.status = "failed"
-                document.ingestion_step = "text_missing"
-                document.ingestion_progress = 0
-                db.commit()
-            job = _create_job(db, doc_id)
-            _update_job(db, job, status="failed", phase="ingesting", progress=0, message="Text missing", completed=True)
-            return
+        # 1. Load Document State and Resolve Config
+        db = _get_db()
+        try:
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if not document or not (document.filtered_extracted_text or document.extracted_text or document.raw_extracted_text):
+                logger.error(f"Cannot ingest document {doc_id} - text missing.")
+                if document:
+                    document.status = "failed"
+                    document.ingestion_step = "text_missing"
+                    document.ingestion_progress = 0
+                    db.commit()
+                job = _create_job(db, doc_id)
+                _update_job(db, job, status="failed", phase="ingesting", progress=0, message="Text missing", completed=True)
+                return
 
-        profile = document.content_profile or {}
-        resume_enabled = profile.get("graph_extraction_resume", True)
-        checkpoint = profile.get("graph_extraction_checkpoint") or {}
-        resume_from_window = checkpoint.get("next_window", 0) if resume_enabled else 0
+            profile = document.content_profile or {}
+            resume_enabled = profile.get("graph_extraction_resume", True)
+            checkpoint = profile.get("graph_extraction_checkpoint") or {}
+            resume_from_window = checkpoint.get("next_window", 0) if resume_enabled else 0
 
-        document.status = "ingesting" # New status for UI
-        document.ingestion_step = "initializing"
-        document.ingestion_progress = 0
-        db.commit()
-        job = _get_or_create_job(db, doc_id)
-        job_id = job.id
-        _update_job(db, job, status="running", phase="ingesting", progress=5, message="Building knowledge graph")
+            document.status = "ingesting" 
+            document.ingestion_step = "initializing"
+            document.ingestion_progress = 0
+            db.commit()
+            
+            job = _get_or_create_job(db, doc_id)
+            job_id = job.id
+            _update_job(db, job, status="running", phase="ingesting", progress=5, message="Building knowledge graph")
 
-        # Resolve LLM config for this user
-        from src.services.llm_config_resolver import resolve_llm_config
-        llm_config = resolve_llm_config(db, user_id)
-        logger.debug(f"Using LLM config for ingestion: provider={llm_config.provider}, model={llm_config.model}")
+            # Resolve LLM config
+            from src.services.llm_config_resolver import resolve_llm_config
+            llm_config = resolve_llm_config(db, user_id)
+            
+            source_text = document.filtered_extracted_text or document.extracted_text or document.raw_extracted_text or ""
+        finally:
+            db.close()
 
-        # Callback for real-time updates
+        # 2. Chunk Content (Fast)
+        chunks = document_processor.chunk_content(source_text)
+        
+        # 3. Callbacks
         last_progress = {"value": -1, "step": None}
 
         def on_progress(step: str, progress: int):
-            # Avoid holding the long-lived session during incremental updates.
-            # Use a short-lived session for progress writes to prevent stale state.
             try:
                 if step != last_progress["step"] or progress - last_progress["value"] >= 5:
                     last_progress["step"] = step
                     last_progress["value"] = progress
                 else:
                     return
-                progress_db = db_session_factory()
+                progress_db = _get_db()
                 try:
                     progress_db.query(Document).filter(Document.id == doc_id).update({
                         "ingestion_step": step,
@@ -643,14 +694,9 @@ async def process_ingestion_background(
             except Exception as e:
                 logger.warning(f"Progress update failed: {e}")
 
-        # 2. Chunk Content
-        source_text = document.filtered_extracted_text or document.extracted_text or document.raw_extracted_text or ""
-        chunks = document_processor.chunk_content(source_text)
-        
-        # 3. Run Ingestion (With Callbacks)
         def on_window_complete(window_index: int, total_windows: int):
             try:
-                progress_db = db_session_factory()
+                progress_db = _get_db()
                 try:
                     doc = progress_db.query(Document).filter(Document.id == doc_id).first()
                     if not doc:
@@ -668,6 +714,7 @@ async def process_ingestion_background(
             except Exception as e:
                 logger.warning(f"Failed to persist graph extraction checkpoint: {e}")
 
+        # 4. Run Ingestion (LONG RUNNING)
         await ingestion_engine.process_document_scoped_from_text(
             extracted_text=source_text,
             document_id=doc_id,
@@ -678,48 +725,61 @@ async def process_ingestion_background(
             on_window_complete=on_window_complete
         )
 
-        # 4. Finalize
-        document = db.query(Document).filter(Document.id == doc_id).first()
-        if document:
-            profile = document.content_profile or {}
-            profile.pop("graph_extraction_checkpoint", None)
-            profile.pop("graph_extraction_resume", None)
-            document.content_profile = profile
-            document.status = "completed"
-            document.ingestion_step = "complete"
-            document.ingestion_progress = 100
-            document_store.update_status(doc_id, "completed")
-            db.commit()
-            _update_job(db, job, status="completed", phase="complete", progress=100, message="Graph build complete", completed=True)
-            logger.debug(f"Ingestion complete for {doc_id}")
+        # 5. Finalize
+        db = _get_db()
+        try:
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if document:
+                profile = document.content_profile or {}
+                profile.pop("graph_extraction_checkpoint", None)
+                profile.pop("graph_extraction_resume", None)
+                document.content_profile = profile
+                document.status = "completed"
+                document.ingestion_step = "complete"
+                document.ingestion_progress = 100
+                document_store.update_status(doc_id, "completed")
+                db.commit()
+                
+                job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+                if job:
+                    _update_job(db, job, status="completed", phase="complete", progress=100, message="Graph build complete", completed=True)
+                logger.debug(f"Ingestion complete for {doc_id}")
+        finally:
+            db.close()
 
     except RateLimitException as e:
         logger.warning(f"Ingestion rate limited for doc {doc_id}: {e}")
-        document = db.query(Document).filter(Document.id == doc_id).first()
-        if document:
-            document.status = "extracted"
-            document.ingestion_step = "rate_limited"
-            db.commit()
+        db = _get_db()
         try:
-            job = _get_or_create_job(db, doc_id)
-            _update_job(db, job, status="paused", phase="rate_limited", progress=0, message=str(e), completed=False)
-        except Exception:
-            pass
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if document:
+                document.status = "extracted"
+                document.ingestion_step = "rate_limited"
+                db.commit()
+            if job_id:
+                job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+                if job:
+                    _update_job(db, job, status="paused", phase="rate_limited", progress=0, message=str(e), completed=False)
+        finally:
+            db.close()
 
     except Exception as e:
         logger.exception(f"Ingestion failed: {e}")
-        document = db.query(Document).filter(Document.id == doc_id).first()
-        if document:
-            document.status = "failed" # Or back to 'extracted'?
-            document.ingestion_step = f"Failed: {str(e)}"
-            db.commit()
+        db = _get_db()
         try:
-            job = _get_or_create_job(db, doc_id)
-            _update_job(db, job, status="failed", phase="ingesting", progress=0, message=str(e), completed=True)
-        except Exception:
-            pass
+            document = db.query(Document).filter(Document.id == doc_id).first()
+            if document:
+                document.status = "failed" 
+                document.ingestion_step = f"Failed: {str(e)}"
+                db.commit()
+            if job_id:
+                job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
+                if job:
+                    _update_job(db, job, status="failed", phase="ingesting", progress=0, message=str(e), completed=True)
+        finally:
+            db.close()
     finally:
-        db.close()
+        pass
 
 
 
@@ -1255,7 +1315,8 @@ async def synthesize_document(
     resume: bool = True,
     db: Session = Depends(get_db),
     ingestion_engine: IngestionEngine = Depends(get_ingestion_engine),
-    document_store: DocumentStore = Depends(get_document_store)
+    document_store: DocumentStore = Depends(get_document_store),
+    user_id: str = Depends(get_request_user_id)
 ):
     """
     Triggers the Knowledge Graph ingestion (Phase 2) for a document.
@@ -1280,7 +1341,7 @@ async def synthesize_document(
     # Queue ingestion
     job = _create_job(db, document_id)
     _update_job(db, job, status="pending", phase="queued", progress=0, message="Queued for ingestion")
-    job_id = enqueue_ingestion(document_id, document.file_path, user_id="default_user")
+    job_id = enqueue_ingestion(document_id, document.file_path, user_id=user_id)
     if not job_id:
         _mark_local_start(
             db=db,
@@ -1298,7 +1359,8 @@ async def synthesize_document(
             file_path=document.file_path,
             document_processor=document_processor,
             ingestion_engine=ingestion_engine,
-            document_store=document_store
+            document_store=document_store,
+            user_id=user_id
         )
     
     if job_id:

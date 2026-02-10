@@ -8,6 +8,16 @@ LearnFast Core is an AI-native learning engine that turns documents, links, and 
 - Analytics and daily planning that tie progress to goals.
 - Open Notebook module with SurrealDB for local-first note capture.
 
+**Exceptional capabilities**
+- **Agent monitoring via screenshots**: capture and analyze URLs as proof-of-work or progress checks.
+- **Quiz generation + grading**: per-document quiz items, sessions, grading, and stats endpoints.
+- **Voice workflows**: podcast generation with text-to-speech (TTS) and speech-to-text (STT) support in Open Notebook.
+- **Multi-document graphs**: cross-document concept linking and graph statistics.
+- **Queue-aware ingestion**: Redis-backed workers with local fallback and status reporting.
+- **Observability**: Opik tracing hooks for API calls and tool usage.
+- **Fitbit integration**: optional biometric sync for scheduling and focus planning.
+- **Automated nudges**: daily quiz reminders and weekly digests.
+
 **Architecture at a glance**
 | Layer | Component | Tech | Purpose |
 | --- | --- | --- | --- |
@@ -15,6 +25,8 @@ LearnFast Core is an AI-native learning engine that turns documents, links, and 
 | Memory | Vector Store | PostgreSQL + pgvector | Semantic retrieval |
 | Workflow | Open Notebook | SurrealDB | Notes and sources |
 | Orchestration | Agents | LangGraph | Planning and automation |
+| Observability | Tracing | Opik | Request-level tracing and tool events |
+| Queue | Background Jobs | Redis + RQ | Scalable ingestion and processing |
 
 **Repository layout**
 - `src/` FastAPI backend and core services
@@ -83,6 +95,12 @@ All environment variables live in `.env`. See `.env.example` for defaults.
 - `LLM_PROVIDER`, `LLM_MODEL`
 - `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `EMBEDDING_CONCURRENCY`
 - Optional overrides: `EXTRACTION_MODEL`, `REWRITE_MODEL`, context window limits
+
+**Voice (TTS/STT)**
+- Configure provider/model in Open Notebook speaker profiles and episode profiles
+
+**Screenshots (Agent Tools)**
+- Requires Playwright for screenshot capture
 
 **Email service (Resend)**
 - `RESEND_API_KEY`

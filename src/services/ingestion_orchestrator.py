@@ -18,11 +18,23 @@ async def _run_with_semaphore(semaphore: asyncio.Semaphore, label: str, coro: Aw
             raise
 
 
-def schedule_extraction(coro: Awaitable[None]) -> asyncio.Task:
+def _schedule_with_loop(semaphore: asyncio.Semaphore, label: str, coro: Awaitable[None]):
+    """Run coroutine on an active loop, or fall back to a new loop in worker threads."""
+    try:
+        loop = asyncio.get_running_loop()
+        return loop.create_task(_run_with_semaphore(semaphore, label, coro))
+    except RuntimeError:
+        # No running loop (e.g., Starlette BackgroundTask thread)
+        logger.warning(f"{label} scheduled without running loop; executing in a new event loop.")
+        asyncio.run(_run_with_semaphore(semaphore, label, coro))
+        return None
+
+
+def schedule_extraction(coro: Awaitable[None]):
     """Schedule extraction with local concurrency guard."""
-    return asyncio.create_task(_run_with_semaphore(_local_extraction_semaphore, "Extraction", coro))
+    return _schedule_with_loop(_local_extraction_semaphore, "Extraction", coro)
 
 
-def schedule_ingestion(coro: Awaitable[None]) -> asyncio.Task:
+def schedule_ingestion(coro: Awaitable[None]):
     """Schedule ingestion with local concurrency guard."""
-    return asyncio.create_task(_run_with_semaphore(_local_ingestion_semaphore, "Ingestion", coro))
+    return _schedule_with_loop(_local_ingestion_semaphore, "Ingestion", coro)

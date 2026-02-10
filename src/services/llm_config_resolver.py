@@ -59,6 +59,10 @@ def resolve_llm_config(
                     config_data = config_data[config_type]
                 elif "global" in config_data:
                     config_data = config_data["global"]
+                elif "agent_settings" in config_data and isinstance(config_data.get("agent_settings"), dict):
+                    agent_llm = config_data["agent_settings"].get("llm_config")
+                    if agent_llm:
+                        config_data = agent_llm
                 
                 # If the resulting data is a dict, attempt to use it
                 if isinstance(config_data, dict):

@@ -614,6 +614,8 @@ class KnowledgeGraph(Base):
     error_message = Column(Text, nullable=True)
     build_progress = Column(Float, default=0.0)
     build_stage = Column(String, nullable=True)
+    extraction_max_chars = Column(Integer, nullable=True)
+    chunk_size = Column(Integer, nullable=True)
 
     node_count = Column(Integer, default=0)
     relationship_count = Column(Integer, default=0)

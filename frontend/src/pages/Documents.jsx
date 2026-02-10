@@ -118,6 +118,7 @@ const Documents = () => {
   });
   const [embeddingDimSelection, setEmbeddingDimSelection] = useState('768');
   const [embeddingDimCustom, setEmbeddingDimCustom] = useState('768');
+  const [progressDisplay, setProgressDisplay] = useState({});
   const progressTrackerRef = useRef(new Map());
 
   useEffect(() => {
@@ -204,8 +205,41 @@ const Documents = () => {
   }, [documents]);
 
   useEffect(() => {
+    let interval;
+    const tick = () => {
+      setProgressDisplay((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        documents.forEach((doc) => {
+          const statusKey = doc.status || 'complete';
+          const isProcessing = ['processing', 'pending', 'ingesting', 'uploading'].includes(statusKey);
+          const ingestionProgress = Math.max(0, Math.min(100, Number(doc.ingestion_progress ?? 0)));
+          const readingProgress = Math.max(0, Math.min(100, Math.round((doc.reading_progress || 0) * 100)));
+          const target = isProcessing ? ingestionProgress : readingProgress;
+          const current = prev[doc.id] ?? target;
+          let updated = current;
+          if (isProcessing && current < target) {
+            updated = Math.min(target, current + 1);
+          } else if (!isProcessing) {
+            updated = target;
+          }
+          if (prev[doc.id] === undefined || updated !== current) {
+            next[doc.id] = updated;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    };
+    tick();
+    interval = setInterval(tick, 500);
+    return () => clearInterval(interval);
+  }, [documents]);
+
+  useEffect(() => {
     checkEmbeddingHealth();
     loadLlmStatus();
+    loadEmbeddingSettings();
   }, []);
 
   useEffect(() => {
@@ -286,6 +320,15 @@ const Documents = () => {
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [documents, fetchDocuments, wsConnected]);
+
+  useEffect(() => {
+    const hasProcessingDocs = documents.some(d => ['processing', 'pending', 'ingesting', 'uploading'].includes(d.status));
+    if (!hasProcessingDocs) return;
+    const interval = setInterval(() => {
+      fetchDocuments(true, { minIntervalMs: 5000 });
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [documents, fetchDocuments]);
 
   const loadEmbeddingSettings = async () => {
     setSettingsLoading(true);
@@ -630,6 +673,15 @@ const Documents = () => {
               <div className="mt-2">
                 {embeddingHealthLoading ? 'Checking connection...' : (embeddingHealth?.ok ? 'Connected' : 'Not connected')}
               </div>
+              <div className="mt-2 text-[10px] text-primary-100/80">
+                Provider: {embeddingSettings.embedding_provider || 'Not set'}
+              </div>
+              <div className="text-[10px] text-primary-100/80">
+                Model: {embeddingSettings.embedding_model || 'Not set'}
+              </div>
+              <div className="text-[10px] text-primary-100/80">
+                Dim: {embeddingSettings.embedding_dimensions || 'Not set'}
+              </div>
             </div>
             <div className={`rounded-xl border px-3 py-3 text-xs ${llmConfigured ? 'bg-primary-500/10 text-primary-200 border-primary-500/30' : 'bg-rose-500/10 text-rose-200 border-rose-500/30'}`}>
               <div className="flex items-center justify-between">
@@ -643,8 +695,14 @@ const Documents = () => {
                 </button>
               </div>
               <div className="mt-2">
-                {llmLoading ? 'Checking connection...' : llmConfigured ? `Configured (${llmProviderLabel})` : 'Not configured'}
+                {llmLoading ? 'Checking connection...' : llmConfigured ? `Connected (${llmProviderLabel})` : 'Not connected'}
                 {llmError && <div className="mt-1 text-[10px] text-rose-200/80">{llmError}</div>}
+              </div>
+              <div className="mt-2 text-[10px] text-primary-100/80">
+                Provider: {llmGlobal?.provider || 'Not set'}
+              </div>
+              <div className="text-[10px] text-primary-100/80">
+                Model: {llmGlobal?.model || 'Not set'}
               </div>
             </div>
           </div>
@@ -717,23 +775,24 @@ const Documents = () => {
         ) : (
           <div className={viewMode === 'grid' ? 'grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4' : 'space-y-3'}>
             {filteredDocs.map((doc) => {
-                const statusKey = doc.status || 'complete';
-                const statusClass = STATUS_STYLES[statusKey] || STATUS_STYLES.complete;
-                let iconType = (doc.display_type || doc.file_type || '').toLowerCase();
-                if (!iconType && doc.filename) {
-                  const name = doc.filename.toLowerCase();
-                  if (name.endsWith('.pdf')) iconType = 'pdf';
-                  else if (name.endsWith('.md') || name.endsWith('.markdown')) iconType = 'markdown';
-                  else if (name.endsWith('.txt') || name.endsWith('.text')) iconType = 'text';
-                  else if (name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.gif') || name.endsWith('.webp')) iconType = 'image';
-                  else if (name.endsWith('.mp4') || name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.m4a') || name.endsWith('.mov') || name.endsWith('.avi') || name.endsWith('.webm') || name.endsWith('.mkv')) iconType = 'video';
-                }
-                const title = doc.title || doc.filename || `Document ${doc.id}`;
-                const isProcessing = ['processing', 'pending', 'ingesting', 'uploading'].includes(statusKey);
-                const canIngest = ['extracted', 'completed', 'failed'].includes(statusKey);
-                const ingestionProgress = Math.max(0, Math.min(100, Number(doc.ingestion_progress ?? 0)));
-                const readingProgress = Math.max(0, Math.min(100, Math.round((doc.reading_progress || 0) * 100)));
-                const displayProgress = isProcessing ? ingestionProgress : readingProgress;
+              const statusKey = doc.status || 'complete';
+              const statusClass = STATUS_STYLES[statusKey] || STATUS_STYLES.complete;
+              let iconType = (doc.display_type || doc.file_type || '').toLowerCase();
+              if (!iconType && doc.filename) {
+                const name = doc.filename.toLowerCase();
+                if (name.endsWith('.pdf')) iconType = 'pdf';
+                else if (name.endsWith('.md') || name.endsWith('.markdown')) iconType = 'markdown';
+                else if (name.endsWith('.txt') || name.endsWith('.text')) iconType = 'text';
+                else if (name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.gif') || name.endsWith('.webp')) iconType = 'image';
+                else if (name.endsWith('.mp4') || name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.m4a') || name.endsWith('.mov') || name.endsWith('.avi') || name.endsWith('.webm') || name.endsWith('.mkv')) iconType = 'video';
+              }
+              const title = doc.title || doc.filename || `Document ${doc.id}`;
+              const isProcessing = ['processing', 'pending', 'ingesting', 'uploading'].includes(statusKey);
+              const canIngest = ['extracted', 'completed', 'failed'].includes(statusKey);
+              const ingestionProgress = Math.max(0, Math.min(100, Number(doc.ingestion_progress ?? 0)));
+              const readingProgress = Math.max(0, Math.min(100, Math.round((doc.reading_progress || 0) * 100)));
+              const displayProgress = isProcessing ? ingestionProgress : readingProgress;
+              const smoothProgress = progressDisplay[doc.id] ?? displayProgress;
               const phase = (doc.ingestion_step || '').toLowerCase();
               const jobMessage = doc.ingestion_job_message;
               const jobStatus = doc.ingestion_job_status;
@@ -768,32 +827,33 @@ const Documents = () => {
               const showRetryExtract = ['processing', 'pending', 'ingesting'].includes(statusKey) && !isRateLimited;
               const showRetryIngest = statusKey === 'extracted' && !isRateLimited;
               const showQueueHint = isProcessing && displayProgress === 0 && queueState === 'queued' && queueStatus === 'connected';
-                const normalizeJobTime = (value) => {
-                  if (!value) return null;
-                  if (value instanceof Date) return value;
-                  if (typeof value === 'string') {
-                    const hasTimezone = /[zZ]|[+-]\d{2}:\d{2}$/.test(value);
-                    return new Date(hasTimezone ? value : `${value}Z`);
-                  }
-                  return new Date(value);
-                };
-                const lastUpdate = normalizeJobTime(doc.ingestion_job_updated_at);
-                const lastUpdateMinutes = lastUpdate ? Math.max(0, Math.floor((Date.now() - lastUpdate.getTime()) / 60000)) : null;
-                const progressEntry = progressTrackerRef.current.get(doc.id);
-                const progressAgeMinutes = progressEntry ? Math.max(0, Math.floor((Date.now() - progressEntry.changedAt) / 60000)) : null;
-              const isStalled = !isRateLimited && isProcessing && lastUpdateMinutes !== null && progressAgeMinutes !== null && lastUpdateMinutes >= 5 && progressAgeMinutes >= 5;
-                const prevProgress = progressEntry?.prevProgress ?? null;
-                const prevChangedAt = progressEntry?.prevChangedAt ?? null;
-                let etaMinutes = null;
-                if (isProcessing && prevProgress !== null && prevChangedAt && ingestionProgress > prevProgress) {
-                  const deltaProgress = ingestionProgress - prevProgress;
-                  const deltaMinutes = Math.max(1, (Date.now() - prevChangedAt) / 60000);
-                  const rate = deltaProgress / deltaMinutes;
-                  if (rate > 0 && ingestionProgress > 1 && ingestionProgress < 99) {
-                    etaMinutes = Math.ceil((100 - ingestionProgress) / rate);
-                  }
+              const normalizeJobTime = (value) => {
+                if (!value) return null;
+                if (value instanceof Date) return value;
+                if (typeof value === 'string') {
+                  const hasTimezone = /[zZ]|[+-]\d{2}:\d{2}$/.test(value);
+                  return new Date(hasTimezone ? value : `${value}Z`);
                 }
-                return (
+                return new Date(value);
+              };
+              const lastUpdate = normalizeJobTime(doc.ingestion_job_updated_at);
+              const lastUpdateMinutes = lastUpdate ? Math.max(0, Math.floor((Date.now() - lastUpdate.getTime()) / 60000)) : null;
+              const progressEntry = progressTrackerRef.current.get(doc.id);
+              const progressAgeMinutes = progressEntry ? Math.max(0, Math.floor((Date.now() - progressEntry.changedAt) / 60000)) : null;
+              const progressAgeSeconds = progressEntry ? Math.max(0, Math.floor((Date.now() - progressEntry.changedAt) / 1000)) : null;
+              const isStalled = !isRateLimited && isProcessing && lastUpdateMinutes !== null && progressAgeMinutes !== null && lastUpdateMinutes >= 5 && progressAgeMinutes >= 5;
+              const prevProgress = progressEntry?.prevProgress ?? null;
+              const prevChangedAt = progressEntry?.prevChangedAt ?? null;
+              let etaMinutes = null;
+              if (isProcessing && prevProgress !== null && prevChangedAt && ingestionProgress > prevProgress) {
+                const deltaProgress = ingestionProgress - prevProgress;
+                const deltaMinutes = Math.max(1, (Date.now() - prevChangedAt) / 60000);
+                const rate = deltaProgress / deltaMinutes;
+                if (rate > 0 && ingestionProgress > 1 && ingestionProgress < 99) {
+                  etaMinutes = Math.ceil((100 - ingestionProgress) / rate);
+                }
+              }
+              return (
                 <div
                   key={doc.id}
                   className={`rounded-2xl border border-white/10 bg-dark-900/60 p-4 hover:border-primary-500/30 transition ${viewMode === 'list' ? 'flex items-center gap-4' : 'space-y-3'}`}
@@ -833,7 +893,7 @@ const Documents = () => {
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-dark-400">
                       <span className="uppercase tracking-wider text-dark-500">Type: {iconType || 'file'}</span>
                       {isProcessing ? (
-                        <span className="text-dark-300">Progress: {displayProgress}%</span>
+                        <span className="text-dark-300">Progress: {Math.round(smoothProgress)}%</span>
                       ) : (
                         <span className="text-dark-300">Reading: {readingProgress}%</span>
                       )}
@@ -881,34 +941,45 @@ const Documents = () => {
                         Running locally (queue not connected).
                       </div>
                     )}
-                      {statusKey === 'extracted' && !isRateLimited && (
-                        <div className="mt-2 text-[11px] text-primary-200 bg-primary-500/10 border border-primary-500/20 rounded-lg px-2 py-1">
-                          Ready to read. Graph pending.
-                        </div>
-                      )}
-                      {statusKey === 'extracted' && isRateLimited && (
-                        <div className="mt-2 text-[11px] text-primary-200 bg-primary-500/10 border border-primary-500/20 rounded-lg px-2 py-1">
-                          Graph build paused (rate limited).
-                        </div>
-                      )}
-                      {isStalled && (
-                        <div className="mt-2 text-[11px] text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2 py-1">
-                          No updates for {lastUpdateMinutes} min and no progress change for {progressAgeMinutes} min. Try retrying extraction.
-                        </div>
-                      )}
-                      {lastUpdate && (
-                        <div className="mt-2 text-[11px] text-dark-500">
-                          Last update: {lastUpdate.toLocaleTimeString()} · {lastUpdateMinutes}m ago
-                        </div>
-                      )}
-                      <div className="mt-2 h-1.5 bg-dark-950 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-primary-500"
-                          style={{ width: `${Math.max(5, displayProgress)}%` }}
-                        />
+                    {statusKey === 'extracted' && !isRateLimited && (
+                      <div className="mt-2 text-[11px] text-primary-200 bg-primary-500/10 border border-primary-500/20 rounded-lg px-2 py-1">
+                        Ready to read. Graph pending.
                       </div>
+                    )}
+                    {statusKey === 'extracted' && isRateLimited && (
+                      <div className="mt-2 text-[11px] text-primary-200 bg-primary-500/10 border border-primary-500/20 rounded-lg px-2 py-1">
+                        Graph build paused (rate limited).
+                      </div>
+                    )}
+                    {isStalled && (
+                      <div className="mt-2 text-[11px] text-rose-200 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2 py-1">
+                        No updates for {lastUpdateMinutes} min and no progress change for {progressAgeMinutes} min. Try retrying extraction.
+                      </div>
+                    )}
+                    {lastUpdate && (
+                      <div className="mt-2 text-[11px] text-dark-500">
+                        Last update: {lastUpdate.toLocaleTimeString()} · {lastUpdateMinutes}m ago
+                      </div>
+                    )}
+                    {isProcessing && progressAgeSeconds !== null && (
+                      <div className="mt-2 flex items-center justify-end text-[10px] text-dark-400">
+                        <span>{progressAgeSeconds < 60 ? 'Updating now' : `No change for ${progressAgeMinutes}m`}</span>
+                      </div>
+                    )}
+                    <div className="mt-1 h-2 bg-dark-950 rounded-full overflow-hidden border border-white/5 relative">
+                      <div
+                        className={`h-full ${isProcessing ? 'bg-gradient-to-r from-primary-400 via-primary-500 to-primary-300' : 'bg-primary-400'} ${isProcessing ? 'animate-pulse' : ''}`}
+                        style={{ width: `${Math.max(5, smoothProgress)}%` }}
+                      />
+                      {isProcessing && (
+                        <div
+                          className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white/80 shadow-[0_0_12px_rgba(194,239,179,0.8)]"
+                          style={{ left: `calc(${Math.max(5, smoothProgress)}% - 6px)` }}
+                        />
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
+                  </div>
+                  <div className="flex items-center gap-2">
 
                     <button
                       onClick={(e) => { e.stopPropagation(); handleRename(doc); }}

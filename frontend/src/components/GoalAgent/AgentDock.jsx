@@ -94,7 +94,7 @@ const AgentDock = () => {
       {/* Floating launcher */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[120] w-12 h-12 md:w-14 md:h-14 rounded-full shadow-lg shadow-primary-500/30 flex items-center justify-center text-white transition-transform agent-launcher agent-grav-target overflow-hidden"
+        className="fixed bottom-4 right-4 md:bottom-6 md:right-6 z-[120] w-14 h-14 md:w-16 md:h-16 rounded-full shadow-lg shadow-black/50 flex items-center justify-center text-white transition-transform agent-launcher agent-grav-target overflow-hidden"
         style={{
           right: 'max(24px, env(safe-area-inset-right))',
           bottom: 'max(24px, env(safe-area-inset-bottom))'
@@ -104,7 +104,7 @@ const AgentDock = () => {
         {open ? (
           <ChevronUp className="w-5 h-5" />
         ) : (
-          <SolarCoreIcon className="solar-core-icon" size={44} />
+          <SolarCoreIcon size={48} />
         )}
       </button>
 
@@ -125,60 +125,60 @@ const AgentDock = () => {
               exit={{ opacity: 0, scale: 0.97 }}
               className={`${panelClass} z-[110] ${isFullscreen ? 'rounded-none' : 'rounded-[36px]'} bg-dark-950/95 backdrop-blur-2xl border border-white/10 shadow-[0_0_80px_rgba(194,239,179,0.2)] overflow-hidden flex flex-col agent-dock-panel agent-grav-target`}
             >
-            <div className="px-6 py-3 border-b border-white/5 flex items-center justify-between gap-4 agent-grav-pull">
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary-500/30 to-primary-400/20 flex items-center justify-center text-white shadow-lg shadow-primary-500/20 border border-primary-500/30">
-                  <SolarCoreIcon className="solar-core-icon" size={28} />
-                </div>
-                <div className="flex flex-col">
-                  <p className="text-xs font-semibold text-white tracking-wide">Goal Agent</p>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {badges.map((b, idx) => (
-                      <span
-                        key={idx}
-                        className={`text-[9px] px-2 py-0.5 rounded-full ${b.ok ? 'bg-primary-500/15 text-primary-200' : 'bg-primary-400/15 text-primary-200'}`}
-                      >
-                        {b.label}
-                      </span>
-                    ))}
+              <div className="px-6 py-3 border-b border-white/5 flex items-center justify-between gap-4 agent-grav-pull">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-dark-950/80 flex items-center justify-center text-white shadow-lg shadow-black/40 border border-white/5">
+                    <SolarCoreIcon size={30} />
+                  </div>
+                  <div className="flex flex-col">
+                    <p className="text-xs font-semibold text-white tracking-wide">Goal Agent</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {badges.map((b, idx) => (
+                        <span
+                          key={idx}
+                          className={`text-[9px] px-2 py-0.5 rounded-full ${b.ok ? 'bg-primary-500/15 text-primary-200' : 'bg-primary-400/15 text-primary-200'}`}
+                        >
+                          {b.label}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
+
+                <div className="flex items-center gap-2">
+                  <TabButton label="Chat" icon={MessageSquare} active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} />
+                  <TabButton label="Onboarding" icon={Sparkles} active={activeTab === 'onboarding'} onClick={() => setActiveTab('onboarding')} />
+                  <TabButton label="Settings" icon={SettingsIcon} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={openWelcome}
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-primary-100 border border-white/10"
+                    title="Open welcome screen"
+                  >
+                    Welcome
+                  </button>
+                  <button
+                    onClick={toggleFullscreen}
+                    className="text-[11px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-primary-100 border border-white/10"
+                    title={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
+                  >
+                    {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                  </button>
+                  <button onClick={() => setOpen(false)} className="text-dark-400 hover:text-white">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <TabButton label="Chat" icon={MessageSquare} active={activeTab === 'chat'} onClick={() => setActiveTab('chat')} />
-                <TabButton label="Onboarding" icon={Sparkles} active={activeTab === 'onboarding'} onClick={() => setActiveTab('onboarding')} />
-                <TabButton label="Settings" icon={SettingsIcon} active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} />
+              <div className="flex-1 min-h-0 agent-grav-pull">
+                {activeTab === 'chat' && <AgentChat status={status} onOpenSettings={() => setActiveTab('settings')} />}
+                {activeTab === 'onboarding' && (
+                  <AgentOnboarding onComplete={handleOnboardingComplete} onOpenSettings={() => setActiveTab('settings')} />
+                )}
+                {activeTab === 'settings' && <AgentSettings onSaved={refreshStatus} />}
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={openWelcome}
-                  className="text-[11px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-primary-100 border border-white/10"
-                  title="Open welcome screen"
-                >
-                  Welcome
-                </button>
-                <button
-                  onClick={toggleFullscreen}
-                  className="text-[11px] px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-primary-100 border border-white/10"
-                  title={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
-                >
-                  {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                </button>
-                <button onClick={() => setOpen(false)} className="text-dark-400 hover:text-white">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 min-h-0 agent-grav-pull">
-              {activeTab === 'chat' && <AgentChat status={status} onOpenSettings={() => setActiveTab('settings')} />}
-              {activeTab === 'onboarding' && (
-                <AgentOnboarding onComplete={handleOnboardingComplete} onOpenSettings={() => setActiveTab('settings')} />
-              )}
-              {activeTab === 'settings' && <AgentSettings onSaved={refreshStatus} />}
-            </div>
             </motion.div>
           </>
         )}

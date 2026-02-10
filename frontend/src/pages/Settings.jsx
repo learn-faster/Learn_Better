@@ -526,53 +526,6 @@ const Settings = () => {
                 </div>
               </div>
 
-              {/* Embedding Config */}
-              <div className="space-y-4 pt-4 border-t border-white/5">
-                <h3 className="text-sm font-medium text-primary-300 uppercase tracking-wider">Embeddings</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Provider</label>
-                    <select
-                      value={settings.embedding_config?.provider || 'ollama'}
-                      onChange={(e) => setSettings({ ...settings, embedding_config: { ...settings.embedding_config, provider: e.target.value } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
-                    >
-                      <option value="ollama">Ollama</option>
-                      <option value="openai">OpenAI</option>
-                      <option value="local">Local (HuggingFace)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Dimensions</label>
-                    <select
-                      value={settings.embedding_config?.dimensions || 768}
-                      onChange={(e) => setSettings({ ...settings, embedding_config: { ...settings.embedding_config, dimensions: parseInt(e.target.value) } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
-                    >
-                      <option value={384}>384 (MiniLM)</option>
-                      <option value={768}>768 (Base/Gemma)</option>
-                      <option value={1024}>1024 (Large)</option>
-                      <option value={1536}>1536 (OpenAI)</option>
-                      <option value={3072}>3072 (Large/Voyage)</option>
-                    </select>
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Model Name</label>
-                    <input
-                      type="text"
-                      value={settings.embedding_config?.model || ''}
-                      onChange={(e) => setSettings({ ...settings, embedding_config: { ...settings.embedding_config, model: e.target.value } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
-                      placeholder="embeddinggemma:latest"
-                    />
-                  </div>
-                  <div className="md:col-span-2">
-                    <div className="p-3 bg-primary-500/10 border border-primary-500/20 rounded-lg text-xs text-primary-200/80">
-                      Warning: Changing embedding dimensions will require re-indexing all documents.
-                    </div>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 

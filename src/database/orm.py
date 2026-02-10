@@ -22,8 +22,8 @@ SQLALCHEMY_DATABASE_URL = _build_sqlalchemy_url()
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     poolclass=QueuePool,
-    pool_size=5,
-    max_overflow=10,
+    pool_size=20,
+    max_overflow=30,
     pool_pre_ping=True,
     pool_recycle=3600
 )

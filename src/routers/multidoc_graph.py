@@ -61,123 +61,6 @@ def _to_response(graph: KnowledgeGraph) -> KnowledgeGraphResponse:
 router = APIRouter(prefix="/api/graphs", tags=["multi-document graphs"])
 
 
-async def _build_graph_internal(
-    db: Session,
-    graph: KnowledgeGraph,
-    payload: KnowledgeGraphBuildRequest,
-    ingestion_engine: IngestionEngine
-):
-    doc_ids = [gd.document_id for gd in graph.documents]
-    if not doc_ids:
-        raise HTTPException(status_code=400, detail="Graph has no documents")
-
-    graph.status = "building"
-    graph.error_message = None
-    graph.build_progress = 0.0
-    graph.build_stage = "starting"
-    db.commit()
-
-    llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, payload.llm_config, graph.llm_config)
-    total_docs = max(1, len(doc_ids))
-
-    def update_build(stage: str, progress: float):
-        graph.build_stage = stage
-        graph.build_progress = max(0.0, min(100.0, float(progress)))
-        db.commit()
-
-    if payload.build_mode == "existing":
-        update_build("validating", 5.0)
-        for idx, doc_id in enumerate(doc_ids):
-            doc_graph = multi_doc_graph_storage.get_document_graph(doc_id)
-            if doc_graph and doc_graph.get("node_count", 0) > 0:
-                continue
-            doc = db.query(Document).filter(Document.id == doc_id).first()
-            if not doc:
-                raise ValueError(f"Document {doc_id} not found")
-            if payload.source_mode == "raw":
-                source_text = doc.raw_extracted_text or doc.extracted_text or ""
-            else:
-                source_text = doc.filtered_extracted_text or doc.extracted_text or doc.raw_extracted_text or ""
-            if not source_text or not source_text.strip():
-                raise ValueError(f"Document {doc_id} has no extracted text")
-
-            def _progress(step, pct, idx=idx):
-                base = 5.0 + (idx / total_docs) * 75.0
-                span = 75.0 / total_docs
-                update_build(step, base + (pct / 100.0) * span)
-
-            await ingestion_engine.process_document_scoped_from_text(
-                source_text,
-                doc_id,
-                llm_config=llm_config,
-                extraction_max_chars=payload.extraction_max_chars,
-                chunk_size=payload.chunk_size,
-                on_progress=_progress
-            )
-    elif payload.build_mode == "rebuild":
-        for idx, doc_id in enumerate(doc_ids):
-            doc = db.query(Document).filter(Document.id == doc_id).first()
-            if not doc:
-                raise ValueError(f"Document {doc_id} not found")
-            if payload.source_mode == "raw":
-                source_text = doc.raw_extracted_text or doc.extracted_text or ""
-            else:
-                source_text = doc.filtered_extracted_text or doc.extracted_text or doc.raw_extracted_text or ""
-            if not source_text or not source_text.strip():
-                raise ValueError(f"Document {doc_id} has no extracted text")
-
-            def _progress(step, pct, idx=idx):
-                base = 10.0 + (idx / total_docs) * 70.0
-                span = 70.0 / total_docs
-                update_build(step, base + (pct / 100.0) * span)
-
-            await ingestion_engine.process_document_scoped_from_text(
-                source_text,
-                doc_id,
-                llm_config=llm_config,
-                extraction_max_chars=payload.extraction_max_chars,
-                chunk_size=payload.chunk_size,
-                on_progress=_progress
-            )
-    else:
-        raise ValueError("Invalid build_mode. Use 'existing' or 'rebuild'.")
-
-    graph.build_stage = "finalizing"
-    graph.build_progress = 90.0
-    db.commit()
-    graph_data = KnowledgeGraphService.get_graph_data(graph, include_connections=False)
-    graph.node_count = graph_data["node_count"]
-    graph.relationship_count = graph_data["relationship_count"]
-    graph.status = "ready"
-    graph.last_built_at = datetime.utcnow()
-    graph.build_progress = 100.0
-    graph.build_stage = "complete"
-    db.commit()
-    db.refresh(graph)
-
-
-async def _build_graph_background(
-    graph_id: str,
-    payload: KnowledgeGraphBuildRequest,
-    ingestion_engine: IngestionEngine
-):
-    db = SessionLocal()
-    try:
-        graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
-        if not graph:
-            return
-        await _build_graph_internal(db, graph, payload, ingestion_engine)
-    except Exception as e:
-        graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
-        if graph:
-            graph.status = "error"
-            graph.error_message = str(e)
-            graph.build_stage = "error"
-            db.commit()
-    finally:
-        db.close()
-
-
 @router.get("/document/{document_id}")
 async def get_document_graph(document_id: int):
     """
@@ -408,7 +291,9 @@ async def create_graph(
         name=payload.name,
         description=payload.description,
         document_ids=payload.document_ids,
-        llm_config=payload.llm_config
+        llm_config=payload.llm_config,
+        extraction_max_chars=payload.extraction_max_chars,
+        chunk_size=payload.chunk_size
     )
     return _to_response(graph)
 
@@ -433,7 +318,9 @@ async def update_graph(graph_id: str, payload: KnowledgeGraphUpdate, db: Session
         name=payload.name,
         description=payload.description,
         document_ids=payload.document_ids,
-        llm_config=payload.llm_config
+        llm_config=payload.llm_config,
+        extraction_max_chars=payload.extraction_max_chars,
+        chunk_size=payload.chunk_size
     )
 
     return _to_response(graph)
@@ -466,22 +353,30 @@ async def build_graph(
 
     if wait:
         try:
-            await _build_graph_internal(db, graph, payload, ingestion_engine)
+            await KnowledgeGraphService.build_graph(
+                db=db,
+                graph=graph,
+                build_mode=payload.build_mode,
+                source_mode=payload.source_mode,
+                llm_config_override=payload.llm_config,
+                ingestion_engine=ingestion_engine,
+                extraction_max_chars=payload.extraction_max_chars,
+                chunk_size=payload.chunk_size
+            )
         except Exception as e:
-            graph.status = "error"
-            graph.error_message = str(e)
-            graph.build_stage = "error"
-            db.commit()
             raise HTTPException(status_code=400, detail=str(e))
         return _to_response(graph)
 
-    graph.status = "building"
-    graph.error_message = None
-    graph.build_progress = 0.0
-    graph.build_stage = "starting"
-    db.commit()
-
-    asyncio.create_task(_build_graph_background(graph.id, payload, ingestion_engine))
+    # Background build
+    asyncio.create_task(KnowledgeGraphService.build_graph_background(
+        graph_id=graph.id,
+        build_mode=payload.build_mode,
+        source_mode=payload.source_mode,
+        llm_config_override=payload.llm_config,
+        ingestion_engine=ingestion_engine,
+        extraction_max_chars=payload.extraction_max_chars,
+        chunk_size=payload.chunk_size
+    ))
     db.refresh(graph)
     return _to_response(graph)
 

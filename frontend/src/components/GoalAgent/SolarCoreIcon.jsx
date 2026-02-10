@@ -2,60 +2,88 @@ import React from 'react';
 
 const SolarCoreIcon = ({ className = '', size = 32 }) => (
   <svg
-    className={className}
+    className={`${className} agent-blackhole-svg`}
     width={size}
     height={size}
     viewBox="0 0 64 64"
     fill="none"
+    xmlns="http://www.w3.org/2000/svg"
     aria-hidden="true"
   >
     <defs>
-      <radialGradient id="haloGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(32 26) rotate(90) scale(30)">
-        <stop offset="0" stopColor="#dcd6f7" stopOpacity="0.35" />
-        <stop offset="0.45" stopColor="#c2efb3" stopOpacity="0.25" />
-        <stop offset="1" stopColor="#0B0F1A" stopOpacity="0" />
+      {/* Deep Event Horizon Glow */}
+      <radialGradient id="eventHorizon" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(32 32) rotate(90) scale(18)">
+        <stop offset="0" stopColor="#000000" />
+        <stop offset="0.75" stopColor="#050508" />
+        <stop offset="1" stopColor="rgba(220, 214, 247, 0.15)" />
       </radialGradient>
-      <linearGradient id="accretionRing" x1="6" y1="32" x2="58" y2="32" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stopColor="#0B0F1A" stopOpacity="0.2" />
-        <stop offset="0.25" stopColor="#c2efb3" stopOpacity="0.5" />
-        <stop offset="0.5" stopColor="#dcd6f7" stopOpacity="0.95" />
-        <stop offset="0.75" stopColor="#c2efb3" stopOpacity="0.5" />
-        <stop offset="1" stopColor="#0B0F1A" stopOpacity="0.2" />
+
+      {/* Accretion Disk - Einstein Ring Effect */}
+      <linearGradient id="accretionDiskPrimary" x1="0" y1="32" x2="64" y2="32" gradientUnits="userSpaceOnUse">
+        <stop offset="0" stopColor="rgba(194, 239, 179, 0)" />
+        <stop offset="0.15" stopColor="rgba(194, 239, 179, 0.4)" />
+        <stop offset="0.5" stopColor="#dcd6f7" />
+        <stop offset="0.85" stopColor="rgba(194, 239, 179, 0.4)" />
+        <stop offset="1" stopColor="rgba(194, 239, 179, 0)" />
       </linearGradient>
-      <radialGradient id="coreVoid" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(30 28) rotate(90) scale(14)">
-        <stop offset="0" stopColor="#000000" stopOpacity="0.95" />
-        <stop offset="1" stopColor="#0B0F1A" stopOpacity="0.95" />
+
+      {/* Gravitational Lensing Glow */}
+      <radialGradient id="lensingGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(32 32) rotate(90) scale(32)">
+        <stop offset="0" stopColor="rgba(220, 214, 247, 0.1)" />
+        <stop offset="0.5" stopColor="rgba(194, 239, 179, 0.05)" />
+        <stop offset="1" stopColor="transparent" />
       </radialGradient>
+
+      {/* High-intensity Edge */}
+      <radialGradient id="photonSphere" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(32 32) rotate(90) scale(14)">
+        <stop offset="0" stopColor="transparent" />
+        <stop offset="0.8" stopColor="rgba(255, 255, 255, 0.1)" />
+        <stop offset="1" stopColor="rgba(220, 214, 247, 0.4)" />
+      </radialGradient>
+
+      <filter id="bhBlur" x="-20%" y="-20%" width="140%" height="140%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="0.8" />
+      </filter>
     </defs>
-    <circle cx="32" cy="32" r="28" fill="url(#haloGlow)" />
-    <g className="solar-ring">
-      <ellipse
-        cx="32"
-        cy="34"
-        rx="22.5"
-        ry="9.5"
-        fill="none"
-        stroke="url(#accretionRing)"
-        strokeWidth="3"
-        strokeLinecap="round"
-        strokeDasharray="10 6 4 6"
-      />
-      <ellipse
+
+    {/* Gravitational Lensing Halo */}
+    <circle cx="32" cy="32" r="30" fill="url(#lensingGlow)" className="animate-pulse-slow" />
+
+    {/* Primary Accretion Disk (Warped Ring) */}
+    <g filter="url(#bhBlur)" className="bh-rings-container">
+      <circle
         cx="32"
         cy="32"
-        rx="18.5"
-        ry="7.5"
+        r="26"
         fill="none"
-        stroke="rgba(194,239,179,0.35)"
-        strokeWidth="1.6"
-        strokeDasharray="6 8"
+        stroke="url(#accretionDiskPrimary)"
+        strokeWidth="3"
+        strokeLinecap="round"
+        className="bh-ring-primary"
+      />
+      {/* Secondary Distant Ring Segment */}
+      <circle
+        cx="32"
+        cy="32"
+        r="22"
+        fill="none"
+        stroke="rgba(220, 214, 247, 0.2)"
+        strokeWidth="1"
+        strokeDasharray="15 25"
+        className="bh-ring-secondary"
       />
     </g>
-    <circle cx="32" cy="32" r="12" fill="url(#coreVoid)" />
-    <circle cx="32" cy="32" r="14.5" stroke="rgba(220,214,247,0.3)" strokeWidth="1.2" />
-    <circle cx="16" cy="18" r="1.4" fill="#dcd6f7" />
-    <circle cx="50" cy="16" r="1.2" fill="#c2efb3" />
-    <circle cx="48" cy="46" r="1.6" fill="#2ec4b6" />
+
+    {/* Photon Sphere High-intensity Edge */}
+    <circle cx="32" cy="32" r="14.5" fill="none" stroke="url(#photonSphere)" strokeWidth="0.5" />
+
+    {/* Black Hole Core (Event Horizon) */}
+    <circle cx="32" cy="32" r="12" fill="url(#eventHorizon)" />
+
+    {/* Emission Jets / Sparkles */}
+    <circle cx="12" cy="12" r="0.8" fill="#dcd6f7" className="animate-twinkle" />
+    <circle cx="52" cy="20" r="0.6" fill="#c2efb3" className="animate-twinkle" />
+    <circle cx="48" cy="52" r="1" fill="#fff" className="animate-twinkle" />
   </svg>
 );
 

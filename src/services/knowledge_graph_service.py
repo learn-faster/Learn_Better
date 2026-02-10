@@ -19,12 +19,14 @@ class KnowledgeGraphService:
         return db.query(KnowledgeGraph).filter(KnowledgeGraph.user_id == user_id).order_by(KnowledgeGraph.created_at.desc()).all()
 
     @staticmethod
-    def create_graph(db: Session, user_id: str, name: str, description: Optional[str], document_ids: List[int], llm_config: Optional[LLMConfig]) -> KnowledgeGraph:
+    def create_graph(db: Session, user_id: str, name: str, description: Optional[str], document_ids: List[int], llm_config: Optional[LLMConfig], extraction_max_chars: Optional[int] = None, chunk_size: Optional[int] = None) -> KnowledgeGraph:
         graph = KnowledgeGraph(
             user_id=user_id,
             name=name,
             description=description,
-            llm_config=(llm_config.model_dump() if llm_config else {})
+            llm_config=(llm_config.model_dump() if llm_config else {}),
+            extraction_max_chars=extraction_max_chars,
+            chunk_size=chunk_size
         )
         db.add(graph)
         db.flush()
@@ -47,7 +49,9 @@ class KnowledgeGraphService:
         name: Optional[str],
         description: Optional[str],
         document_ids: Optional[List[int]],
-        llm_config: Optional[LLMConfig]
+        llm_config: Optional[LLMConfig],
+        extraction_max_chars: Optional[int] = None,
+        chunk_size: Optional[int] = None
     ) -> KnowledgeGraph:
         if name is not None:
             graph.name = name
@@ -55,6 +59,11 @@ class KnowledgeGraphService:
             graph.description = description
         if llm_config is not None:
             graph.llm_config = llm_config.model_dump()
+        
+        if extraction_max_chars is not None:
+            graph.extraction_max_chars = extraction_max_chars
+        if chunk_size is not None:
+            graph.chunk_size = chunk_size
 
         if document_ids is not None:
             db.query(KnowledgeGraphDocument).filter(KnowledgeGraphDocument.graph_id == graph.id).delete()
@@ -83,51 +92,171 @@ class KnowledgeGraphService:
         return resolve_llm_config(db, user_id, override=override, entity_config=graph_config)
 
     @staticmethod
-    def build_graph(
+    async def build_graph(
         db: Session,
         graph: KnowledgeGraph,
         build_mode: str,
+        source_mode: str,
         llm_config_override: Optional[LLMConfig],
-        ingestion_engine: IngestionEngine
+        ingestion_engine: IngestionEngine,
+        extraction_max_chars: Optional[int] = None,
+        chunk_size: Optional[int] = None
     ) -> KnowledgeGraph:
-        graph.status = "building"
-        db.commit()
-
+        """
+        Unified graph build logic.
+        Uses provided overrides, or falls back to saved graph settings.
+        """
         doc_ids = [gd.document_id for gd in graph.documents]
         if not doc_ids:
             graph.status = "error"
+            graph.error_message = "Graph has no documents"
             db.commit()
             raise ValueError("Graph has no documents")
 
-        llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, llm_config_override, graph.llm_config)
-
-        if build_mode == "existing":
-            # Ensure each document graph exists
-            for doc_id in doc_ids:
-                doc_graph = multi_doc_graph_storage.get_document_graph(doc_id)
-                if not doc_graph or doc_graph.get("node_count", 0) == 0:
-                    graph.status = "error"
-                    db.commit()
-                    raise ValueError(f"No scoped graph data found for document {doc_id}")
-        elif build_mode == "rebuild":
-            for doc_id in doc_ids:
-                doc = db.query(Document).filter(Document.id == doc_id).first()
-                if not doc or not doc.extracted_text:
-                    graph.status = "error"
-                    db.commit()
-                    raise ValueError(f"Document {doc_id} has no extracted text")
-                # Rebuild scoped graph from text
-                # This is async; use loop from caller
-        else:
-            graph.status = "error"
-            db.commit()
-            raise ValueError("Invalid build_mode. Use 'existing' or 'rebuild'.")
-
-        graph.status = "ready"
-        graph.last_built_at = datetime.utcnow()
+        graph.status = "building"
+        graph.error_message = None
+        graph.build_progress = 0.0
+        graph.build_stage = "starting"
         db.commit()
-        db.refresh(graph)
-        return graph
+
+        # Resolve LLM config
+        llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, llm_config_override, graph.llm_config)
+        
+        # Resolve extraction parameters (Request > Saved Graph > Defaults)
+        final_extraction_max_chars = extraction_max_chars or graph.extraction_max_chars
+        final_chunk_size = chunk_size or graph.chunk_size
+
+        total_docs = max(1, len(doc_ids))
+
+        def update_build(stage: str, progress: float):
+            graph.build_stage = stage
+            graph.build_progress = max(0.0, min(100.0, float(progress)))
+            db.commit()
+
+        try:
+            if build_mode == "existing":
+                update_build("validating", 5.0)
+                for idx, doc_id in enumerate(doc_ids):
+                    doc_graph = multi_doc_graph_storage.get_document_graph(doc_id)
+                    if doc_graph and doc_graph.get("node_count", 0) > 0:
+                        continue
+                    
+                    doc = db.query(Document).filter(Document.id == doc_id).first()
+                    if not doc:
+                        raise ValueError(f"Document {doc_id} not found")
+                    
+                    source_text = ""
+                    if source_mode == "raw":
+                        source_text = doc.raw_extracted_text or doc.extracted_text or ""
+                    else:
+                        source_text = doc.filtered_extracted_text or doc.extracted_text or doc.raw_extracted_text or ""
+                    
+                    if not source_text or not source_text.strip():
+                        raise ValueError(f"Document {doc_id} has no extracted text")
+
+                    def _progress(step, pct, idx=idx):
+                        base = 5.0 + (idx / total_docs) * 75.0
+                        span = 75.0 / total_docs
+                        update_build(step, base + (pct / 100.0) * span)
+
+                    await ingestion_engine.process_document_scoped_from_text(
+                        source_text,
+                        doc_id,
+                        llm_config=llm_config,
+                        extraction_max_chars=final_extraction_max_chars,
+                        chunk_size=final_chunk_size,
+                        on_progress=_progress
+                    )
+            elif build_mode == "rebuild":
+                for idx, doc_id in enumerate(doc_ids):
+                    doc = db.query(Document).filter(Document.id == doc_id).first()
+                    if not doc:
+                        raise ValueError(f"Document {doc_id} not found")
+                    
+                    source_text = ""
+                    if source_mode == "raw":
+                        source_text = doc.raw_extracted_text or doc.extracted_text or ""
+                    else:
+                        source_text = doc.filtered_extracted_text or doc.extracted_text or doc.raw_extracted_text or ""
+                    
+                    if not source_text or not source_text.strip():
+                        raise ValueError(f"Document {doc_id} has no extracted text")
+
+                    def _progress(step, pct, idx=idx):
+                        base = 10.0 + (idx / total_docs) * 70.0
+                        span = 70.0 / total_docs
+                        update_build(step, base + (pct / 100.0) * span)
+
+                    await ingestion_engine.process_document_scoped_from_text(
+                        source_text,
+                        doc_id,
+                        llm_config=llm_config,
+                        extraction_max_chars=final_extraction_max_chars,
+                        chunk_size=final_chunk_size,
+                        on_progress=_progress
+                    )
+            else:
+                raise ValueError("Invalid build_mode. Use 'existing' or 'rebuild'.")
+
+            graph.build_stage = "finalizing"
+            graph.build_progress = 90.0
+            db.commit()
+            
+            # Update graph metadata
+            graph_data = KnowledgeGraphService.get_graph_data(graph, include_connections=False)
+            graph.node_count = graph_data["node_count"]
+            graph.relationship_count = graph_data["relationship_count"]
+            graph.status = "ready"
+            graph.last_built_at = datetime.utcnow()
+            graph.build_progress = 100.0
+            graph.build_stage = "complete"
+            db.commit()
+            db.refresh(graph)
+            return graph
+            
+        except Exception as e:
+            graph.status = "error"
+            graph.error_message = str(e)
+            graph.build_stage = "error"
+            db.commit()
+            raise e
+
+    @staticmethod
+    async def build_graph_background(
+        graph_id: str,
+        build_mode: str,
+        source_mode: str,
+        llm_config_override: Optional[LLMConfig],
+        ingestion_engine: IngestionEngine,
+        extraction_max_chars: Optional[int] = None,
+        chunk_size: Optional[int] = None
+    ):
+        """
+        Background wrapper for building a graph.
+        Handles session management and error trapping.
+        """
+        from src.database.orm import SessionLocal
+        db = SessionLocal()
+        try:
+            graph = db.query(KnowledgeGraph).filter(KnowledgeGraph.id == graph_id).first()
+            if not graph:
+                return
+            await KnowledgeGraphService.build_graph(
+                db=db,
+                graph=graph,
+                build_mode=build_mode,
+                source_mode=source_mode,
+                llm_config_override=llm_config_override,
+                ingestion_engine=ingestion_engine,
+                extraction_max_chars=extraction_max_chars,
+                chunk_size=chunk_size
+            )
+        except Exception as e:
+            # Error handling is mostly inside build_graph, but we trap top-level issues here
+            import logging
+            logging.getLogger(__name__).error(f"Background build failed for graph {graph_id}: {e}")
+        finally:
+            db.close()
 
     @staticmethod
     def get_graph_data(
