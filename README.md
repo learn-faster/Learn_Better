@@ -1,58 +1,46 @@
-# LearnFast Core Engine
+# 🧠 LearnBetter: The Goal-Adaptive Learning Operating System
 
-**An AI-powered learning system that turns goals into daily actions, backed by cognitive science and real-time analytics.**
+> **"Most LMS tools are just digital filing cabinets. LearnBetter is your personal cognitive architect."**
 
-LearnFast Core combines ingestion, knowledge graphs, practice scheduling, and a goal-driven agent into one workflow. It’s designed for learners who want a clear daily plan, measurable progress, and adaptive pacing.
-
----
-
-## What It Solves
-Learning is usually fragmented across notes, videos, and flashcards, with little guidance on **what to do next**. LearnFast Core solves this by turning scattered knowledge into a **goal-aligned learning system** that:
-- Builds durable memory using evidence-based methods (active recall, spaced repetition, interleaving).
-- Connects goals to daily actions and realistic pacing.
-- Turns source material into structured study assets (flashcards, curricula, knowledge graphs).
-- Tracks progress with actionable analytics instead of vanity metrics.
+LearnBetter is an AI-native learning system that doesn't just store your notes it **re-engineers your brain**. By combining **Hybrid Graph-RAG**, **Autonomous Goal Agents**, and **Biometric Feedback**, it turns fragmented source material into a personalized, goal-aligned learning journey backed by cognitive science.
 
 ---
 
-## What Makes It Different
-- **Goal-first planning**: Goals drive curricula, daily plans, and pacing.
-- **Actionable dashboard**: “What should I do today?” is always clear.
-- **Multi-source intelligence**: PDFs, links, YouTube, and notes become structured learning assets.
-- **Knowledge graphs**: Concepts are mapped so users learn in the right order.
-- **Adaptive scheduling**: Uses real performance + (optional) biometrics for better pacing.
+## 🚀 The "Wow" Factor: What Makes This Different?
+
+While other projects do simple Vector RAG, LearnBetter builds a **living knowledge ecosystem**.
+
+### 1. 🕸️ Hybrid Graph-RAG (The Vertical Advantage)
+Most RAG systems only find "related facts." LearnBetter uses **Neo4j + pgvector** to map the *structural hierarchy* of knowledge.
+- **Fact Discovery**: Finds the specific answer in your PDFs.
+- **Structural Mapping**: Understands that you can't learn *Quantum Field Theory* without mastering *Linear Algebra* first. It builds a Knowledge Graph of concepts and prerequisites.
+
+### 2. 🤖 The Autonomous Goal Agent (Your AI Accountability Partner)
+It doesn't just track progress; it **negotiates** it.
+- **Email Negotiation**: If you miss a milestone, the agent sends an email to "negotiate" a new daily plan based on your remaining time and goal priority.
+- **Tool-Integrated**: The agent can take screenshots, search your notebook, and update your calendar.
+
+### 3. ⌚ Biometric-Adaptive Pacing (Fitbit Integration)
+Learning isn't just cognitive; it's physical.
+- **Energy-Aware Scheduling**: LearnBetter syncs with your **Fitbit** to monitor sleep and readiness.
+- **Dynamic Load Balancing**: High-readiness days get "Deep Work" sessions; low-readiness days get "Light Review" sessions automatically.
 
 ---
 
-## How It Works (High-Level)
-1. **Ingest**: Upload or link content (PDFs, links, YouTube).
-2. **Structure**: Extract key sections, filter noise, build graphs and flashcards.
-3. **Plan**: Generate goal-aligned curricula and daily focus plans.
-4. **Practice**: Run mixed sessions with spacing + retrieval.
-5. **Analyze**: Show retention, velocity, pacing risk, and consistency.
+## 🛠️ The Architecture of Intelligence
+
+LearnBetter is built on a "Triple-Store" architecture to handle the complexity of human learning.
+
+| Layer | Component | Tech Stack | Purpose |
+| :--- | :--- | :--- | :--- |
+| **Cognition** | **Graph Engine** | Neo4j | Concept hierarchies & prerequisites |
+| **Memory** | **Vector Memory** | pgvector (PostgreSQL) | Semantic context & factual recall |
+| **Workflow** | **Open Notebook** | SurrealDB | Decentralized, local-first synced notes |
+| **Logic** | **Agentic Layer** | FastAPI + Groq/Ollama | Autonomous planning & negotiation |
 
 ---
 
-## Core Capabilities
-- Document ingestion + smart filtering
-- Flashcards + SRS engine
-- Knowledge graph generation
-- Goal-aligned curricula
-- Practice engine (interleaving across sources)
-- Daily plans and negotiation email workflow
-- Analytics & insights (retention, velocity, pacing)
-- Optional biometrics personalization (Fitbit)
-
----
-
-## Ideal Users
-- Learners preparing for exams, interviews, certifications.
-- Professionals upskilling with limited time.
-- Anyone who wants learning to feel structured and measurable.
-
----
-
-## Screenshots
+## 📦 Core Capabilities
 
 <div align="center">
   <h3>Interactive Dashboard</h3>
@@ -95,63 +83,36 @@ Data Layer
   └─ SurrealDB (Open Notebook)
 ---
 
-## Technology Stack
-| Layer | Technologies |
-| :--- | :--- |
-| **Backend** | FastAPI, SQLAlchemy, Pydantic |
-| **Frontend** | React, Vite, Tailwind CSS, Framer Motion |
-| **Datastores** | PostgreSQL (pgvector), Neo4j, SurrealDB |
-| **LLM/Embeddings** | Ollama, OpenAI, Groq, OpenRouter |
-| **Automation** | Playwright, Resend, MarkItDown |
+  <kbd><img src="frontend/src/assets/curri.png" width="800" alt="Curriculum"></kbd>
+  <p><i>AI-Generated Curriculum: Concepts mapped from your sources into a logical learning path.</i></p>
+</div>
 
 ---
 
-## Getting Started
+## ⚡ Quick Start
 
-### Prerequisites
-- **Python 3.12+** (recommended via `uv`)
-- **Docker & Docker Compose**
-- **Ollama** (optional for local LLM/Embeddings)
-
-### 1) Setup
+### 1) Clone and Configure
 ```bash
 git clone https://github.com/learn-faster/Learn_Better.git
 cd Learn_Better
 cp .env.example .env
 ```
-Edit `.env` with your API keys and DB settings.
 
-### 2) Start Databases
+### 2) Infrastructure (Docker)
 ```bash
 docker compose up -d
 ```
 
-### 3) Install + Run Backend
+### 3) Backend Engine
 ```bash
 uv sync
 uv run python main.py
 ```
 
-### 4) Run Frontend
+### 4) Frontend Interface
 ```bash
 cd frontend
-npm install
-npm run dev
-```
-
----
-
-## RQ Worker (Durable Ingestion)
-For durable ingestion jobs (survive backend restarts), run the RQ worker:
-```bash
-uv run python scripts/rq_worker.py
-```
-
-Required env:
-```
-REDIS_URL=redis://localhost:6379/0
-REDIS_QUEUE_NAME=ingestion
-REDIS_JOB_TIMEOUT=1800
+npm install && npm run dev
 ```
 
 ---
