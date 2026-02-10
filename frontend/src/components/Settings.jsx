@@ -336,7 +336,7 @@ const Settings = ({ isOpen, onClose }) => {
                                             </div>
                                         )}
                                         {backendHealth && backendHealth.ok === false && (
-                                            <div className="mb-4 rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+                                            <div className="mb-4 rounded-2xl border border-primary-500/30 bg-primary-500/10 px-4 py-3 text-xs text-primary-200">
                                                 Backend not reachable. Check your API URL or server status.
                                             </div>
                                         )}
@@ -344,7 +344,7 @@ const Settings = ({ isOpen, onClose }) => {
                                             <div className="space-y-5">
                                                 <SectionCard title="Connection Status" description="Check if the backend and LLM are reachable.">
                                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                                        <div className={`rounded-xl border px-3 py-3 text-xs ${backendHealth?.ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
+                                                        <div className={`rounded-xl border px-3 py-3 text-xs ${backendHealth?.ok ? 'border-primary-500/30 bg-primary-500/10 text-primary-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
                                                             <div className="flex items-center justify-between">
                                                                 <span>Backend</span>
                                                                 <button
@@ -357,7 +357,7 @@ const Settings = ({ isOpen, onClose }) => {
                                                             </div>
                                                             <div className="mt-2 text-[10px] opacity-80">{backendHealthLoading ? 'Checking...' : (backendHealth?.detail || 'Unknown')}</div>
                                                         </div>
-                                                        <div className={`rounded-xl border px-3 py-3 text-xs ${llmHealth?.ok ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
+                                                        <div className={`rounded-xl border px-3 py-3 text-xs ${llmHealth?.ok ? 'border-primary-500/30 bg-primary-500/10 text-primary-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
                                                             <div className="flex items-center justify-between">
                                                                 <span>LLM</span>
                                                                 <button
@@ -589,12 +589,12 @@ const Settings = ({ isOpen, onClose }) => {
                                                 <SectionCard title="Fitbit Sync" description="Use biometrics to optimize study timing.">
                                                     <div className="flex items-center justify-between">
                                                         <div className="flex items-center gap-3">
-                                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${connected ? 'bg-emerald-500/20 border border-emerald-500/30' : 'bg-dark-800 border border-white/5'}`}>
-                                                                <Zap className={`w-5 h-5 ${connected ? 'text-emerald-400' : 'text-dark-500'}`} />
+                                                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${connected ? 'bg-primary-500/20 border border-primary-500/30' : 'bg-dark-800 border border-white/5'}`}>
+                                                                <Zap className={`w-5 h-5 ${connected ? 'text-primary-300' : 'text-dark-500'}`} />
                                                             </div>
                                                             <div>
                                                                 <p className="font-semibold text-white">Connection</p>
-                                                                <p className={`text-xs ${connected ? 'text-emerald-400' : 'text-dark-500'}`}>
+                                                                <p className={`text-xs ${connected ? 'text-primary-300' : 'text-dark-500'}`}>
                                                                     {connected ? 'Device Synced' : 'Not connected'}
                                                                 </p>
                                                             </div>
@@ -603,7 +603,7 @@ const Settings = ({ isOpen, onClose }) => {
                                                             <button
                                                                 onClick={() => window.location.href = '/api/fitbit/auth?user_id=default_user'}
                                                                 disabled={!fitbitClientId || !fitbitRedirectUri}
-                                                                className="px-4 py-2 bg-emerald-500/80 hover:bg-emerald-500 text-white text-sm font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                                                className="px-4 py-2 bg-primary-500/80 hover:bg-primary-500 text-dark-950 text-sm font-semibold rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                                                             >
                                                                 Connect
                                                             </button>

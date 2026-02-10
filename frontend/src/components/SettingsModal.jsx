@@ -107,7 +107,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
                 className="space-y-6"
             >
                 {isOverride && (
-                    <div className="bg-indigo-500/10 border border-indigo-500/20 p-4 rounded-2xl text-sm text-indigo-400 mb-6 flex items-start gap-3">
+                    <div className="bg-primary-500/10 border border-primary-500/20 p-4 rounded-2xl text-sm text-primary-300 mb-6 flex items-start gap-3">
                         <Globe className="w-5 h-5 shrink-0 mt-0.5" />
                         <p>Override settings for <strong>{section}</strong>. Leave fields empty to inherit from the Global configuration.</p>
                     </div>
@@ -275,7 +275,7 @@ const SettingsModal = ({ isOpen, onClose }) => {
                                     onClick={handleSave}
                                     disabled={saving || saved}
                                     className={`px-8 py-3 rounded-2xl text-xs font-black uppercase tracking-widest shadow-lg transition-all flex items-center gap-3 min-w-[160px] justify-center ${saved
-                                            ? 'bg-emerald-500 text-white shadow-emerald-500/20'
+                                            ? 'bg-primary-500 text-white shadow-primary-500/20'
                                             : 'bg-primary-500 text-white hover:scale-105 active:scale-95 shadow-primary-500/20 disabled:opacity-50'
                                         }`}
                                 >

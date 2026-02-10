@@ -44,7 +44,7 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
             description: 'Ultra-fast inference',
             defaultModel: 'qwen/qwen3-32b',
             keyUrl: 'https://console.groq.com/keys',
-            color: 'from-orange-500 to-amber-500'
+            color: 'from-primary-400 to-primary-600'
         },
         {
             id: 'openai',
@@ -53,7 +53,7 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
             description: 'GPT-4 & GPT-3.5',
             defaultModel: 'gpt-4o-mini',
             keyUrl: 'https://platform.openai.com/api-keys',
-            color: 'from-emerald-500 to-teal-500'
+            color: 'from-primary-300 to-primary-500'
         },
         {
             id: 'ollama',
@@ -62,7 +62,7 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
             description: 'Run locally, free',
             defaultModel: 'llama3',
             keyUrl: null,
-            color: 'from-purple-500 to-indigo-500'
+            color: 'from-primary-200 to-primary-400'
         },
         {
             id: 'google',
@@ -71,7 +71,7 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
             description: 'Flash & Pro models',
             defaultModel: 'gemini-2.0-flash-exp',
             keyUrl: 'https://aistudio.google.com/app/apikey',
-            color: 'from-blue-500 to-indigo-600'
+            color: 'from-primary-500 to-primary-700'
         }
     ];
 
@@ -96,14 +96,14 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
 
     if (compact) {
         return (
-            <div className="p-4 rounded-2xl bg-gradient-to-br from-primary-500/10 to-primary-600/5 border border-primary-500/20">
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-primary-500/15 to-primary-600/10 border border-primary-500/30">
                 <div className="flex items-center gap-3 mb-3">
                     <div className="p-2 rounded-xl bg-primary-500/20">
                         <Key className="w-4 h-4 text-primary-400" />
                     </div>
                     <div>
                         <h4 className="font-bold text-sm text-white">Setup Required</h4>
-                        <p className="text-[10px] text-primary-200/70">Configure AI to generate flashcards</p>
+                        <p className="text-[10px] text-primary-100/70">Configure AI to generate flashcards</p>
                     </div>
                 </div>
 
@@ -115,7 +115,7 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
                             const p = providers.find(pr => pr.id === e.target.value);
                             setModel(p?.defaultModel || '');
                         }}
-                        className="w-full bg-dark-900 border border-white/10 rounded-lg px-3 py-2 text-sm"
+                        className="w-full bg-dark-900 border border-primary-500/20 rounded-lg px-3 py-2 text-sm text-white"
                     >
                         {providers.map(p => (
                             <option key={p.id} value={p.id}>{p.name}</option>
@@ -128,7 +128,7 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
                             value={apiKey}
                             onChange={(e) => setApiKey(e.target.value)}
                             placeholder="Paste your API key"
-                            className="w-full bg-dark-900 border border-white/10 rounded-lg px-3 py-2 text-sm"
+                            className="w-full bg-dark-900 border border-primary-500/20 rounded-lg px-3 py-2 text-sm text-white"
                         />
                     )}
 
@@ -145,19 +145,19 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
     }
 
     return (
-        <div className="rounded-3xl bg-gradient-to-br from-dark-800 to-dark-900 border border-white/10 p-8 relative overflow-hidden">
+        <div className="rounded-3xl bg-gradient-to-br from-dark-800 to-dark-900 border border-primary-500/20 p-8 relative overflow-hidden">
             {/* Decorative background */}
             <div className="absolute top-0 right-0 w-64 h-64 bg-primary-500/5 blur-[100px] rounded-full -z-10" />
             <div className="absolute bottom-0 left-0 w-48 h-48 bg-primary-600/5 blur-[80px] rounded-full -z-10" />
 
             {/* Header */}
             <div className="flex items-start gap-4 mb-8">
-                <div className="p-4 rounded-2xl bg-gradient-to-br from-primary-500/20 to-primary-600/10 border border-primary-500/20">
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-primary-500/25 to-primary-600/15 border border-primary-500/30">
                     <Sparkles className="w-8 h-8 text-primary-400" />
                 </div>
                 <div className="flex-1">
                     <h3 className="text-2xl font-black text-white mb-1">Enable AI Generation</h3>
-                    <p className="text-dark-400 text-sm">Configure your LLM provider to automatically generate flashcards and quizzes from your documents.</p>
+                    <p className="text-primary-100/70 text-sm">Configure your LLM provider to automatically generate flashcards and quizzes from your documents.</p>
                 </div>
             </div>
 
@@ -173,15 +173,15 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
                                     setModel(p.defaultModel);
                                 }}
                                 className={`p-5 rounded-2xl border-2 transition-all text-left group ${provider === p.id
-                                    ? 'border-primary-500 bg-primary-500/10 shadow-lg shadow-primary-500/10'
-                                    : 'border-white/5 hover:border-white/20 hover:bg-white/5'
+                                    ? 'border-primary-500 bg-primary-500/15 shadow-lg shadow-primary-500/10'
+                                    : 'border-primary-500/10 hover:border-primary-500/30 hover:bg-white/5'
                                     }`}
                             >
                                 <div className={`p-3 rounded-xl bg-gradient-to-br ${p.color} w-fit mb-4 ${provider === p.id ? 'shadow-lg' : 'opacity-60 group-hover:opacity-100'}`}>
                                     {p.icon}
                                 </div>
                                 <h4 className="font-bold text-white text-lg mb-1">{p.name}</h4>
-                                <p className="text-xs text-dark-400">{p.description}</p>
+                                <p className="text-xs text-primary-100/60">{p.description}</p>
                                 {provider === p.id && (
                                     <div className="mt-3 flex items-center gap-1 text-primary-400 text-xs font-bold">
                                         <Check className="w-4 h-4" />
@@ -204,7 +204,7 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
                 <>
                     {/* Configuration */}
                     <div className="space-y-6 mb-8">
-                        <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/5 border border-white/10">
+                        <div className="flex items-center gap-3 p-4 rounded-2xl bg-white/5 border border-primary-500/15">
                             <div className={`p-2 rounded-xl bg-gradient-to-br ${selectedProvider?.color}`}>
                                 {selectedProvider?.icon}
                             </div>
@@ -212,7 +212,7 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
                                 <span className="font-bold text-white">{selectedProvider?.name}</span>
                                 <button
                                     onClick={() => setStep(1)}
-                                    className="text-xs text-primary-400 ml-3 hover:underline"
+                                    className="text-xs text-primary-300 ml-3 hover:underline"
                                 >
                                     Change
                                 </button>
@@ -222,52 +222,52 @@ const ApiKeySetup = ({ onConfigured, compact = false }) => {
                         {provider !== 'ollama' ? (
                             <div className="space-y-2">
                                 <div className="flex items-center justify-between">
-                                    <label className="text-sm font-bold text-dark-300">API Key</label>
+                                    <label className="text-sm font-bold text-primary-100/80">API Key</label>
                                     {selectedProvider?.keyUrl && (
                                         <a
                                             href={selectedProvider.keyUrl}
                                             target="_blank"
                                             rel="noopener noreferrer"
-                                            className="text-xs text-primary-400 hover:text-primary-300 flex items-center gap-1"
+                                            className="text-xs text-primary-300 hover:text-primary-200 flex items-center gap-1"
                                         >
                                             Get a key <ExternalLink className="w-3 h-3" />
                                         </a>
                                     )}
                                 </div>
                                 <div className="relative">
-                                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-dark-500" />
+                                    <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-primary-100/50" />
                                     <input
                                         type="password"
                                         value={apiKey}
                                         onChange={(e) => setApiKey(e.target.value)}
                                         placeholder={`Paste your ${selectedProvider?.name} API key`}
-                                        className="w-full bg-dark-800 border border-white/10 rounded-xl pl-12 pr-4 py-4 text-white placeholder:text-dark-600 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all"
+                                        className="w-full bg-dark-800 border border-primary-500/20 rounded-xl pl-12 pr-4 py-4 text-white placeholder:text-primary-100/40 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
                                     />
                                 </div>
-                                <p className="text-xs text-dark-500">Your API key is stored locally and never sent to our servers.</p>
+                                <p className="text-xs text-primary-100/60">Your API key is stored locally and never sent to our servers.</p>
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                <label className="text-sm font-bold text-dark-300">Ollama Base URL</label>
+                                <label className="text-sm font-bold text-primary-100/80">Ollama Base URL</label>
                                 <input
                                     type="text"
                                     value={ollamaUrl}
                                     onChange={(e) => setOllamaUrl(e.target.value)}
                                     placeholder="http://localhost:11434"
-                                    className="w-full bg-dark-800 border border-white/10 rounded-xl px-4 py-4 text-white placeholder:text-dark-600 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all"
+                                    className="w-full bg-dark-800 border border-primary-500/20 rounded-xl px-4 py-4 text-white placeholder:text-primary-100/40 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
                                 />
-                                <p className="text-xs text-dark-500">Make sure Ollama is running locally.</p>
+                                <p className="text-xs text-primary-100/60">Make sure Ollama is running locally.</p>
                             </div>
                         )}
 
                         <div className="space-y-2">
-                            <label className="text-sm font-bold text-dark-300">Model</label>
+                            <label className="text-sm font-bold text-primary-100/80">Model</label>
                             <input
                                 type="text"
                                 value={model}
                                 onChange={(e) => setModel(e.target.value)}
                                 placeholder={selectedProvider?.defaultModel}
-                                className="w-full bg-dark-800 border border-white/10 rounded-xl px-4 py-4 text-white placeholder:text-dark-600 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 transition-all"
+                                className="w-full bg-dark-800 border border-primary-500/20 rounded-xl px-4 py-4 text-white placeholder:text-primary-100/40 focus:border-primary-500 focus:ring-2 focus:ring-primary-500/30 transition-all"
                             />
                         </div>
                     </div>

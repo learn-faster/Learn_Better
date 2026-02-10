@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Shield, Watch, Bell, Brain, Save, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Shield, Watch, Bell, Brain, Save, Loader2, CheckCircle2, XCircle, User, Copy, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getHealth } from '../lib/config';
 import { formatApiErrorMessage } from '../lib/utils/api-error';
 import InlineErrorBanner from '../components/common/InlineErrorBanner';
-import { getUserId } from '../lib/utils/user-id';
+import { getUserId, setUserId, isValidUserId } from '../lib/utils/user-id';
 
 const Settings = () => {
   const navigate = useNavigate();
@@ -17,6 +17,9 @@ const Settings = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [backendHealth, setBackendHealth] = useState(null);
   const [lastTraceId, setLastTraceId] = useState(() => (localStorage.getItem('opik_last_trace_id') || ''));
+  const [userId, setUserIdState] = useState(() => getUserId());
+  const [newUserId, setNewUserId] = useState('');
+  const [identityMessage, setIdentityMessage] = useState('');
 
   // Settings state
   const [settings, setSettings] = useState({
@@ -121,6 +124,15 @@ const Settings = () => {
       });
 
       if (response.ok) {
+        try {
+          await fetch(`/api/config/llm?user_id=${encodeURIComponent(userId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ config: { global: settings.llm_config } })
+          });
+        } catch (err) {
+          setErrorMessage('LLM config saved, but config mirror failed. Documents readiness may be stale.');
+        }
         setSaveStatus('success');
         setTimeout(() => setSaveStatus(null), 3000);
       } else {
@@ -132,6 +144,35 @@ const Settings = () => {
       setErrorMessage(formatApiErrorMessage(error) || 'Failed to save settings.');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCopyUserId = async () => {
+    try {
+      await navigator.clipboard.writeText(userId);
+      setIdentityMessage('User ID copied to clipboard.');
+      setTimeout(() => setIdentityMessage(''), 2500);
+    } catch (error) {
+      setIdentityMessage('Unable to copy. Please select and copy manually.');
+      setTimeout(() => setIdentityMessage(''), 3500);
+    }
+  };
+
+  const handleRestoreUserId = () => {
+    setIdentityMessage('');
+    try {
+      if (!isValidUserId(newUserId)) {
+        setIdentityMessage('Enter a valid user ID (letters, numbers, - or _, 6-80 chars).');
+        return;
+      }
+      const updated = setUserId(newUserId);
+      setUserIdState(updated);
+      setNewUserId('');
+      setIdentityMessage('User ID updated. Reload pages to access existing data.');
+      setTimeout(() => setIdentityMessage(''), 3500);
+    } catch (error) {
+      setIdentityMessage(error?.message || 'Unable to update user ID.');
+      setTimeout(() => setIdentityMessage(''), 3500);
     }
   };
 
@@ -162,26 +203,35 @@ const Settings = () => {
   }
 
   return (
-    <div className="min-h-screen bg-dark-950 text-gray-100 p-8 pt-24 font-['Inter']">
+    <div className="min-h-screen bg-dark-950 text-gray-100 p-8 pt-24 font-body">
       <div className="max-w-4xl mx-auto space-y-8">
 
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">
+            <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-primary-300 to-primary-600">
               System Configuration
             </h1>
             <p className="text-gray-400 mt-2">Adjust your biological and cognitive preferences.</p>
           </div>
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium transition-all duration-200 ${saving ? 'bg-dark-700 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-500 shadow-lg shadow-primary-500/20'
-              }`}
-          >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            {saving ? 'Saving...' : 'Save Changes'}
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => navigate(-1)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-primary-100/80 border border-primary-500/20 bg-white/5 hover:bg-white/10 transition-all"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back
+            </button>
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className={`flex items-center gap-2 px-6 py-2.5 rounded-xl font-medium transition-all duration-200 ${saving ? 'bg-dark-700 cursor-not-allowed' : 'bg-primary-600 hover:bg-primary-500 shadow-lg shadow-primary-500/20'
+                }`}
+            >
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              {saving ? 'Saving...' : 'Save Changes'}
+            </button>
+          </div>
         </div>
 
         {/* Save Status Notification */}
@@ -191,7 +241,7 @@ const Settings = () => {
               initial={{ opacity: 0, y: -20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
-              className={`flex items-center gap-3 p-4 rounded-xl border ${saveStatus === 'success' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+              className={`flex items-center gap-3 p-4 rounded-xl border ${saveStatus === 'success' ? 'bg-primary-500/10 border-primary-500/20 text-primary-300' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                 }`}
             >
               {saveStatus === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <XCircle className="w-5 h-5" />}
@@ -202,10 +252,62 @@ const Settings = () => {
         <InlineErrorBanner message={errorMessage} className="text-sm" />
         <InlineErrorBanner
           message={backendHealth && backendHealth.ok === false ? 'Backend not reachable. Check your API URL or server status.' : ''}
-          className="text-sm border-amber-500/30 bg-amber-500/10 text-amber-200"
+          className="text-sm border-primary-500/30 bg-primary-500/10 text-primary-200"
         />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+          {/* Identity & Recovery */}
+          <div className="bg-dark-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-colors md:col-span-2">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="p-2.5 rounded-xl bg-primary-500/10">
+                <User className="w-5 h-5 text-primary-300" />
+              </div>
+              <div>
+                <h2 className="text-xl font-semibold">Identity & Recovery</h2>
+                <p className="text-xs text-dark-400">Your data is tied to this local ID. Save it if you switch devices or clear storage.</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Current User ID</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={userId}
+                    readOnly
+                    className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200"
+                  />
+                  <button
+                    onClick={handleCopyUserId}
+                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs flex items-center gap-2"
+                  >
+                    <Copy className="w-4 h-4" />
+                    Copy
+                  </button>
+                </div>
+              </div>
+              <div className="md:col-span-1">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Restore Existing ID</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    value={newUserId}
+                    onChange={(e) => setNewUserId(e.target.value)}
+                    placeholder="Paste saved ID"
+                    className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200"
+                  />
+                  <button
+                    onClick={handleRestoreUserId}
+                    className="px-3 py-2 rounded-lg bg-primary-500/80 hover:bg-primary-500 text-dark-950 text-xs"
+                  >
+                    Restore
+                  </button>
+                </div>
+              </div>
+            </div>
+            {identityMessage && (
+              <div className="mt-3 text-xs text-primary-200">{identityMessage}</div>
+            )}
+          </div>
 
           {/* Fitbit Section */}
           <div className="bg-dark-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-colors">
@@ -219,7 +321,7 @@ const Settings = () => {
             <div className="space-y-6">
               <div className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5">
                 <div className="flex items-center gap-3">
-                  <div className={`w-3 h-3 rounded-full ${connected ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.5)]' : 'bg-rose-500'}`} />
+                  <div className={`w-3 h-3 rounded-full ${connected ? 'bg-primary-500 shadow-[0_0_12px_rgba(194,239,179,0.5)]' : 'bg-rose-500'}`} />
                   <span className="font-medium">{connected ? 'Fitbit Connected' : 'Disconnected'}</span>
                 </div>
                 {connected ? (
@@ -237,7 +339,7 @@ const Settings = () => {
                 <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }}>
                   <label className="flex items-center justify-between cursor-pointer group">
                     <div className="flex items-center gap-3">
-                      <Brain className="w-5 h-5 text-indigo-400" />
+                      <Brain className="w-5 h-5 text-primary-300" />
                       <div>
                         <p className="font-medium">Predictive Focus Planning</p>
                         <p className="text-xs text-gray-500">Sync study windows with sleep cycles</p>
@@ -261,8 +363,8 @@ const Settings = () => {
           {/* Observability (Opik) */}
           <div className="bg-dark-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-colors">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 rounded-xl bg-purple-500/10">
-                <Shield className="w-5 h-5 text-purple-400" />
+              <div className="p-2.5 rounded-xl bg-primary-500/10">
+                <Shield className="w-5 h-5 text-primary-300" />
               </div>
               <h2 className="text-xl font-semibold">Observability (Opik)</h2>
             </div>
@@ -279,7 +381,7 @@ const Settings = () => {
                       opik_config: { ...settings.opik_config, enabled: e.target.checked }
                     })}
                   />
-                  <div className="w-11 h-6 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
+                  <div className="w-11 h-6 bg-dark-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
                 </div>
               </label>
               <div>
@@ -291,7 +393,7 @@ const Settings = () => {
                     ...settings,
                     opik_config: { ...settings.opik_config, api_key: e.target.value }
                   })}
-                  className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all outline-none"
+                  className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 transition-all outline-none"
                   placeholder="opik_..."
                 />
               </div>
@@ -304,7 +406,7 @@ const Settings = () => {
                     ...settings,
                     opik_config: { ...settings.opik_config, workspace: e.target.value }
                   })}
-                  className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all outline-none"
+                  className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 transition-all outline-none"
                   placeholder="your-workspace"
                 />
               </div>
@@ -317,7 +419,7 @@ const Settings = () => {
                     ...settings,
                     opik_config: { ...settings.opik_config, url_override: e.target.value }
                   })}
-                  className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all outline-none"
+                  className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 transition-all outline-none"
                   placeholder="https://www.comet.com/"
                 />
               </div>
@@ -330,7 +432,7 @@ const Settings = () => {
                     ...settings,
                     opik_config: { ...settings.opik_config, project_name: e.target.value }
                   })}
-                  className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 focus:border-purple-500/50 focus:ring-1 focus:ring-purple-500/50 transition-all outline-none"
+                  className="w-full bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 focus:border-primary-500/50 focus:ring-1 focus:ring-primary-500/50 transition-all outline-none"
                   placeholder="learnfast-core"
                 />
               </div>
@@ -343,8 +445,8 @@ const Settings = () => {
           {/* Email Notifications */}
           <div className="bg-dark-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-colors">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 rounded-xl bg-purple-500/10">
-                <Bell className="w-5 h-5 text-purple-400" />
+              <div className="p-2.5 rounded-xl bg-primary-500/10">
+                <Bell className="w-5 h-5 text-primary-300" />
               </div>
               <h2 className="text-xl font-semibold">Notifications</h2>
             </div>
@@ -366,22 +468,22 @@ const Settings = () => {
           {/* Advanced Security */}
           <div className="md:col-span-2 bg-dark-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-colors">
             <div className="flex items-center gap-3 mb-6">
-              <div className="p-2.5 rounded-xl bg-emerald-500/10">
-                <Shield className="w-5 h-5 text-emerald-400" />
+              <div className="p-2.5 rounded-xl bg-primary-500/10">
+                <Shield className="w-5 h-5 text-primary-300" />
               </div>
               <h2 className="text-xl font-semibold">Model Preferences</h2>
             </div>
             <div className="space-y-6">
               {/* LLM Config */}
               <div className="space-y-4">
-                <h3 className="text-sm font-medium text-indigo-400 uppercase tracking-wider">LLM Generation</h3>
+                <h3 className="text-sm font-medium text-primary-300 uppercase tracking-wider">LLM Generation</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Provider</label>
                     <select
                       value={settings.llm_config.provider}
                       onChange={(e) => setSettings({ ...settings, llm_config: { ...settings.llm_config, provider: e.target.value } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-indigo-500/50 outline-none"
+                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
                     >
                       <option value="openai">OpenAI</option>
                       <option value="groq">Groq</option>
@@ -395,7 +497,7 @@ const Settings = () => {
                       type="text"
                       value={settings.llm_config.model}
                       onChange={(e) => setSettings({ ...settings, llm_config: { ...settings.llm_config, model: e.target.value } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-indigo-500/50 outline-none"
+                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
                       placeholder="gpt-4o, llama3..."
                     />
                   </div>
@@ -405,7 +507,7 @@ const Settings = () => {
                       type="password"
                       value={settings.llm_config.api_key || ''}
                       onChange={(e) => setSettings({ ...settings, llm_config: { ...settings.llm_config, api_key: e.target.value } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-indigo-500/50 outline-none"
+                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
                       placeholder="sk-..."
                     />
                   </div>
@@ -416,7 +518,7 @@ const Settings = () => {
                         type="text"
                         value={settings.llm_config.base_url || ''}
                         onChange={(e) => setSettings({ ...settings, llm_config: { ...settings.llm_config, base_url: e.target.value } })}
-                        className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-indigo-500/50 outline-none"
+                        className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
                         placeholder="http://localhost:11434"
                       />
                     </div>
@@ -426,14 +528,14 @@ const Settings = () => {
 
               {/* Embedding Config */}
               <div className="space-y-4 pt-4 border-t border-white/5">
-                <h3 className="text-sm font-medium text-emerald-400 uppercase tracking-wider">Embeddings</h3>
+                <h3 className="text-sm font-medium text-primary-300 uppercase tracking-wider">Embeddings</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Provider</label>
                     <select
                       value={settings.embedding_config?.provider || 'ollama'}
                       onChange={(e) => setSettings({ ...settings, embedding_config: { ...settings.embedding_config, provider: e.target.value } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-emerald-500/50 outline-none"
+                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
                     >
                       <option value="ollama">Ollama</option>
                       <option value="openai">OpenAI</option>
@@ -445,7 +547,7 @@ const Settings = () => {
                     <select
                       value={settings.embedding_config?.dimensions || 768}
                       onChange={(e) => setSettings({ ...settings, embedding_config: { ...settings.embedding_config, dimensions: parseInt(e.target.value) } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-emerald-500/50 outline-none"
+                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
                     >
                       <option value={384}>384 (MiniLM)</option>
                       <option value={768}>768 (Base/Gemma)</option>
@@ -460,12 +562,12 @@ const Settings = () => {
                       type="text"
                       value={settings.embedding_config?.model || ''}
                       onChange={(e) => setSettings({ ...settings, embedding_config: { ...settings.embedding_config, model: e.target.value } })}
-                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-emerald-500/50 outline-none"
+                      className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm focus:border-primary-500/50 outline-none"
                       placeholder="embeddinggemma:latest"
                     />
                   </div>
                   <div className="md:col-span-2">
-                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-lg text-xs text-amber-200/80">
+                    <div className="p-3 bg-primary-500/10 border border-primary-500/20 rounded-lg text-xs text-primary-200/80">
                       Warning: Changing embedding dimensions will require re-indexing all documents.
                     </div>
                   </div>
