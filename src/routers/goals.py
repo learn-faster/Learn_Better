@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
+from src.utils.time import utcnow
 import os
 import uuid
 from src.config import settings
@@ -70,7 +71,7 @@ def update_daily_plan_entry(entry_id: str, payload: DailyPlanEntryUpdate, db: Se
     if not entry:
         raise HTTPException(status_code=404, detail="Daily plan entry not found")
     entry.completed = payload.completed
-    entry.completed_at = datetime.utcnow() if payload.completed else None
+    entry.completed_at = utcnow() if payload.completed else None
     db.commit()
     db.refresh(entry)
     return {
@@ -86,7 +87,7 @@ def create_daily_plan_entry(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_request_user_id)
 ):
-    plan_date = payload.date or datetime.utcnow().date()
+    plan_date = payload.date or utcnow().date()
     entry = DailyPlanEntry(
         id=str(uuid.uuid4()),
         user_id=user_id,
@@ -149,18 +150,27 @@ def get_daily_plan_history(
 
 
 @router.get("/{goal_id}", response_model=GoalResponse)
-def get_goal(goal_id: str, db: Session = Depends(get_db)):
+def get_goal(
+    goal_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """Retrieves a specific goal."""
-    goal = db.query(Goal).filter(Goal.id == goal_id).first()
+    goal = db.query(Goal).filter(Goal.id == goal_id, Goal.user_id == user_id).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
     return _enrich_goal_response(goal)
 
 
 @router.patch("/{goal_id}", response_model=GoalResponse)
-def update_goal(goal_id: str, updates: GoalUpdate, db: Session = Depends(get_db)):
+def update_goal(
+    goal_id: str,
+    updates: GoalUpdate,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """Updates a goal."""
-    goal = db.query(Goal).filter(Goal.id == goal_id).first()
+    goal = db.query(Goal).filter(Goal.id == goal_id, Goal.user_id == user_id).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
     
@@ -173,9 +183,13 @@ def update_goal(goal_id: str, updates: GoalUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/{goal_id}")
-def delete_goal(goal_id: str, db: Session = Depends(get_db)):
+def delete_goal(
+    goal_id: str,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """Deletes a goal."""
-    goal = db.query(Goal).filter(Goal.id == goal_id).first()
+    goal = db.query(Goal).filter(Goal.id == goal_id, Goal.user_id == user_id).first()
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
     db.delete(goal)
@@ -189,12 +203,19 @@ def delete_goal(goal_id: str, db: Session = Depends(get_db)):
 def start_focus_session(
     goal_id: str,
     session_data: FocusSessionCreate = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
 ):
     """Starts a focus session for a goal."""
+    if goal_id != "none":
+        goal = db.query(Goal).filter(Goal.id == goal_id, Goal.user_id == user_id).first()
+        if not goal:
+            raise HTTPException(status_code=404, detail="Goal not found")
+
     session = FocusSession(
         id=str(uuid.uuid4()),
         goal_id=goal_id if goal_id != "none" else None,
+        user_id=user_id,
         session_type=session_data.session_type if session_data else "focus"
     )
     db.add(session)
@@ -207,20 +228,24 @@ def start_focus_session(
 def end_focus_session(
     session_id: str,
     end_data: FocusSessionEnd,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
 ):
     """Ends a focus session and logs time to the goal."""
-    session = db.query(FocusSession).filter(FocusSession.id == session_id).first()
+    session = db.query(FocusSession).filter(
+        FocusSession.id == session_id,
+        FocusSession.user_id == user_id
+    ).first()
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     
-    session.end_time = datetime.utcnow()
+    session.end_time = utcnow()
     session.duration_minutes = end_data.duration_minutes
     session.notes = end_data.notes
     
     # Update goal's logged hours
     if session.goal_id:
-        goal = db.query(Goal).filter(Goal.id == session.goal_id).first()
+        goal = db.query(Goal).filter(Goal.id == session.goal_id, Goal.user_id == user_id).first()
         if goal:
             goal.logged_hours += end_data.duration_minutes / 60.0
     
@@ -230,10 +255,19 @@ def end_focus_session(
 
 
 @router.get("/{goal_id}/sessions", response_model=List[FocusSessionResponse])
-def get_goal_sessions(goal_id: str, limit: int = 20, db: Session = Depends(get_db)):
+def get_goal_sessions(
+    goal_id: str,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """Retrieves focus sessions for a goal."""
+    goal = db.query(Goal).filter(Goal.id == goal_id, Goal.user_id == user_id).first()
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+
     sessions = db.query(FocusSession)\
-        .filter(FocusSession.goal_id == goal_id)\
+        .filter(FocusSession.goal_id == goal_id, FocusSession.user_id == user_id)\
         .order_by(FocusSession.start_time.desc())\
         .limit(limit)\
         .all()
@@ -247,7 +281,7 @@ def _enrich_goal_response(goal: Goal) -> GoalResponse:
     is_on_track = True
     
     if goal.deadline:
-        days_remaining = (goal.deadline - datetime.utcnow()).days
+        days_remaining = (goal.deadline - utcnow()).days
         if days_remaining > 0 and goal.target_hours > 0:
             hours_remaining = goal.target_hours - goal.logged_hours
             required_pace = hours_remaining / days_remaining
@@ -282,6 +316,12 @@ def _enrich_goal_response(goal: Goal) -> GoalResponse:
 from src.services.goal_agent import goal_agent
 from src.services.email_service import email_service
 from src.services.memory_service import memory_service
+from src.services.ai_settings import (
+    build_canonical_llm_config,
+    get_or_create_user_settings,
+    mark_llm_config_modified,
+    merge_canonical_into_raw,
+)
 from src.models.agent import (
     ChatInput,
     AgentResponse,
@@ -328,30 +368,31 @@ async def update_agent_settings(
     # Lazy import to avoid circular dependency
     from src.models.orm import UserSettings
     
-    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-    if not user_settings:
-        # Create default if missing
-        user_settings = UserSettings(user_id=user_id)
-        db.add(user_settings)
-    
-    # Update Agent settings using a fresh dictionary to ensure SQLAlchemy detects change
-    new_config = dict(user_settings.llm_config) if user_settings.llm_config else {}
-    
-    # Store the entire settings object for full persistence
-    new_config["agent_settings"] = settings.model_dump()
-    
-    # Also keep agent_llm for backward compatibility with goal_agent.py current logic
-    new_config["agent_llm"] = settings.llm_config.model_dump()
+    user_settings = get_or_create_user_settings(db, user_id)
+
+    canonical = build_canonical_llm_config(user_settings)
+    if settings.llm_config is not None:
+        canonical["agent"] = settings.llm_config.model_dump()
+    if settings.vision_llm_config is not None:
+        canonical["vision"] = settings.vision_llm_config.model_dump()
+
+    new_config = merge_canonical_into_raw(user_settings.llm_config or {}, canonical)
+
+    # Store the entire settings object for full persistence (legacy compatibility)
+    agent_payload = settings.model_dump()
+    agent_payload["llm_config"] = canonical.get("agent") or settings.llm_config.model_dump()
+    agent_payload["vision_llm_config"] = canonical.get("vision") or settings.vision_llm_config.model_dump()
+    agent_settings = new_config.get("agent_settings", {}) if isinstance(new_config.get("agent_settings"), dict) else {}
+    agent_settings.update(agent_payload)
+    new_config["agent_settings"] = agent_settings
+    new_config["agent_llm"] = agent_payload["llm_config"]
 
     # Persist Opik settings if provided
     if settings.opik_config is not None:
         new_config["opik"] = settings.opik_config
 
     user_settings.llm_config = new_config
-    
-    # Explicitly flag modification for JSON column
-    from sqlalchemy.orm.attributes import flag_modified
-    flag_modified(user_settings, "llm_config")
+    mark_llm_config_modified(user_settings)
     
     # Update notification preferences if provided in the request
     if settings.email_daily_reminder is not None:
@@ -450,6 +491,8 @@ async def get_agent_settings(
             "opik_config": {"enabled": False, "api_key": "", "workspace": "", "url_override": "", "project_name": "", "use_local": False}
         }
     
+    canonical = build_canonical_llm_config(user_settings)
+
     # Try to load from consolidated agent_settings first
     agent_settings_data = user_settings.llm_config.get("agent_settings", {}) if user_settings.llm_config else {}
     
@@ -457,16 +500,16 @@ async def get_agent_settings(
     agent_llm = user_settings.llm_config.get("agent_llm", {}) if user_settings.llm_config else {}
     
     # Reconstruct/Fallback values
-    llm_config = agent_settings_data.get("llm_config") or {
+    llm_config = canonical.get("agent") or agent_settings_data.get("llm_config") or {
         "provider": agent_llm.get("provider", "openai"),
         "model": agent_llm.get("model", "gpt-4o"),
         "base_url": agent_llm.get("base_url", ""),
         "temperature": agent_llm.get("temperature", 0.7),
         "api_key": agent_llm.get("api_key", "")
     }
-    vision_llm_config = agent_settings_data.get("vision_llm_config") or llm_config
+    vision_llm_config = canonical.get("vision") or agent_settings_data.get("vision_llm_config") or llm_config
     
-    embedding_config = agent_settings_data.get("embedding_config") or {
+    embedding_config = canonical.get("embedding_config") or agent_settings_data.get("embedding_config") or {
         "provider": settings.embedding_provider,
         "model": settings.embedding_model,
         "dimensions": getattr(settings, "embedding_dimensions", 768),

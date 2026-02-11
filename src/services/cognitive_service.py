@@ -2,6 +2,7 @@
 import logging
 import pytz
 from datetime import datetime, time, timedelta
+from src.utils.time import utcnow
 from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
@@ -110,7 +111,7 @@ class CognitiveService:
                 }
 
             cards = db.query(Flashcard).all()
-            now = datetime.utcnow()
+            now = utcnow()
             
             sum_r = 0
             concept_stats = {} 

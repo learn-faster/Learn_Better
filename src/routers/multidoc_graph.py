@@ -10,6 +10,7 @@ Provides endpoints for:
 import logging
 import asyncio
 import json
+import os
 from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import List, Optional, Dict, Any
@@ -54,7 +55,9 @@ def _to_response(graph: KnowledgeGraph) -> KnowledgeGraphResponse:
         llm_config=LLMConfig(**graph.llm_config) if graph.llm_config else None,
         error_message=getattr(graph, "error_message", None),
         build_progress=getattr(graph, "build_progress", None),
-        build_stage=getattr(graph, "build_stage", None)
+        build_stage=getattr(graph, "build_stage", None),
+        extraction_max_chars=getattr(graph, "extraction_max_chars", None),
+        chunk_size=getattr(graph, "chunk_size", None)
     )
 
 
@@ -240,16 +243,25 @@ async def merge_cross_document_concepts(
 @router.post("/document/{document_id}/process")
 async def process_document_scoped(
     document_id: int,
-    file_path: str
+    db: Session = Depends(get_db)
 ):
     """
     Process a document using document-scoped graph storage.
     """
     try:
+        document = db.query(Document).filter(Document.id == document_id).first()
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        if not document.file_path:
+            raise HTTPException(status_code=400, detail="Document has no associated file")
+        if not os.path.exists(document.file_path):
+            raise HTTPException(status_code=404, detail="Document file not found")
+
         engine = IngestionEngine()
-        result = await engine.process_document_scoped(file_path, document_id)
+        result = await engine.process_document_scoped(document.file_path, document_id)
         return result
-        
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error processing scoped document: {e}")
         raise HTTPException(status_code=500, detail="Failed to process document")
@@ -285,16 +297,19 @@ async def create_graph(
     db: Session = Depends(get_db),
     user_id: str = Depends(get_request_user_id)
 ):
-    graph = KnowledgeGraphService.create_graph(
-        db=db,
-        user_id=user_id,
-        name=payload.name,
-        description=payload.description,
-        document_ids=payload.document_ids,
-        llm_config=payload.llm_config,
-        extraction_max_chars=payload.extraction_max_chars,
-        chunk_size=payload.chunk_size
-    )
+    try:
+        graph = KnowledgeGraphService.create_graph(
+            db=db,
+            user_id=user_id,
+            name=payload.name,
+            description=payload.description,
+            document_ids=payload.document_ids,
+            llm_config=payload.llm_config,
+            extraction_max_chars=payload.extraction_max_chars,
+            chunk_size=payload.chunk_size
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     return _to_response(graph)
 
 
@@ -312,16 +327,19 @@ async def update_graph(graph_id: str, payload: KnowledgeGraphUpdate, db: Session
     if not graph:
         raise HTTPException(status_code=404, detail="Graph not found")
 
-    graph = KnowledgeGraphService.update_graph(
-        db=db,
-        graph=graph,
-        name=payload.name,
-        description=payload.description,
-        document_ids=payload.document_ids,
-        llm_config=payload.llm_config,
-        extraction_max_chars=payload.extraction_max_chars,
-        chunk_size=payload.chunk_size
-    )
+    try:
+        graph = KnowledgeGraphService.update_graph(
+            db=db,
+            graph=graph,
+            name=payload.name,
+            description=payload.description,
+            document_ids=payload.document_ids,
+            llm_config=payload.llm_config,
+            extraction_max_chars=payload.extraction_max_chars,
+            chunk_size=payload.chunk_size
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return _to_response(graph)
 

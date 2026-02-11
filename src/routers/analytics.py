@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta, date as date_type
+from src.utils.time import utcnow
 from typing import List, Optional, Tuple
 
 from src.database.orm import get_db
@@ -46,7 +47,7 @@ def _parse_date(date_str: Optional[str], end: bool = False) -> Optional[datetime
 
 
 def _get_date_range(date_from: Optional[str], date_to: Optional[str], default_days: int = 30) -> Tuple[datetime, datetime]:
-    end = _parse_date(date_to, end=True) or datetime.utcnow() + timedelta(days=1)
+    end = _parse_date(date_to, end=True) or utcnow() + timedelta(days=1)
     start = _parse_date(date_from) or (end - timedelta(days=default_days))
     return start, end
 
@@ -96,7 +97,7 @@ def get_analytics_overview(
     total_reviews = reviews_query.count()
     
     # Cards due today
-    now = datetime.utcnow()
+    now = utcnow()
     cards_due_today = db.query(func.count(Flashcard.id))\
         .filter(Flashcard.next_review <= now)\
         .scalar()
@@ -204,7 +205,7 @@ def get_study_heatmap(
         dict: Mapping of ISO dates to review counts.
     """
     
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = utcnow() - timedelta(days=days)
     
     # Get all reviews in date range
     reviews = db.query(
@@ -320,7 +321,7 @@ def calculate_study_streak(db: Session) -> int:
     
     # Check for streak
     streak = 0
-    current_date = datetime.utcnow().date()
+    current_date = utcnow().date()
     
     for study_date in study_dates:
         # study_date is likely a Row or KeyedTuple with 'date' attribute
@@ -491,7 +492,7 @@ def get_streak_status(db: Session = Depends(get_db)):
     streak = calculate_study_streak(db)
     
     # Check if user studied today
-    today = datetime.utcnow().date()
+    today = utcnow().date()
     studied_today = db.query(StudySession)\
         .filter(func.date(StudySession.start_time) == today)\
         .first() is not None
@@ -514,7 +515,7 @@ def get_goal_progress(
     db: Session = Depends(get_db)
 ):
     goals = db.query(Goal).filter(Goal.user_id == user_id, Goal.status == "active").order_by(Goal.priority.asc()).all()
-    today = datetime.utcnow().date()
+    today = utcnow().date()
     items: List[AnalyticsGoalProgressItem] = []
 
     for goal in goals:
@@ -693,7 +694,7 @@ def get_analytics_recommendations(
     db: Session = Depends(get_db)
 ):
     start, end = _get_date_range(date_from, date_to)
-    due_today = db.query(func.count(Flashcard.id)).filter(Flashcard.next_review <= datetime.utcnow()).scalar() or 0
+    due_today = db.query(func.count(Flashcard.id)).filter(Flashcard.next_review <= utcnow()).scalar() or 0
     retention_rate = calculate_retention_rate(db, start, end)
 
     consistency = get_consistency_metrics(date_from, date_to, user_id, db)
@@ -742,4 +743,5 @@ def get_analytics_recommendations(
         ))
 
     return AnalyticsRecommendationsResponse(items=items[:4])
+
 

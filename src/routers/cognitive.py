@@ -13,6 +13,15 @@ from src.models.orm import UserSettings, Document
 from src.config import settings as app_settings
 from src.ingestion.ingestion_engine import IngestionEngine
 from src.utils.logger import logger
+from src.dependencies import get_request_user_id
+from src.services.ai_settings import (
+    apply_ai_settings_update,
+    build_canonical_llm_config,
+    default_embedding_config,
+    get_or_create_user_settings,
+    mark_llm_config_modified,
+    sync_embedding_columns,
+)
 
 router = APIRouter(prefix="/api/cognitive", tags=["Cognitive Space"])
 
@@ -43,7 +52,10 @@ class EmbeddingReindexRequest(BaseModel):
 
 
 @router.get("/overview")
-def get_cognitive_overview(user_id: str = "default_user", db: Session = Depends(get_db)):
+def get_cognitive_overview(
+    user_id: str = Depends(get_request_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Returns high-level cognitive metrics for the dashboard.
     """
@@ -64,25 +76,39 @@ def get_cognitive_overview(user_id: str = "default_user", db: Session = Depends(
     }
 
 
+@router.get("/recommendation")
+async def get_recommendation(
+    timezone: str = "UTC",
+    user_id: str = Depends(get_request_user_id),
+    db: Session = Depends(get_db)
+):
+    recommendation = await cognitive_service.get_neural_report(user_id=user_id, db=db, timezone=timezone)
+    return {"recommendation": recommendation}
+
+
+@router.get("/stability")
+def get_stability(db: Session = Depends(get_db)):
+    return cognitive_service.get_knowledge_stability(db)
+
+
+@router.get("/frontier")
+def get_frontier(user_id: str = Depends(get_request_user_id)):
+    return cognitive_service.get_growth_frontier(user_id)
+
+
 @router.get("/settings")
-def get_settings(user_id: str = "default_user", db: Session = Depends(get_db)):
+def get_settings(
+    user_id: str = Depends(get_request_user_id),
+    db: Session = Depends(get_db)
+):
     """
     Returns user's current settings.
     """
-    settings_row = db.query(UserSettings).filter_by(user_id=user_id).first()
-    if not settings_row:
-        settings_row = UserSettings(user_id=user_id)
-        db.add(settings_row)
-        db.commit()
+    settings_row = get_or_create_user_settings(db, user_id)
     
-    stored_config = getattr(settings_row, "llm_config", None) or {}
-    embedding_config = stored_config.get("embedding_config") if isinstance(stored_config, dict) else {}
-    legacy_dim = stored_config.get("embedding_dimensions") if isinstance(stored_config, dict) else None
-    embedding_dimensions = (
-        embedding_config.get("dimensions")
-        if isinstance(embedding_config, dict) and embedding_config.get("dimensions") is not None
-        else legacy_dim
-    )
+    canonical = build_canonical_llm_config(settings_row)
+    embedding_config = canonical.get("embedding_config") or default_embedding_config()
+    embedding_dimensions = embedding_config.get("dimensions") or app_settings.embedding_dimensions
 
     return {
         "target_retention": settings_row.target_retention,
@@ -98,7 +124,7 @@ def get_settings(user_id: str = "default_user", db: Session = Depends(get_db)):
         "email_weekly_digest": settings_row.email_weekly_digest,
         
         # AI Config
-        "llm_config": getattr(settings_row, "llm_config", None),
+        "llm_config": canonical,
         "embedding_provider": getattr(settings_row, "embedding_provider", None),
         "embedding_model": getattr(settings_row, "embedding_model", None),
         "embedding_api_key": getattr(settings_row, "embedding_api_key", ""),
@@ -110,16 +136,13 @@ def get_settings(user_id: str = "default_user", db: Session = Depends(get_db)):
 @router.patch("/settings")
 def update_settings(
     data: SettingsUpdate,
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
     """
     Updates user's learning calibration settings.
     """
-    settings_row = db.query(UserSettings).filter_by(user_id=user_id).first()
-    if not settings_row:
-        settings_row = UserSettings(user_id=user_id)
-        db.add(settings_row)
+    settings_row = get_or_create_user_settings(db, user_id)
     
     # Apply updates
     if data.target_retention is not None:
@@ -145,13 +168,9 @@ def update_settings(
     
     # AI Config update
     if data.llm_config is not None:
-        current_config = getattr(settings_row, "llm_config", None)
-        if current_config is None:
-            setattr(settings_row, "llm_config", data.llm_config)
-        else:
-            new_config = dict(current_config)
-            new_config.update(data.llm_config)
-            setattr(settings_row, "llm_config", new_config)
+        merged, _ = apply_ai_settings_update(settings_row, {"llm": data.llm_config})
+        settings_row.llm_config = merged
+        mark_llm_config_modified(settings_row)
 
     # Embedding configuration (global runtime settings)
     if data.embedding_provider is not None:
@@ -162,32 +181,26 @@ def update_settings(
         settings_row.embedding_api_key = data.embedding_api_key
     if data.embedding_base_url is not None:
         settings_row.embedding_base_url = data.embedding_base_url or None
+    settings_row_embedding_dimensions = None
     if data.embedding_dimensions is not None:
         try:
             settings_row_embedding_dimensions = int(data.embedding_dimensions)
         except (TypeError, ValueError):
             settings_row_embedding_dimensions = None
 
-    # Store embedding config in user settings for visibility
     if data.embedding_provider is not None or data.embedding_model is not None or data.embedding_base_url is not None or data.embedding_dimensions is not None:
-        config = getattr(settings_row, "llm_config", None) or {}
-        config["embeddings"] = {
-            "provider": data.embedding_provider if data.embedding_provider is not None else config.get("embeddings", {}).get("provider"),
-            "model": data.embedding_model if data.embedding_model is not None else config.get("embeddings", {}).get("model"),
-            "base_url": data.embedding_base_url if data.embedding_base_url is not None else config.get("embeddings", {}).get("base_url")
+        embedding_payload = {
+            "provider": data.embedding_provider,
+            "model": data.embedding_model,
+            "api_key": data.embedding_api_key,
+            "base_url": data.embedding_base_url,
+            "dimensions": settings_row_embedding_dimensions if data.embedding_dimensions is not None else None,
         }
-        embed_cfg = config.get("embedding_config") or {}
-        if data.embedding_provider is not None:
-            embed_cfg["provider"] = data.embedding_provider
-        if data.embedding_model is not None:
-            embed_cfg["model"] = data.embedding_model
-        if data.embedding_base_url is not None:
-            embed_cfg["base_url"] = data.embedding_base_url
-        if data.embedding_dimensions is not None:
-            embed_cfg["dimensions"] = settings_row_embedding_dimensions
-            config["embedding_dimensions"] = settings_row_embedding_dimensions
-        config["embedding_config"] = embed_cfg
-        setattr(settings_row, "llm_config", config)
+        merged, _ = apply_ai_settings_update(settings_row, {"embedding_config": embedding_payload})
+        settings_row.llm_config = merged
+        mark_llm_config_modified(settings_row)
+        canonical = build_canonical_llm_config(settings_row)
+        sync_embedding_columns(settings_row, canonical.get("embedding_config", {}))
     
     db.commit()
 
@@ -211,7 +224,10 @@ def update_settings(
 
 
 @router.get("/embedding-health")
-async def embedding_health(user_id: str = "default_user", db: Session = Depends(get_db)):
+async def embedding_health(
+    user_id: str = Depends(get_request_user_id),
+    db: Session = Depends(get_db)
+):
     settings_row = db.query(UserSettings).filter_by(user_id=user_id).first()
     if not settings_row:
         settings_row = UserSettings(user_id=user_id)
@@ -279,7 +295,10 @@ async def embedding_health(user_id: str = "default_user", db: Session = Depends(
 
 
 @router.get("/llm-health")
-async def llm_health(user_id: str = "default_user", db: Session = Depends(get_db)):
+async def llm_health(
+    user_id: str = Depends(get_request_user_id),
+    db: Session = Depends(get_db)
+):
     settings_row = db.query(UserSettings).filter_by(user_id=user_id).first()
     if not settings_row:
         settings_row = UserSettings(user_id=user_id)
@@ -337,7 +356,7 @@ async def llm_health(user_id: str = "default_user", db: Session = Depends(get_db
 async def reindex_embeddings(
     payload: EmbeddingReindexRequest,
     background_tasks: BackgroundTasks,
-    user_id: str = "default_user",
+    user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
     """

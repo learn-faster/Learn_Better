@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, date
+from src.utils.time import utcnow
 from typing import Dict, List, Optional
 
 from sqlalchemy import func
@@ -29,7 +30,7 @@ from src.services.daily_plan_service import daily_plan_service
 
 class DashboardService:
     def _today_range(self) -> tuple[datetime, datetime]:
-        now = datetime.utcnow()
+        now = utcnow()
         start = datetime(year=now.year, month=now.month, day=now.day)
         end = start + timedelta(days=1)
         return start, end
@@ -88,7 +89,7 @@ class DashboardService:
         if not study_dates:
             return 0
         streak = 0
-        current_date = datetime.utcnow().date()
+        current_date = utcnow().date()
         for study_date in study_dates:
             date_val = study_date.date
             if isinstance(date_val, datetime):
@@ -221,7 +222,7 @@ class DashboardService:
         # Goal pacing
         goals = db.query(Goal).filter(Goal.user_id == user_id, Goal.status == "active").order_by(Goal.priority.asc()).all()
         goal_pacing: List[DashboardGoalPacingItem] = []
-        today = datetime.utcnow().date()
+        today = utcnow().date()
         for goal in goals:
             remaining_hours = max(goal.target_hours - goal.logged_hours, 0)
             status = "on_track"

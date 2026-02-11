@@ -197,7 +197,10 @@ async def start_checkpoint_recall(checkpoint_id: str, db: Session = Depends(get_
     settings_row = db.query(DocumentStudySettings).filter(DocumentStudySettings.document_id == document_id).first()
     if settings_row and settings_row.llm_config:
         try:
-            llm_config = LLMConfig(**settings_row.llm_config)
+            config_dict = settings_row.llm_config
+            if isinstance(config_dict, dict) and config_dict.get("global"):
+                config_dict = config_dict.get("global") or config_dict
+            llm_config = LLMConfig(**config_dict)
         except Exception:
             llm_config = None
 

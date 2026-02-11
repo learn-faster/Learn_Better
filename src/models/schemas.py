@@ -1,6 +1,7 @@
 """Pydantic models for LearnFast Core Engine data structures."""
 
 from datetime import datetime, date
+from src.utils.time import utcnow
 from typing import List, Optional, Dict, Any, Union
 
 from pydantic import BaseModel, Field, ConfigDict
@@ -42,8 +43,8 @@ class DocumentScopedConcept(BaseModel):
     chunk_ids: List[int] = Field(default_factory=list, description="Chunk indices where concept appears")
     is_merged: bool = Field(False, description="Whether this concept is merged with others")
     merged_with: Optional[Dict[str, str]] = Field(None, description="Mapping of doc_id -> scoped_id for merged concepts")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class CrossDocumentConcept(BaseModel):
@@ -77,8 +78,8 @@ class GlobalConceptIndex(BaseModel):
     occurrence_count: int
     avg_depth: float
     embeddings: Optional[List[float]] = Field(None, description="Semantic embedding for similarity")
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=utcnow)
+    updated_at: datetime = Field(default_factory=utcnow)
 
 
 class UserState(BaseModel):
@@ -1039,3 +1040,4 @@ class DocumentQuizStatsResponse(BaseModel):
     last_attempt_at: Optional[datetime] = None
     attempts_last_7d: int = 0
     average_score_last_7d: float = 0.0
+

@@ -1,5 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, time
+from src.utils.time import utcnow
 from typing import Optional
 from zoneinfo import ZoneInfo
 
@@ -15,7 +16,7 @@ def _next_run_utc(day_of_week: int, hour: int, minute: int) -> datetime:
     Compute next run datetime in UTC.
     day_of_week: 0=Mon ... 6=Sun
     """
-    now = datetime.utcnow()
+    now = utcnow()
     days_ahead = (day_of_week - now.weekday()) % 7
     target = datetime(
         year=now.year,
@@ -45,7 +46,7 @@ async def run_weekly_digest_scheduler(day_of_week: int, hour: int, minute: int, 
             ).all()
 
             sent = 0
-            utc_now = datetime.utcnow()
+            utc_now = utcnow()
 
             for user_settings in settings_rows:
                 try:

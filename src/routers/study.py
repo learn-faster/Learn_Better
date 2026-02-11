@@ -7,8 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
+from src.utils.time import utcnow
 
 from src.database.orm import get_db
+from src.dependencies import get_request_user_id
 from src.models.orm import StudySession, StudyReview, Flashcard
 from src.models.schemas import (
     StudyReviewCreate, 
@@ -51,7 +53,8 @@ def start_study_session(
 def submit_review(
     session_id: str,
     review: StudyReviewCreate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
 ):
     """
     Submits a review for a flashcard and updates its SRS parameters.
@@ -91,7 +94,7 @@ def submit_review(
     
     # Get user's target retention from settings
     from src.models.orm import UserSettings
-    user_settings = db.query(UserSettings).filter_by(user_id="default_user").first()
+    user_settings = db.query(UserSettings).filter_by(user_id=user_id).first()
     target_retention = user_settings.target_retention if user_settings else 0.9
     
     # Calculate new SRS parameters with user's target retention
@@ -109,7 +112,7 @@ def submit_review(
     flashcard.interval = new_interval
     flashcard.repetitions = new_repetitions
     flashcard.next_review = next_review_date
-    flashcard.last_review = datetime.utcnow()
+    flashcard.last_review = utcnow()
     
     # Create review record
     study_review = StudyReview(
@@ -152,7 +155,7 @@ def end_study_session(
         raise HTTPException(status_code=404, detail="Study session not found")
     
     # Set end time
-    session.end_time = datetime.utcnow()
+    session.end_time = utcnow()
     
     # Update reflection and rating if provided
     if end_data:
@@ -208,7 +211,7 @@ def get_upcoming_reviews(
     from datetime import timedelta
     from sqlalchemy import func
     
-    now = datetime.utcnow()
+    now = utcnow()
     end_date = now + timedelta(days=days)
     
     # Get flashcards due within the date range
@@ -231,3 +234,4 @@ def get_upcoming_reviews(
         })
     
     return schedule
+

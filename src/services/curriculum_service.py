@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, date, timedelta
+from src.utils.time import utcnow
 from src.utils.logger import logger
 from typing import List, Optional, Dict, Any, Tuple
 from sqlalchemy.orm import Session
@@ -71,7 +72,7 @@ class CurriculumService:
         if not card_ids:
             return 0.0
 
-        cutoff = datetime.utcnow() - timedelta(days=90)
+        cutoff = utcnow() - timedelta(days=90)
         reviews = db.query(StudyReview.rating).filter(
             StudyReview.flashcard_id.in_(card_ids),
             StudyReview.reviewed_at >= cutoff
@@ -241,7 +242,7 @@ class CurriculumService:
             prereqs = [c for c in graph_path.concepts if c.lower() != goal.lower()]
 
         # 3. LLM Generation
-        start_date_safe = start_date_value or datetime.utcnow().date()
+        start_date_safe = start_date_value or utcnow().date()
         path_data = await self._generate_plan_data(
             goal=goal,
             prereqs=prereqs,
@@ -680,7 +681,7 @@ class CurriculumService:
             except Exception:
                 llm_config = None
 
-        start_date_safe = curriculum.start_date or datetime.utcnow().date()
+        start_date_safe = curriculum.start_date or utcnow().date()
         path_data = await self._generate_plan_data(
             goal=curriculum.target_concept or curriculum.title,
             prereqs=prereqs,
@@ -793,7 +794,7 @@ class CurriculumService:
             return None
         
         module.is_completed = not module.is_completed
-        module.completed_at = datetime.utcnow() if module.is_completed else None
+        module.completed_at = utcnow() if module.is_completed else None
         
         # Update parent progress
         curriculum = module.curriculum

@@ -3,6 +3,7 @@ Service layer for managing saved knowledge graphs.
 """
 
 from datetime import datetime
+from src.utils.time import utcnow
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -15,11 +16,35 @@ from src.ingestion.ingestion_engine import IngestionEngine
 
 class KnowledgeGraphService:
     @staticmethod
+    def _validate_document_ids(db: Session, document_ids: Optional[List[int]]) -> List[int]:
+        if not document_ids:
+            return []
+
+        unique_doc_ids: List[int] = []
+        seen = set()
+        for doc_id in document_ids:
+            if doc_id in seen:
+                continue
+            seen.add(doc_id)
+            unique_doc_ids.append(doc_id)
+
+        existing_ids = {
+            row[0]
+            for row in db.query(Document.id).filter(Document.id.in_(unique_doc_ids)).all()
+        }
+        missing = [doc_id for doc_id in unique_doc_ids if doc_id not in existing_ids]
+        if missing:
+            raise ValueError(f"Document IDs not found: {missing}")
+
+        return unique_doc_ids
+
+    @staticmethod
     def list_graphs(db: Session, user_id: str) -> List[KnowledgeGraph]:
         return db.query(KnowledgeGraph).filter(KnowledgeGraph.user_id == user_id).order_by(KnowledgeGraph.created_at.desc()).all()
 
     @staticmethod
     def create_graph(db: Session, user_id: str, name: str, description: Optional[str], document_ids: List[int], llm_config: Optional[LLMConfig], extraction_max_chars: Optional[int] = None, chunk_size: Optional[int] = None) -> KnowledgeGraph:
+        valid_doc_ids = KnowledgeGraphService._validate_document_ids(db, document_ids)
         graph = KnowledgeGraph(
             user_id=user_id,
             name=name,
@@ -31,10 +56,10 @@ class KnowledgeGraphService:
         db.add(graph)
         db.flush()
 
-        if document_ids:
+        if valid_doc_ids:
             graph_docs = [
                 KnowledgeGraphDocument(graph_id=graph.id, document_id=doc_id)
-                for doc_id in document_ids
+                for doc_id in valid_doc_ids
             ]
             db.add_all(graph_docs)
 
@@ -66,11 +91,12 @@ class KnowledgeGraphService:
             graph.chunk_size = chunk_size
 
         if document_ids is not None:
+            valid_doc_ids = KnowledgeGraphService._validate_document_ids(db, document_ids)
             db.query(KnowledgeGraphDocument).filter(KnowledgeGraphDocument.graph_id == graph.id).delete()
-            if document_ids:
+            if valid_doc_ids:
                 db.add_all([
                     KnowledgeGraphDocument(graph_id=graph.id, document_id=doc_id)
-                    for doc_id in document_ids
+                    for doc_id in valid_doc_ids
                 ])
 
         db.commit()
@@ -207,7 +233,7 @@ class KnowledgeGraphService:
             graph.node_count = graph_data["node_count"]
             graph.relationship_count = graph_data["relationship_count"]
             graph.status = "ready"
-            graph.last_built_at = datetime.utcnow()
+            graph.last_built_at = utcnow()
             graph.build_progress = 100.0
             graph.build_stage = "complete"
             db.commit()

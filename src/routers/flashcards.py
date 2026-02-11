@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime
+from src.utils.time import utcnow
 
 from src.database.orm import get_db
 from src.models.orm import Flashcard, Document
@@ -114,7 +115,7 @@ def get_due_flashcards(
     Retrieves flashcards that are scheduled for review (next_review <= now).
     If interleave is true, cards are mixed across groups (document or tag).
     """
-    now = datetime.utcnow()
+    now = utcnow()
 
     query = db.query(Flashcard).filter(Flashcard.next_review <= now)
     if document_id:

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from src.utils.time import utcnow
 from typing import List
 
 from sqlalchemy.orm import Session
@@ -91,7 +92,7 @@ class DailyPlanService:
                     })
 
         # 3) Due cards
-        due_cards = db.query(Flashcard).filter(Flashcard.next_review <= datetime.utcnow()).count()
+        due_cards = db.query(Flashcard).filter(Flashcard.next_review <= utcnow()).count()
         if due_cards > 0:
             items.append({
                 "id": str(uuid.uuid4()),

@@ -10,7 +10,21 @@ from pydantic import BaseModel, Field
 
 class AgentLLMConfig(BaseModel):
     """Configuration for the Agent's LLM."""
-    provider: Literal["openai", "groq", "ollama", "openrouter"] = "openai"
+    provider: Literal[
+        "openai",
+        "anthropic",
+        "groq",
+        "openrouter",
+        "ollama",
+        "google",
+        "together",
+        "mistral",
+        "huggingface",
+        "fireworks",
+        "deepseek",
+        "perplexity",
+        "custom"
+    ] = "openai"
     model: str = "gpt-4o"
     base_url: Optional[str] = None
     temperature: float = 0.7
@@ -18,7 +32,19 @@ class AgentLLMConfig(BaseModel):
 
 class AgentEmbeddingConfig(BaseModel):
     """Configuration for Embeddings."""
-    provider: Literal["openai", "ollama", "local"] = "ollama"
+    provider: Literal[
+        "openai",
+        "ollama",
+        "openrouter",
+        "together",
+        "mistral",
+        "huggingface",
+        "fireworks",
+        "deepseek",
+        "perplexity",
+        "custom",
+        "local"
+    ] = "ollama"
     model: str = "embeddinggemma:latest"
     dimensions: int = 768
     base_url: Optional[str] = None

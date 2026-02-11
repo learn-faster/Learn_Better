@@ -288,14 +288,8 @@ async def generate_learning_path(
     # 1. Try Graph Resolution
     # PathRequest requires user_id, so we always try this if not explicitly skipped (future flag?)
     graph_exists = False
+    graph_path = None
     try:
-        # Check if concept exists in graph first to decide on fallback
-        concept_check = path_resolver.navigation.connection.execute_query(
-             "MATCH (c:Concept {name: $name}) RETURN count(*) as cnt",
-             {"name": request.target_concept.lower()}
-        )
-        graph_exists = concept_check and concept_check[0]["cnt"] > 0
-
         # Use provided time budget
         effective_user_id = request.user_id or user_id
         graph_path = path_resolver.resolve_path(
@@ -304,14 +298,31 @@ async def generate_learning_path(
             time_budget_minutes=request.time_budget_minutes
         )
 
-        # If we found a valid path (even if empty but concept exists),
-        # return it if we want to avoid LLM fallback for known graph concepts.
-        if graph_exists and graph_path:
+        # If graph resolver returned a valid path, prefer it and avoid LLM fallback.
+        if graph_path:
             return graph_path
+
+        # Check if concept exists in graph first to decide on fallback
+        concept_check = path_resolver.navigation.connection.execute_query(
+             "MATCH (c:Concept {name: $name}) RETURN count(*) as cnt",
+             {"name": request.target_concept.lower()}
+        )
+        cnt = 0
+        if isinstance(concept_check, list) and concept_check:
+            first = concept_check[0]
+            if isinstance(first, dict):
+                try:
+                    cnt = int(first.get("cnt", 0))
+                except (TypeError, ValueError):
+                    cnt = 0
+        graph_exists = cnt > 0
 
     except Exception as e:
         logger.error(f"Graph resolution failed: {e}")
-        # Continue to fallback ONLY if concept doesn't exist in graph
+        # If resolver produced a path before the graph check failed, still return it.
+        if graph_path:
+            return graph_path
+        # Continue to fallback only when no graph path was available.
 
     # 2. Fallback to LLM Generation (Only if NOT in graph or graph resolution failed and concept is new)
     if graph_exists:

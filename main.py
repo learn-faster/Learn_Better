@@ -54,10 +54,12 @@ from src.routers import (
     curriculum as curriculum_router,
     resources as resources_router,
     goals as goals_router,
+    ai_settings as ai_settings_router,
     notifications as notifications_router,
     multidoc_graph as multidoc_graph_router,
     fitbit as fitbit_router,
-    practice as practice_router
+    practice as practice_router,
+    legacy as legacy_router
 )
 
 # Import Open Notebook components
@@ -344,11 +346,13 @@ app.include_router(cognitive_router.router)
 app.include_router(curriculum_router.router)
 app.include_router(resources_router.router)
 app.include_router(goals_router.router)
+app.include_router(ai_settings_router.router)
 app.include_router(notifications_router.router)
 app.include_router(multidoc_graph_router.router)
 app.include_router(practice_router.router)
 app.include_router(fitbit_router.router, prefix="/api/fitbit")
 app.include_router(notebook_router, prefix="/api")
+app.include_router(legacy_router.router)
 
 
 # Mount static files

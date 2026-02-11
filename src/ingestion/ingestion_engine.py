@@ -5,8 +5,16 @@ import logging
 import os
 import asyncio
 from typing import List, Optional, Tuple, Any, Dict, Callable
+
 from pydantic import ValidationError
 
+try:
+    import ollama  # type: ignore
+except Exception:
+    class _OllamaStub:
+        class Client:  # pragma: no cover - used only for tests/mocking
+            pass
+    ollama = _OllamaStub()
 from dotenv import load_dotenv
 
 from src.models.schemas import GraphSchema, PrerequisiteLink
@@ -63,13 +71,22 @@ Content to analyze:
 """
     
     
-    def __init__(self):
+    def __init__(self, ollama_host: Optional[str] = None, model: Optional[str] = None):
         """
         Initialize the ingestion engine.
         Using global settings for configuration.
         """
+        if ollama_host:
+            settings.ollama_base_url = ollama_host
+        if model:
+            settings.llm_model = model
         self.vector_storage = VectorStorage()
         self.document_processor = DocumentProcessor()
+
+        # Backwards-compat: allow env override used in older tests/configs
+        env_window = os.getenv("OLLAMA_CONTEXT_WINDOW_CHARS", "").strip()
+        if env_window.isdigit():
+            self.MAX_EXTRACTION_CHARS = int(env_window)
     
     def _normalize_concept_name(self, name: Any) -> str:
         """
@@ -136,6 +153,36 @@ Content to analyze:
             window_content = "\n\n".join(current_window_text)
             windows.append((window_content, current_start_idx, len(chunks) - 1))
             
+        return windows
+
+    # Backwards-compat helper for legacy tests that pass a single string.
+    def _create_extraction_windows(self, content: str, max_chars: Optional[int] = None) -> List[str]:
+        if content is None:
+            return []
+        text = str(content)
+        if not text.strip():
+            return []
+
+        limit = max_chars or self.MAX_EXTRACTION_CHARS
+        if len(text) <= limit:
+            return [text]
+
+        paragraphs = [p for p in text.split("\n\n") if p]
+        windows: List[str] = []
+        current: List[str] = []
+        current_len = 0
+        for para in paragraphs:
+            para_len = len(para)
+            if current and current_len + para_len > limit:
+                windows.append("\n\n".join(current))
+                overlap = current[-1:]
+                current = overlap + [para]
+                current_len = sum(len(p) for p in current)
+            else:
+                current.append(para)
+                current_len += para_len
+        if current:
+            windows.append("\n\n".join(current))
         return windows
 
     def _merge_schemas(self, schemas: List[GraphSchema]) -> GraphSchema:

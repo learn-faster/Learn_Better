@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from src.utils.time import utcnow
 import asyncio
 import math
 import re
@@ -177,7 +178,7 @@ class PracticeEngineService:
             curriculum_id=curriculum_id,
             mode=mode,
             target_duration_minutes=minutes,
-            start_time=datetime.utcnow(),
+            start_time=utcnow(),
             stats_json={}
         )
         db.add(session)
@@ -245,7 +246,7 @@ class PracticeEngineService:
                 flashcard.interval = new_interval
                 flashcard.repetitions = new_reps
                 flashcard.next_review = next_review_date
-                flashcard.last_review = datetime.utcnow()
+                flashcard.last_review = utcnow()
                 review = StudyReview(
                     session_id=None,
                     flashcard_id=flashcard.id,

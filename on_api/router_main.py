@@ -64,6 +64,12 @@ from typing import Dict, Any
 from sqlalchemy.orm import Session
 from src.database.orm import get_db
 from src.models.orm import UserSettings
+from src.services.ai_settings import (
+    apply_ai_settings_update,
+    build_canonical_llm_config,
+    get_or_create_user_settings,
+    mark_llm_config_modified,
+)
 
 class LLMConfigUpdate(BaseModel):
     config: Dict[str, Any]
@@ -74,15 +80,9 @@ async def get_llm_config(
     db: Session = Depends(get_db)
 ):
     """Get LLM configuration for the specified user."""
-    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-    if not user_settings:
-        # Create default settings if not exists
-        user_settings = UserSettings(user_id=user_id, llm_config={})
-        db.add(user_settings)
-        db.commit()
-        db.refresh(user_settings)
-    
-    return user_settings.llm_config or {}
+    user_settings = get_or_create_user_settings(db, user_id)
+    canonical = build_canonical_llm_config(user_settings)
+    return canonical.get("global", {}) or {}
 
 @router.post("/config/llm")
 async def update_llm_config(
@@ -91,16 +91,14 @@ async def update_llm_config(
     db: Session = Depends(get_db)
 ):
     """Update LLM configuration."""
-    user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-    if not user_settings:
-        user_settings = UserSettings(user_id=user_id, llm_config=update.config)
-        db.add(user_settings)
-    else:
-        user_settings.llm_config = update.config
-    
+    user_settings = get_or_create_user_settings(db, user_id)
+    merged, _ = apply_ai_settings_update(user_settings, {"global": update.config})
+    user_settings.llm_config = merged
+    mark_llm_config_modified(user_settings)
+
     try:
         db.commit()
-        return {"status": "success", "config": user_settings.llm_config}
+        return {"status": "success", "config": update.config}
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))

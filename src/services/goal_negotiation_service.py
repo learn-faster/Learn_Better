@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from src.utils.time import utcnow
 from typing import List, Dict, Any
 
 from src.models.orm import Goal
@@ -12,7 +13,7 @@ class GoalNegotiationService:
     """
     def compute_goal_pacing(self, goals: List[Goal]) -> List[Dict[str, Any]]:
         results = []
-        now = datetime.utcnow()
+        now = utcnow()
         for g in goals:
             days_remaining = None
             required_daily_hours = None

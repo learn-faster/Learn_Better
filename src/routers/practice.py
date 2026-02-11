@@ -1,4 +1,5 @@
 from datetime import datetime
+from src.utils.time import utcnow
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -73,7 +74,7 @@ def end_practice_session(session_id: str, payload: PracticeSessionEnd, db: Sessi
     if not session:
         raise HTTPException(status_code=404, detail="Practice session not found")
 
-    session.end_time = datetime.utcnow()
+    session.end_time = utcnow()
     if payload.reflection is not None:
         session.reflection = payload.reflection
     if payload.effectiveness_rating is not None:

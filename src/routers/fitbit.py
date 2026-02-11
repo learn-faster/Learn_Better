@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 import requests
 import os
 from datetime import datetime, date, timezone
+from src.utils.time import utcnow
 from src.services.fitbit_service import FitbitService
 from src.models.fitbit import FitbitToken, FitbitDailyMetrics
 from src.database.orm import get_db
@@ -88,7 +89,7 @@ def fitbit_callback(
     refresh_token = tokens['refresh_token']
     expires_in = tokens['expires_in']
     scope = tokens['scope']
-    expires_at = int(datetime.utcnow().timestamp() + expires_in)
+    expires_at = int(utcnow().timestamp() + expires_in)
 
     # Find or create user settings
     user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()

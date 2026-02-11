@@ -8,6 +8,7 @@ Handles:
 import logging
 from typing import Optional, List, Any, Dict
 from datetime import datetime
+from src.utils.time import utcnow
 from src.database.connections import postgres_conn
 from src.ingestion.vector_storage import VectorStorage
 from src.models.orm import AgentMemory, AgentMemoryEpisodic, AgentMemorySemantic, AgentMemoryProcedural
@@ -47,7 +48,7 @@ class MemoryService:
             if memory:
                 memory.value = value
                 memory.category = category
-                memory.updated_at = datetime.utcnow()
+                memory.updated_at = utcnow()
             else:
                 memory = AgentMemory(user_id=user_id, key=key, value=value, category=category)
                 session.add(memory)
@@ -158,7 +159,7 @@ class MemoryService:
                 record.confidence = confidence
                 record.source = source
                 record.tags = tags or []
-                record.updated_at = datetime.utcnow()
+                record.updated_at = utcnow()
             else:
                 record = AgentMemorySemantic(
                     user_id=user_id,

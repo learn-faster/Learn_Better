@@ -3,34 +3,76 @@ from src.ingestion.ingestion_engine import IngestionEngine
 from src.storage.document_store import DocumentStore
 
 def get_ingestion_engine(request: Request) -> IngestionEngine:
-    if not hasattr(request.app.state, "ingestion_engine") or not request.app.state.ingestion_engine:
-        raise HTTPException(status_code=503, detail="Ingestion Engine not initialized")
-    return request.app.state.ingestion_engine
+    engine = getattr(request.app.state, "ingestion_engine", None)
+    if engine:
+        return engine
+    try:
+        import main
+        if getattr(main, "ingestion_engine", None):
+            return main.ingestion_engine
+    except Exception:
+        pass
+    raise HTTPException(status_code=503, detail="Ingestion Engine not initialized")
 
 def get_document_store(request: Request) -> DocumentStore:
-    if not hasattr(request.app.state, "document_store") or not request.app.state.document_store:
-        raise HTTPException(status_code=503, detail="Document Store not initialized")
-    return request.app.state.document_store
+    store = getattr(request.app.state, "document_store", None)
+    if store:
+        return store
+    try:
+        import main
+        if getattr(main, "document_store", None):
+            return main.document_store
+    except Exception:
+        pass
+    raise HTTPException(status_code=503, detail="Document Store not initialized")
 
 def get_navigation_engine(request: Request):
-    if not hasattr(request.app.state, "navigation_engine") or not request.app.state.navigation_engine:
-        raise HTTPException(status_code=503, detail="Navigation Engine not initialized")
-    return request.app.state.navigation_engine
+    engine = getattr(request.app.state, "navigation_engine", None)
+    if engine:
+        return engine
+    try:
+        import main
+        if getattr(main, "navigation_engine", None):
+            return main.navigation_engine
+    except Exception:
+        pass
+    raise HTTPException(status_code=503, detail="Navigation Engine not initialized")
 
 def get_user_tracker(request: Request):
-    if not hasattr(request.app.state, "user_tracker") or not request.app.state.user_tracker:
-        raise HTTPException(status_code=503, detail="User Tracker not initialized")
-    return request.app.state.user_tracker
+    tracker = getattr(request.app.state, "user_tracker", None)
+    if tracker:
+        return tracker
+    try:
+        import main
+        if getattr(main, "user_tracker", None):
+            return main.user_tracker
+    except Exception:
+        pass
+    raise HTTPException(status_code=503, detail="User Tracker not initialized")
 
 def get_path_resolver(request: Request):
-    if not hasattr(request.app.state, "path_resolver") or not request.app.state.path_resolver:
-        raise HTTPException(status_code=503, detail="Path Resolver not initialized")
-    return request.app.state.path_resolver
+    resolver = getattr(request.app.state, "path_resolver", None)
+    if resolver:
+        return resolver
+    try:
+        import main
+        if getattr(main, "path_resolver", None):
+            return main.path_resolver
+    except Exception:
+        pass
+    raise HTTPException(status_code=503, detail="Path Resolver not initialized")
 
 def get_content_retriever(request: Request):
-    if not hasattr(request.app.state, "content_retriever") or not request.app.state.content_retriever:
-        raise HTTPException(status_code=503, detail="Content Retriever not initialized")
-    return request.app.state.content_retriever
+    retriever = getattr(request.app.state, "content_retriever", None)
+    if retriever:
+        return retriever
+    try:
+        import main
+        if getattr(main, "content_retriever", None):
+            return main.content_retriever
+    except Exception:
+        pass
+    raise HTTPException(status_code=503, detail="Content Retriever not initialized")
 
 def get_request_user_id(request: Request) -> str:
     user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id")

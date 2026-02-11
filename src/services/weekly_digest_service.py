@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from src.utils.time import utcnow
 from typing import List, Dict, Any
 from sqlalchemy.orm import Session
 
@@ -8,7 +9,7 @@ from src.services.email_service import email_service
 
 
 def build_weekly_digest_payload(db: Session, user_settings: UserSettings) -> Dict[str, Any]:
-    week_ago = datetime.utcnow() - timedelta(days=7)
+    week_ago = utcnow() - timedelta(days=7)
 
     focus_sessions = db.query(FocusSession).filter(
         FocusSession.start_time >= week_ago,

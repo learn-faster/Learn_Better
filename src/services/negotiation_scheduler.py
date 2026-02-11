@@ -1,6 +1,7 @@
 import asyncio
 import os
 from datetime import datetime, timedelta, time
+from src.utils.time import utcnow
 from zoneinfo import ZoneInfo
 
 from src.database.orm import SessionLocal
@@ -31,7 +32,7 @@ async def run_negotiation_scheduler(stop_event: asyncio.Event):
                 UserSettings.email_negotiation_enabled == True
             ).all()
 
-            utc_now = datetime.utcnow()
+            utc_now = utcnow()
             sent = 0
 
             for user_settings in settings_rows:

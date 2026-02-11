@@ -20,6 +20,7 @@ import asyncio
 from src.utils.logger import logger
 from pathlib import Path
 from datetime import datetime
+from src.utils.time import utcnow
 
 from src.database.orm import get_db
 from src.dependencies import get_request_user_id
@@ -162,7 +163,7 @@ async def _extraction_heartbeat(
                     IngestionJob.document_id == doc_id
                 ).order_by(IngestionJob.created_at.desc()).first()
                 if job and job.status in ("running", "pending") and job.phase in ("extracting", "ocr", "filtering"):
-                    job.updated_at = datetime.utcnow()
+                    job.updated_at = utcnow()
                     db.commit()
             finally:
                 db.close()
@@ -236,10 +237,10 @@ def _update_job(
         if partial_ready is not None:
             job.partial_ready = partial_ready
         if completed:
-            job.completed_at = datetime.utcnow()
-        job.updated_at = datetime.utcnow()
+            job.completed_at = utcnow()
+        job.updated_at = utcnow()
         if job.started_at is None and status == "running":
-            job.started_at = datetime.utcnow()
+            job.started_at = utcnow()
         db.commit()
     except ObjectDeletedError:
         db.rollback()
@@ -366,11 +367,6 @@ async def process_extraction_background(
         heartbeat_task = asyncio.create_task(
             _extraction_heartbeat(doc_id, heartbeat_event, db_session_factory)
         )
-
-        document.status = "processing"
-        document.ingestion_step = "extracting"
-        document.ingestion_progress = 10
-        db.commit()
 
         def _update_doc_progress(step: str, progress: float):
             db = _get_db()
@@ -686,7 +682,7 @@ async def process_ingestion_background(
                             "progress": float(progress),
                             "status": "running",
                             "message": step,
-                            "updated_at": datetime.utcnow()
+                            "updated_at": utcnow()
                         })
                     progress_db.commit()
                 finally:
@@ -705,7 +701,7 @@ async def process_ingestion_background(
                     profile["graph_extraction_checkpoint"] = {
                         "next_window": window_index + 1,
                         "total_windows": total_windows,
-                        "updated_at": datetime.utcnow().isoformat()
+                        "updated_at": utcnow().isoformat()
                     }
                     doc.content_profile = profile
                     progress_db.commit()
@@ -852,6 +848,7 @@ async def upload_document(
         # 3. Queue Background Processing (Phase 1: Extraction Only)
         _enqueue_extraction_job(db, doc_id, file_path, file_type, background_tasks)
         
+        _sanitize_document_response_fields(document, fallback_filename=doc_metadata.filename)
         return document
 
     except Exception as e:
@@ -981,7 +978,7 @@ async def ingest_link(
         title = link_data.title or "Web Source"
         content = f"# {title}\n\nURL: {link_data.url}\n\n[Fetching content...]\n"
         # Use timestamp in filename
-        ts = int(datetime.utcnow().timestamp())
+        ts = int(utcnow().timestamp())
         filename = f"link_{ts}.md"
         
         doc_metadata = document_store.save_text_document(filename, content, title)
@@ -1040,13 +1037,15 @@ def get_documents(
     elif folder_id:
         query = query.filter(Document.folder_id == folder_id)
         
-    if tag:
-        # Simple string match for tags if stored as JSON list
-        # query = query.filter(Document.tags.contains([tag])) 
-        # Fallback for now if dialect issues
-        pass
-        
     documents = query.order_by(Document.upload_date.desc()).all()
+    if tag:
+        normalized_tag = tag.strip().lower()
+        documents = [
+            d for d in documents
+            if isinstance(d.tags, list) and any(
+                isinstance(t, str) and t.strip().lower() == normalized_tag for t in d.tags
+            )
+        ]
     return _attach_ingestion_errors(db, documents)
 
 
@@ -1134,9 +1133,9 @@ def get_document_quality(document_id: int, db: Session = Depends(get_db)):
     raw_word_count = profile.get("raw_word_count")
     filtered_word_count = profile.get("filtered_word_count")
     if raw_word_count is None:
-        raw_word_count = len(re.findall(r"\\b[\\w'-]+\\b", raw_text))
+        raw_word_count = len(re.findall(r"\b[\w'-]+\b", raw_text))
     if filtered_word_count is None:
-        filtered_word_count = len(re.findall(r"\\b[\\w'-]+\\b", filtered_text))
+        filtered_word_count = len(re.findall(r"\b[\w'-]+\b", filtered_text))
 
     sections_total = profile.get("sections_total")
     sections_included = profile.get("sections_included")
@@ -1304,6 +1303,8 @@ async def delete_document(
         return {"message": "Document and associated metadata/vectors deleted successfully"}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to delete document {document_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal deletion failure")
@@ -1480,7 +1481,10 @@ def get_document_study_settings(document_id: int, db: Session = Depends(get_db))
     llm_cfg = None
     if settings_row.llm_config:
         try:
-            llm_cfg = LLMConfig(**settings_row.llm_config)
+            config_dict = settings_row.llm_config
+            if isinstance(config_dict, dict) and config_dict.get("global"):
+                config_dict = config_dict.get("global") or config_dict
+            llm_cfg = LLMConfig(**config_dict)
         except Exception:
             llm_cfg = None
     return DocumentStudySettingsResponse(
@@ -1539,7 +1543,10 @@ def update_document_study_settings(
     llm_cfg = None
     if settings_row.llm_config:
         try:
-            llm_cfg = LLMConfig(**settings_row.llm_config)
+            config_dict = settings_row.llm_config
+            if isinstance(config_dict, dict) and config_dict.get("global"):
+                config_dict = config_dict.get("global") or config_dict
+            llm_cfg = LLMConfig(**config_dict)
         except Exception:
             llm_cfg = None
     return DocumentStudySettingsResponse(
@@ -1574,7 +1581,10 @@ async def generate_document_quiz_items(
         ).first()
         if settings_row and settings_row.llm_config:
             try:
-                llm_config = LLMConfig(**settings_row.llm_config)
+                config_dict = settings_row.llm_config
+                if isinstance(config_dict, dict) and config_dict.get("global"):
+                    config_dict = config_dict.get("global") or config_dict
+                llm_config = LLMConfig(**config_dict)
             except Exception:
                 llm_config = None
 
@@ -1636,22 +1646,33 @@ def create_document_quiz_session(
     db: Session = Depends(get_db)
 ):
     item_ids = request.item_ids or []
+    if item_ids:
+        item_ids = list(dict.fromkeys(item_ids))
     if not item_ids:
         items = db.query(DocumentQuizItemORM).filter(
             DocumentQuizItemORM.document_id == document_id,
             DocumentQuizItemORM.mode == request.mode
         ).order_by(DocumentQuizItemORM.created_at.desc()).limit(5).all()
     else:
-        items = db.query(DocumentQuizItemORM).filter(DocumentQuizItemORM.id.in_(item_ids)).all()
+        items = db.query(DocumentQuizItemORM).filter(
+            DocumentQuizItemORM.document_id == document_id,
+            DocumentQuizItemORM.mode == request.mode,
+            DocumentQuizItemORM.id.in_(item_ids)
+        ).all()
+        if len(items) != len(item_ids):
+            raise HTTPException(status_code=400, detail="Some selected quiz items are invalid for this document/mode")
 
     if not items:
         raise HTTPException(status_code=400, detail="No quiz items available")
+
+    session_settings = dict(request.settings or _default_reveal_config())
+    session_settings["_item_ids"] = [item.id for item in items]
 
     session = DocumentQuizSession(
         id=str(uuid.uuid4()),
         document_id=document_id,
         mode=request.mode,
-        settings=request.settings or _default_reveal_config(),
+        settings=session_settings,
         status="active"
     )
     db.add(session)
@@ -1680,9 +1701,21 @@ def get_document_quiz_session(
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    items = db.query(DocumentQuizItemORM).filter(
-        DocumentQuizItemORM.document_id == document_id
-    ).order_by(DocumentQuizItemORM.created_at.desc()).limit(10).all()
+    session_settings = session.settings or {}
+    session_item_ids = session_settings.get("_item_ids") if isinstance(session_settings, dict) else None
+    if session_item_ids:
+        items = db.query(DocumentQuizItemORM).filter(
+            DocumentQuizItemORM.document_id == document_id,
+            DocumentQuizItemORM.mode == session.mode,
+            DocumentQuizItemORM.id.in_(session_item_ids)
+        ).all()
+        items_by_id = {item.id: item for item in items}
+        items = [items_by_id[i] for i in session_item_ids if i in items_by_id]
+    else:
+        items = db.query(DocumentQuizItemORM).filter(
+            DocumentQuizItemORM.document_id == document_id,
+            DocumentQuizItemORM.mode == session.mode
+        ).order_by(DocumentQuizItemORM.created_at.desc()).limit(10).all()
 
     return DocumentQuizSessionResponse(
         id=session.id,
@@ -1700,9 +1733,26 @@ async def grade_document_quiz_item(
     request: DocumentQuizGradeRequest,
     db: Session = Depends(get_db)
 ):
-    item = db.query(DocumentQuizItemORM).filter(DocumentQuizItemORM.id == request.quiz_item_id).first()
+    session = db.query(DocumentQuizSession).filter(
+        DocumentQuizSession.id == request.session_id,
+        DocumentQuizSession.document_id == document_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Quiz session not found")
+
+    item = db.query(DocumentQuizItemORM).filter(
+        DocumentQuizItemORM.id == request.quiz_item_id,
+        DocumentQuizItemORM.document_id == document_id
+    ).first()
     if not item:
         raise HTTPException(status_code=404, detail="Quiz item not found")
+    if item.mode != session.mode:
+        raise HTTPException(status_code=400, detail="Quiz item mode does not match session mode")
+
+    session_settings = session.settings or {}
+    session_item_ids = session_settings.get("_item_ids") if isinstance(session_settings, dict) else None
+    if session_item_ids and item.id not in session_item_ids:
+        raise HTTPException(status_code=400, detail="Quiz item is not part of this session")
 
     response_text = request.transcript or request.answer_text
     if not response_text:
@@ -1715,7 +1765,10 @@ async def grade_document_quiz_item(
         ).first()
         if settings_row and settings_row.llm_config:
             try:
-                llm_config = LLMConfig(**settings_row.llm_config)
+                config_dict = settings_row.llm_config
+                if isinstance(config_dict, dict) and config_dict.get("global"):
+                    config_dict = config_dict.get("global") or config_dict
+                llm_config = LLMConfig(**config_dict)
             except Exception:
                 llm_config = None
 
@@ -1786,7 +1839,7 @@ def get_document_quiz_stats(document_id: int, db: Session = Depends(get_db)):
     last_attempt = base_q.with_entities(func.max(DocumentQuizAttempt.created_at)).scalar()
 
     from datetime import datetime, timedelta
-    cutoff = datetime.utcnow() - timedelta(days=7)
+    cutoff = utcnow() - timedelta(days=7)
     recent_q = base_q.filter(DocumentQuizAttempt.created_at >= cutoff)
     attempts_7d = recent_q.count()
     avg_7d = recent_q.with_entities(func.avg(DocumentQuizAttempt.score)).scalar() or 0.0
@@ -1810,6 +1863,44 @@ def _normalize_tags_str(tags: Optional[str]) -> List[str]:
     if not tags:
         return []
     return [t.strip() for t in tags.split(",") if t.strip()]
+
+
+def _sanitize_document_response_fields(document: Document, fallback_filename: Optional[str] = None) -> Document:
+    """
+    Ensure response-model fields are primitive serializable types.
+    This prevents validation errors when tests provide MagicMock ORM objects.
+    """
+    if document is None:
+        return document
+
+    def _clean_str(value, default=None):
+        if value is None:
+            return default
+        return value if isinstance(value, str) else default
+
+    string_fields = [
+        "filename",
+        "ai_summary",
+        "ingestion_step",
+        "display_type",
+        "raw_extracted_text",
+        "filtered_extracted_text",
+        "source_url",
+        "ocr_status",
+        "ocr_provider",
+        "language",
+        "ingestion_error",
+        "ingestion_job_status",
+        "ingestion_job_phase",
+        "ingestion_job_message",
+    ]
+    for field in string_fields:
+        setattr(document, field, _clean_str(getattr(document, field, None), None))
+
+    if not getattr(document, "filename", None) and fallback_filename:
+        document.filename = fallback_filename
+
+    return document
 
 
 def _enqueue_extraction_job(
@@ -1892,3 +1983,4 @@ async def _process_link_background(
         logger.error(f"Link background extraction failed for {doc_id}: {e}")
     finally:
         db.close()
+

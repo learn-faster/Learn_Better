@@ -4,6 +4,7 @@ Handles session management, updates reading progress, and calculates
 estimated time to complete documents.
 """
 from datetime import datetime
+from src.utils.time import utcnow
 from typing import Optional
 from sqlalchemy.orm import Session
 from src.models.orm import Document
@@ -31,7 +32,7 @@ class TimeTrackingService:
         if not document:
             return None
         
-        now = datetime.utcnow()
+        now = utcnow()
         if not document.first_opened:
             document.first_opened = now
         

@@ -2,6 +2,7 @@
 SQLAlchemy Models for LearnFast Core.
 """
 from datetime import datetime
+from src.utils.time import utcnow
 from typing import List, Optional
 import uuid
 from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Date, Float, Boolean, JSON, ARRAY
@@ -95,8 +96,8 @@ class DocumentSection(Base):
     included = Column(Boolean, default=True)
     page_start = Column(Integer, nullable=True)
     page_end = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     document = relationship("Document", back_populates="sections")
 
@@ -116,8 +117,8 @@ class IngestionJob(Base):
     partial_ready = Column(Boolean, default=False)
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 class Flashcard(Base):
     __tablename__ = "flashcards"
@@ -135,10 +136,10 @@ class Flashcard(Base):
     interval = Column(Integer, default=0) # Days
     ease_factor = Column(Float, default=2.5)
     
-    next_review = Column(DateTime, default=datetime.utcnow)
+    next_review = Column(DateTime, default=utcnow)
     last_review = Column(DateTime, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
     
     # Relationships
     document = relationship("Document", back_populates="flashcards")
@@ -148,7 +149,7 @@ class StudySession(Base):
     __tablename__ = "study_sessions"
     
     id = Column(String, primary_key=True, index=True) # UUID
-    start_time = Column(DateTime, default=datetime.utcnow)
+    start_time = Column(DateTime, default=utcnow)
     end_time = Column(DateTime, nullable=True)
     
     cards_reviewed = Column(Integer, default=0)
@@ -175,7 +176,7 @@ class StudyReview(Base):
     
     rating = Column(Integer) # 0-5
     time_taken = Column(Integer, default=0) # Seconds to answer
-    reviewed_at = Column(DateTime, default=datetime.utcnow)
+    reviewed_at = Column(DateTime, default=utcnow)
     
     # Relationships
     session = relationship("StudySession", back_populates="reviews")
@@ -190,7 +191,7 @@ class PracticeSession(Base):
     curriculum_id = Column(String, nullable=True)
     mode = Column(String, default="focus")
     target_duration_minutes = Column(Integer, default=25)
-    start_time = Column(DateTime, default=datetime.utcnow)
+    start_time = Column(DateTime, default=utcnow)
     end_time = Column(DateTime, nullable=True)
     effectiveness_rating = Column(Integer, nullable=True)
     reflection = Column(Text, nullable=True)
@@ -213,7 +214,7 @@ class PracticeItem(Base):
     score = Column(Float, default=0.0)
     time_taken = Column(Integer, default=0)
     metadata_json = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
     session = relationship("PracticeSession", back_populates="items")
 
@@ -223,7 +224,7 @@ class ActivityLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     activity_type = Column(String, index=True) # view_document, create_flashcard, etc.
     description = Column(String)
-    timestamp = Column(DateTime, default=datetime.utcnow)
+    timestamp = Column(DateTime, default=utcnow)
     
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=True)
     extra_data = Column(JSON, default=dict)
@@ -322,8 +323,8 @@ class UserSettings(Base):
     embedding_api_key = Column(String, nullable=True)
     embedding_base_url = Column(String, nullable=True)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class Curriculum(Base):
@@ -350,8 +351,8 @@ class Curriculum(Base):
     status = Column(String, default="active") # active, completed, archvied
     progress = Column(Float, default=0.0)
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     # Relationships
     modules = relationship("CurriculumModule", back_populates="curriculum", cascade="all, delete-orphan")
@@ -400,7 +401,7 @@ class CurriculumDocument(Base):
     id = Column(Integer, primary_key=True, index=True)
     curriculum_id = Column(String, ForeignKey("curriculums.id"))
     document_id = Column(Integer, ForeignKey("documents.id"))
-    added_at = Column(DateTime, default=datetime.utcnow)
+    added_at = Column(DateTime, default=utcnow)
 
     curriculum = relationship("Curriculum", back_populates="documents")
     document = relationship("Document")
@@ -505,8 +506,8 @@ class Goal(Base):
     email_reminders = Column(Boolean, default=True)
     reminder_frequency = Column(String, default="daily")  # daily, weekly, none
     
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     
     # Relationships
     focus_sessions = relationship("FocusSession", back_populates="goal", cascade="all, delete-orphan")
@@ -523,7 +524,7 @@ class FocusSession(Base):
     goal_id = Column(String, ForeignKey("goals.id"), nullable=True)
     user_id = Column(String, index=True, default="default_user")
     
-    start_time = Column(DateTime, default=datetime.utcnow)
+    start_time = Column(DateTime, default=utcnow)
     end_time = Column(DateTime, nullable=True)
     duration_minutes = Column(Integer, default=0)
     
@@ -546,7 +547,7 @@ class AgentMemory(Base):
     value = Column(JSON, nullable=True)
     
     category = Column(String, default="general") # general, scratchpad, preference
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
     # Composite unique constraint on user_id and key could be added in __table_args__
     # but for now we will handle it in application logic or assume uniqueness
@@ -560,7 +561,7 @@ class AgentMemoryEpisodic(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String, index=True, default="default_user")
-    timestamp = Column(DateTime, default=datetime.utcnow, index=True)
+    timestamp = Column(DateTime, default=utcnow, index=True)
     summary = Column(Text, nullable=False)
     context = Column(JSON, default=dict)
     goal_id = Column(String, nullable=True)
@@ -580,7 +581,7 @@ class AgentMemorySemantic(Base):
     confidence = Column(Float, default=0.7)
     source = Column(String, nullable=True)
     tags = Column(ARRAY(String), default=list)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class AgentMemoryProcedural(Base):
@@ -620,8 +621,8 @@ class KnowledgeGraph(Base):
     node_count = Column(Integer, default=0)
     relationship_count = Column(Integer, default=0)
 
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     last_built_at = Column(DateTime, nullable=True)
 
     documents = relationship("KnowledgeGraphDocument", back_populates="graph", cascade="all, delete-orphan")
@@ -636,7 +637,7 @@ class KnowledgeGraphDocument(Base):
     id = Column(Integer, primary_key=True, index=True)
     graph_id = Column(String, ForeignKey("knowledge_graphs.id"), index=True, nullable=False)
     document_id = Column(Integer, ForeignKey("documents.id"), index=True, nullable=False)
-    added_at = Column(DateTime, default=datetime.utcnow)
+    added_at = Column(DateTime, default=utcnow)
 
     graph = relationship("KnowledgeGraph", back_populates="documents")
     document = relationship("Document")
@@ -655,7 +656,7 @@ class DocumentQuizItem(Base):
     tags = Column(JSON, default=list)
     difficulty = Column(Integer, default=3)
     source_span = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 class DocumentQuizSession(Base):
     __tablename__ = "document_quiz_sessions"
@@ -665,8 +666,8 @@ class DocumentQuizSession(Base):
     mode = Column(String, default="cloze")
     settings = Column(JSON, default=dict)
     status = Column(String, default="active")
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 class DocumentQuizAttempt(Base):
     __tablename__ = "document_quiz_attempts"
@@ -679,7 +680,7 @@ class DocumentQuizAttempt(Base):
     score = Column(Float, default=0.0)
     feedback = Column(Text, nullable=True)
     llm_eval = Column(JSON, default=dict)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 class DocumentStudySettings(Base):
     __tablename__ = "document_study_settings"
@@ -690,5 +691,6 @@ class DocumentStudySettings(Base):
     reveal_config = Column(JSON, default=dict)
     llm_config = Column(JSON, default=dict)
     voice_mode_enabled = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
