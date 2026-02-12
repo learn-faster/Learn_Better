@@ -24,9 +24,9 @@ from src.utils.time import utcnow
 
 from src.database.orm import get_db
 from src.dependencies import get_request_user_id
-from src.models.orm import Document, UserSettings, DocumentQuizItem as DocumentQuizItemORM, DocumentQuizSession, DocumentQuizAttempt, DocumentStudySettings, DocumentSection, IngestionJob, KnowledgeGraphDocument
+from src.models.orm import Document, UserSettings, DocumentQuizItem as DocumentQuizItemORM, DocumentQuizSession, DocumentQuizAttempt, DocumentQuizSubmission, DocumentStudySettings, DocumentSection, IngestionJob, KnowledgeGraphDocument
 from src.models.enums import FileType
-from src.models.schemas import DocumentResponse, DocumentCreate, TimeTrackingRequest, DocumentLinkCreate, DocumentQuizGenerateRequest, DocumentQuizSessionCreate, DocumentQuizSessionResponse, DocumentQuizGradeRequest, DocumentQuizGradeResponse, DocumentStudySettingsPayload, DocumentStudySettingsResponse, DocumentQuizStatsResponse, DocumentQuizItem as DocumentQuizItemResponse, LLMConfig, DocumentSectionResponse, DocumentSectionUpdate, DocumentQualityResponse, IngestionJobResponse
+from src.models.schemas import DocumentResponse, DocumentCreate, TimeTrackingRequest, DocumentLinkCreate, DocumentQuizGenerateRequest, DocumentQuizSessionCreate, DocumentQuizSessionResponse, DocumentQuizGradeRequest, DocumentQuizGradeResponse, DocumentStudySettingsPayload, DocumentStudySettingsResponse, DocumentQuizStatsResponse, DocumentQuizItem as DocumentQuizItemResponse, LLMConfig, DocumentSectionResponse, DocumentSectionUpdate, DocumentQualityResponse, IngestionJobResponse, MarkdownExportResponse, MarkdownSaveRequest, ExercisePreviewRequest, ExerciseCandidate, ExerciseCreateRequest, DocumentQuizBatchGradeResponse, DocumentQuizBatchGradeItem, HighlightActionRequest, HighlightActionResponse
 from src.services.time_tracking_service import TimeTrackingService
 from src.ingestion.document_processor import DocumentProcessor
 from src.ingestion.ingestion_engine import IngestionEngine
@@ -38,12 +38,13 @@ from src.services.reading_time import reading_time_estimator
 from src.services.open_notebook_sync import sync_document_to_notebook
 from src.services.llm_service import llm_service, RateLimitException
 from src.observability.opik import get_opik_context
-from src.services.prompts import CLOZE_GENERATION_PROMPT_TEMPLATE, RECALL_GRADING_PROMPT_TEMPLATE
+from src.services.prompts import CLOZE_GENERATION_PROMPT_TEMPLATE, RECALL_GRADING_PROMPT_TEMPLATE, EXERCISE_GRADING_PROMPT_TEMPLATE
 from src.services.content_filter import filter_document_content, rebuild_filtered_from_sections
 from src.services.ocr_service import ocr_service
 from src.services.web_extractor import extract_web_content
 from src.queue.ingestion_queue import enqueue_extraction, enqueue_ingestion
 from src.services.ingestion_orchestrator import schedule_extraction, schedule_ingestion
+from src.services.model_limits import recommend_extraction_settings
 
 router = APIRouter(prefix="/api/documents", tags=["documents"])
 
@@ -58,7 +59,77 @@ from fastapi import BackgroundTasks
 from src.database.orm import SessionLocal
 
 
-def _attach_ingestion_errors(db: Session, documents: List[Document]) -> List[DocumentResponse]:
+def _get_llm_provider_model(llm_config: Optional[LLMConfig]):
+    if not llm_config:
+        return settings.llm_provider, settings.llm_model
+    if isinstance(llm_config, dict):
+        return llm_config.get("provider") or settings.llm_provider, llm_config.get("model") or settings.llm_model
+    return getattr(llm_config, "provider", settings.llm_provider), getattr(llm_config, "model", settings.llm_model)
+
+
+def _is_large_source(
+    word_count: Optional[int],
+    page_count: Optional[int],
+    file_size_bytes: Optional[int]
+) -> bool:
+    if page_count and page_count >= 40:
+        return True
+    if word_count and word_count >= 20000:
+        return True
+    if file_size_bytes and file_size_bytes >= 20 * 1024 * 1024:
+        return True
+    return False
+
+
+def _build_processing_recommendation(
+    document: Document,
+    llm_config: Optional[LLMConfig],
+    requested_extraction_max_chars: Optional[int] = None,
+    requested_chunk_size: Optional[int] = None
+) -> dict:
+    provider, model = _get_llm_provider_model(llm_config)
+    rec = recommend_extraction_settings(provider, model)
+
+    file_size_bytes = None
+    if document.file_path and os.path.exists(document.file_path):
+        try:
+            file_size_bytes = os.path.getsize(document.file_path)
+        except OSError:
+            file_size_bytes = None
+
+    is_large = _is_large_source(document.word_count, document.page_count, file_size_bytes)
+
+    applied_extraction = requested_extraction_max_chars or (rec["recommended_extraction_max_chars"] if is_large else settings.extraction_max_chars)
+    applied_chunk = requested_chunk_size or (rec["recommended_chunk_size"] if is_large else None)
+
+    clamped = False
+    max_input_chars = int(rec.get("max_input_chars") or 0)
+    if max_input_chars and applied_extraction and applied_extraction > max_input_chars:
+        applied_extraction = max_input_chars
+        clamped = True
+
+    if applied_chunk and applied_extraction and applied_chunk > applied_extraction:
+        applied_chunk = max(400, int(applied_extraction / 4))
+        clamped = True
+
+    reason = "large_source_auto_safe" if is_large else "model_based_default"
+    if clamped:
+        reason = "clamped_to_model_limit"
+
+    return {
+        "provider": rec["provider"],
+        "model": rec["model"],
+        "context_tokens": rec["context_tokens"],
+        "recommended_extraction_max_chars": rec["recommended_extraction_max_chars"],
+        "recommended_chunk_size": rec["recommended_chunk_size"],
+        "applied_extraction_max_chars": applied_extraction,
+        "applied_chunk_size": applied_chunk,
+        "is_large_source": is_large,
+        "reason": reason
+    }
+
+
+def _attach_ingestion_errors(db: Session, documents: List[Document], user_id: Optional[str] = None) -> List[DocumentResponse]:
     if not documents:
         return []
 
@@ -89,6 +160,14 @@ def _attach_ingestion_errors(db: Session, documents: List[Document]) -> List[Doc
             return cleaned[:177] + "..."
         return cleaned
 
+    from src.services.llm_config_resolver import resolve_llm_config
+    llm_config = None
+    effective_user_id = user_id or "default_user"
+    try:
+        llm_config = resolve_llm_config(db, effective_user_id, config_type="extraction")
+    except Exception:
+        llm_config = None
+
     results = []
     for doc in documents:
         resp = DocumentResponse.model_validate(doc, from_attributes=True)
@@ -97,6 +176,11 @@ def _attach_ingestion_errors(db: Session, documents: List[Document]) -> List[Doc
         link_count = graph_counts.get(doc.id, 0)
         resp.graph_link_count = link_count
         resp.linked_to_graph = link_count > 0
+        profile = doc.content_profile or {}
+        if isinstance(profile, dict) and profile.get("processing_recommendation"):
+            resp.processing_recommendation = profile.get("processing_recommendation")
+        else:
+            resp.processing_recommendation = _build_processing_recommendation(doc, llm_config)
         if job:
             resp.ingestion_job_status = job.status
             resp.ingestion_job_phase = job.phase
@@ -111,6 +195,36 @@ def _attach_ingestion_errors(db: Session, documents: List[Document]) -> List[Doc
                     resp.ingestion_progress = job_progress
                 if job.phase and (not resp.ingestion_step or resp.ingestion_step in ("pending", "queued", "extracting")):
                     resp.ingestion_step = job.phase
+        progress = float(resp.ingestion_progress or 0)
+        if job and job.progress is not None:
+            try:
+                progress = float(job.progress)
+            except Exception:
+                pass
+        resp.progress_percent = max(0.0, min(100.0, progress))
+
+        status = (resp.status or "").lower()
+        step = (resp.ingestion_step or "").lower()
+        normalized = "ready"
+        reason = None
+        if job and job.status == "paused":
+            normalized = "paused"
+            reason = "rate_limited"
+        elif step == "rate_limited":
+            normalized = "paused"
+            reason = "rate_limited"
+        elif status in ("failed",):
+            normalized = "failed"
+            reason = resp.ingestion_error
+        elif status in ("ingesting",):
+            normalized = "ingesting"
+        elif status in ("processing", "pending", "uploading"):
+            normalized = "processing"
+        elif status in ("extracted", "complete", "completed"):
+            normalized = "ready"
+
+        resp.normalized_status = normalized
+        resp.status_reason = reason
         results.append(resp)
     return results
 
@@ -651,9 +765,18 @@ async def process_ingestion_background(
 
             # Resolve LLM config
             from src.services.llm_config_resolver import resolve_llm_config
-            llm_config = resolve_llm_config(db, user_id)
-            
+            llm_config = resolve_llm_config(db, user_id, config_type="extraction")
+
             source_text = document.filtered_extracted_text or document.extracted_text or document.raw_extracted_text or ""
+            processing_rec = _build_processing_recommendation(
+                document,
+                llm_config,
+                requested_extraction_max_chars=settings.extraction_max_chars
+            )
+            profile = document.content_profile or {}
+            profile["processing_recommendation"] = processing_rec
+            document.content_profile = profile
+            db.commit()
         finally:
             db.close()
 
@@ -715,7 +838,8 @@ async def process_ingestion_background(
             extracted_text=source_text,
             document_id=doc_id,
             llm_config=llm_config,
-            extraction_max_chars=settings.extraction_max_chars,
+            extraction_max_chars=processing_rec.get("applied_extraction_max_chars"),
+            chunk_size=processing_rec.get("applied_chunk_size"),
             on_progress=on_progress,
             resume_from_window=resume_from_window,
             on_window_complete=on_window_complete
@@ -765,13 +889,14 @@ async def process_ingestion_background(
         try:
             document = db.query(Document).filter(Document.id == doc_id).first()
             if document:
-                document.status = "failed" 
-                document.ingestion_step = f"Failed: {str(e)}"
+                message = str(e)
+                document.status = "failed"
+                document.ingestion_step = f"Failed: {message}"
                 db.commit()
             if job_id:
                 job = db.query(IngestionJob).filter(IngestionJob.id == job_id).first()
                 if job:
-                    _update_job(db, job, status="failed", phase="ingesting", progress=0, message=str(e), completed=True)
+                    _update_job(db, job, status="failed", phase="ingesting", progress=0, message=message, completed=True)
         finally:
             db.close()
     finally:
@@ -1021,7 +1146,8 @@ async def ingest_link(
 def get_documents(
     folder_id: Optional[str] = None,
     tag: Optional[str] = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
 ):
     """
     Retrieves a list of documents with optional filtering.
@@ -1046,18 +1172,22 @@ def get_documents(
                 isinstance(t, str) and t.strip().lower() == normalized_tag for t in d.tags
             )
         ]
-    return _attach_ingestion_errors(db, documents)
+    return _attach_ingestion_errors(db, documents, user_id=user_id)
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
-def get_document(document_id: int, db: Session = Depends(get_db)):
+def get_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    user_id: str = Depends(get_request_user_id)
+):
     """
     Retrieves a specific document's metadata.
     """
     document = db.query(Document).filter(Document.id == document_id).first()
     if not document:
         raise HTTPException(status_code=404, detail="Document not found")
-    enriched = _attach_ingestion_errors(db, [document])
+    enriched = _attach_ingestion_errors(db, [document], user_id=user_id)
     return enriched[0] if enriched else document
 
 
@@ -1180,6 +1310,63 @@ async def download_document(document_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="File not found")
 
     return FileResponse(file_path, filename=document.filename)
+
+
+@router.get("/{document_id}/markdown", response_model=MarkdownExportResponse)
+async def export_document_markdown(
+    document_id: int,
+    page_start: Optional[int] = None,
+    page_end: Optional[int] = None,
+    include_images: bool = False,
+    image_mode: str = "base64",
+    max_image_kb: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not document.file_path or not os.path.exists(document.file_path):
+        raise HTTPException(status_code=404, detail="Document file not found")
+
+    max_image_kb = max_image_kb or settings.markdown_inline_image_max_kb
+    markdown, image_metadata = await run_in_threadpool(
+        document_processor.convert_to_markdown,
+        document.file_path,
+        page_start,
+        page_end,
+        include_images,
+        image_mode,
+        max_image_kb
+    )
+    warnings = []
+    if any(m.get("status") == "skipped_large" for m in image_metadata):
+        warnings.append("Some images were skipped because they exceeded the inline size limit.")
+    return MarkdownExportResponse(
+        markdown=markdown or "",
+        page_start=page_start,
+        page_end=page_end,
+        image_mode=image_mode,
+        warnings=warnings
+    )
+
+
+@router.put("/{document_id}/markdown", response_model=DocumentResponse)
+def save_document_markdown(
+    document_id: int,
+    request: MarkdownSaveRequest,
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    if not request.markdown or not request.markdown.strip():
+        raise HTTPException(status_code=400, detail="Markdown content is required")
+
+    document.extracted_text = request.markdown
+    document.raw_extracted_text = request.markdown
+    db.commit()
+    db.refresh(document)
+    return document
 
 
 @router.put("/{document_id}", response_model=DocumentResponse)
@@ -1446,6 +1633,93 @@ def _default_reveal_config():
         "reveal_percent_per_step": 12
     }
 
+def _slice_text_by_pages(text: str, start_page: int, end_page: int) -> str:
+    if not text or start_page > end_page:
+        return ""
+    if "## Page" not in text and "## page" not in text:
+        return text
+    lines = text.splitlines()
+    current_page = None
+    bucket = []
+    for line in lines:
+        if line.strip().lower().startswith("## page"):
+            try:
+                parts = line.strip().split()
+                page_num = int(parts[-1])
+            except Exception:
+                page_num = None
+            current_page = page_num
+        if current_page is None:
+            continue
+        if start_page <= current_page <= end_page:
+            bucket.append(line)
+    return "\n".join(bucket).strip()
+
+def _extract_exercise_candidates(markdown: str) -> List[ExerciseCandidate]:
+    if not markdown:
+        return []
+    lines = markdown.splitlines()
+    candidates: List[ExerciseCandidate] = []
+    buffer: List[str] = []
+    current_page: Optional[int] = None
+    current_number: Optional[str] = None
+    question_pattern = re.compile(r"^\s*(Q\s*\d+|Question\s*\d+|Exercise\s*\d+|\d+[\.)])\s+", re.IGNORECASE)
+
+    def flush():
+        nonlocal buffer, current_number
+        if not buffer:
+            return
+        text = "\n".join(buffer).strip()
+        if text:
+            candidates.append(ExerciseCandidate(
+                question_number=current_number,
+                text=text,
+                page_start=current_page,
+                page_end=current_page,
+                confidence=0.65 if current_number else 0.45
+            ))
+        buffer = []
+        current_number = None
+
+    for line in lines:
+        if line.strip().lower().startswith("## page"):
+            try:
+                current_page = int(line.strip().split()[-1])
+            except Exception:
+                current_page = None
+        match = question_pattern.match(line)
+        if match:
+            flush()
+            current_number = match.group(1).strip()
+            buffer = [line.strip()]
+            continue
+        if buffer:
+            if line.strip() == "":
+                flush()
+            else:
+                buffer.append(line)
+    flush()
+    return candidates
+
+def _split_answers_by_labels(ocr_text: str) -> Dict[str, str]:
+    if not ocr_text:
+        return {}
+    pattern = re.compile(r"(?im)^\s*(Q\s*\d+|Question\s*\d+)\s*[:\.\-\)]?\s*")
+    parts = pattern.split(ocr_text)
+    if len(parts) <= 1:
+        return {}
+    results: Dict[str, str] = {}
+    it = iter(parts)
+    _ = next(it, None)  # leading text
+    while True:
+        label = next(it, None)
+        content = next(it, None)
+        if label is None or content is None:
+            break
+        key = re.sub(r"\s+", "", label).upper()
+        results[key] = content.strip()
+    return results
+
 
 def _fallback_generate_items(text: str, count: int):
     # Simple fallback: split into paragraphs, pick short ones
@@ -1466,6 +1740,66 @@ def _fallback_generate_items(text: str, count: int):
         })
     return items
 
+
+@router.post("/{document_id}/exercises/preview", response_model=List[ExerciseCandidate])
+async def preview_document_exercises(
+    document_id: int,
+    request: ExercisePreviewRequest,
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    text = document.filtered_extracted_text or document.extracted_text or document.raw_extracted_text
+    if request.source_mode == "selection":
+        text = request.selection_text or ""
+    if not text:
+        raise HTTPException(status_code=400, detail="Document has no extracted text")
+
+    if request.page_start and request.page_end:
+        text = _slice_text_by_pages(text, request.page_start, request.page_end)
+        if not text:
+            raise HTTPException(status_code=400, detail="No content found for that page range")
+
+    candidates = _extract_exercise_candidates(text)
+    if not candidates and text.strip():
+        candidates = [ExerciseCandidate(text=text.strip(), confidence=0.3)]
+    return candidates
+
+
+@router.post("/{document_id}/exercises", response_model=List[DocumentQuizItemResponse])
+def create_document_exercises(
+    document_id: int,
+    request: ExerciseCreateRequest,
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    saved_items = []
+    for item in request.items:
+        quiz_item = DocumentQuizItemORM(
+            id=str(uuid.uuid4()),
+            document_id=document_id,
+            mode=request.mode or "exercise",
+            passage_markdown=item.text,
+            masked_markdown=None,
+            answer_key=[],
+            tags=[],
+            difficulty=3,
+            source_span={
+                "question_number": item.question_number,
+                "page_start": item.page_start,
+                "page_end": item.page_end
+            }
+        )
+        db.add(quiz_item)
+        saved_items.append(quiz_item)
+
+    db.commit()
+    return saved_items
 
 @router.get("/{document_id}/study-settings", response_model=DocumentStudySettingsResponse)
 def get_document_study_settings(document_id: int, db: Session = Depends(get_db)):
@@ -1506,7 +1840,7 @@ async def documents_updates(websocket: WebSocket):
                     defer(Document.raw_extracted_text),
                     defer(Document.filtered_extracted_text)
                 ).order_by(Document.upload_date.desc()).all()
-                enriched = _attach_ingestion_errors(db, docs)
+                enriched = _attach_ingestion_errors(db, docs, user_id="default_user")
                 payload = {"documents": [d.model_dump() for d in enriched]}
             finally:
                 db.close()
@@ -1772,15 +2106,23 @@ async def grade_document_quiz_item(
             except Exception:
                 llm_config = None
 
-    prompt = RECALL_GRADING_PROMPT_TEMPLATE.format(
-        passage=item.passage_markdown,
-        answer_key=json.dumps(item.answer_key),
-        response=response_text
-    )
+    if item.mode == "exercise":
+        prompt = EXERCISE_GRADING_PROMPT_TEMPLATE.format(
+            question=item.passage_markdown,
+            answer_key=json.dumps(item.answer_key),
+            response=response_text
+        )
+    else:
+        prompt = RECALL_GRADING_PROMPT_TEMPLATE.format(
+            passage=item.passage_markdown,
+            answer_key=json.dumps(item.answer_key),
+            response=response_text
+        )
 
     score = 0.0
     feedback = ""
     llm_eval = {}
+    alternatives: List[str] = []
 
     try:
         response = await llm_service.get_chat_completion(
@@ -1793,6 +2135,7 @@ async def grade_document_quiz_item(
             raise ValueError("LLM grading response was not a JSON object")
         score = float(data.get("score", 0))
         feedback = data.get("feedback", "")
+        alternatives = data.get("alternative_approaches") or []
         llm_eval = data
         ctx = get_opik_context()
         trace = ctx.get_current_trace_data() if ctx else None
@@ -1817,6 +2160,7 @@ async def grade_document_quiz_item(
         quiz_item_id=item.id,
         user_answer=request.answer_text,
         transcript=request.transcript,
+        submission_id=request.submission_id,
         score=score,
         feedback=feedback,
         llm_eval=llm_eval
@@ -1824,7 +2168,133 @@ async def grade_document_quiz_item(
     db.add(attempt)
     db.commit()
 
-    return DocumentQuizGradeResponse(score=score, feedback=feedback, llm_eval=llm_eval)
+    return DocumentQuizGradeResponse(
+        score=score,
+        feedback=feedback,
+        llm_eval=llm_eval,
+        alternative_approaches=alternatives
+    )
+
+
+@router.post("/{document_id}/quiz/grade-batch", response_model=DocumentQuizBatchGradeResponse)
+async def grade_document_quiz_batch(
+    document_id: int,
+    session_id: str = Form(...),
+    file: UploadFile = File(...),
+    dry_run: Optional[bool] = Form(False),
+    llm_config_json: Optional[str] = Form(None),
+    db: Session = Depends(get_db)
+):
+    session = db.query(DocumentQuizSession).filter(
+        DocumentQuizSession.id == session_id,
+        DocumentQuizSession.document_id == document_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Quiz session not found")
+
+    llm_config = None
+    if llm_config_json:
+        try:
+            llm_config = LLMConfig(**json.loads(llm_config_json))
+        except Exception:
+            llm_config = None
+
+    # Save upload
+    upload_dir = os.path.join(settings.upload_dir, "answers", str(document_id), str(session_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    filename = f"{uuid.uuid4()}_{file.filename}"
+    file_path = os.path.join(upload_dir, filename)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    # OCR
+    ocr_text = ""
+    try:
+        ext = Path(file.filename or "").suffix.lower()
+        if ext == ".pdf":
+            ocr_text = await ocr_service.ocr_pdf(file_path, llm_config=llm_config)
+        elif ext in settings.allowed_image_extensions:
+            ocr_text = await ocr_service.ocr_image(file_path, llm_config=llm_config)
+    except Exception:
+        ocr_text = ""
+
+    answers_by_label = _split_answers_by_labels(ocr_text)
+    submission_id = str(uuid.uuid4())
+    submission = DocumentQuizSubmission(
+        id=submission_id,
+        session_id=session_id,
+        file_path=file_path,
+        ocr_text=ocr_text,
+        mapping_json=answers_by_label
+    )
+    db.add(submission)
+    db.commit()
+
+    session_settings = session.settings or {}
+    session_item_ids = session_settings.get("_item_ids") if isinstance(session_settings, dict) else None
+    query = db.query(DocumentQuizItemORM).filter(DocumentQuizItemORM.document_id == document_id)
+    if session_item_ids:
+        query = query.filter(DocumentQuizItemORM.id.in_(session_item_ids))
+    items = query.order_by(DocumentQuizItemORM.created_at.asc()).all()
+
+    results: List[DocumentQuizBatchGradeItem] = []
+    unmapped_text = None
+    if not answers_by_label:
+        unmapped_text = ocr_text
+        return DocumentQuizBatchGradeResponse(submission_id=submission_id, items=[], unmapped_text=unmapped_text)
+
+    for idx, item in enumerate(items, start=1):
+        label = f"Q{idx}"
+        answer_text = answers_by_label.get(label)
+        mapped = bool(answer_text)
+        result = DocumentQuizBatchGradeItem(
+            quiz_item_id=item.id,
+            question_number=label,
+            answer_text=answer_text,
+            mapped=mapped
+        )
+        if mapped and not dry_run:
+            prompt = EXERCISE_GRADING_PROMPT_TEMPLATE.format(
+                question=item.passage_markdown,
+                answer_key=json.dumps(item.answer_key),
+                response=answer_text
+            )
+            try:
+                response = await llm_service.get_chat_completion(
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format="json",
+                    config=llm_config
+                )
+                data = llm_service._extract_and_parse_json(response)
+                result.score = float(data.get("score", 0))
+                result.feedback = data.get("feedback", "")
+                result.alternative_approaches = data.get("alternative_approaches") or []
+                result.llm_eval = data if isinstance(data, dict) else {}
+            except Exception as e:
+                result.score = 0.1
+                result.feedback = "Auto-grading failed; please review manually."
+                result.llm_eval = {"fallback": True, "error": str(e)}
+
+            attempt = DocumentQuizAttempt(
+                id=str(uuid.uuid4()),
+                session_id=session_id,
+                quiz_item_id=item.id,
+                user_answer=answer_text,
+                transcript=None,
+                submission_id=submission_id,
+                score=result.score or 0.0,
+                feedback=result.feedback,
+                llm_eval=result.llm_eval
+            )
+            db.add(attempt)
+            db.commit()
+        results.append(result)
+
+    return DocumentQuizBatchGradeResponse(
+        submission_id=submission_id,
+        items=results,
+        unmapped_text=unmapped_text
+    )
 
 
 @router.get("/{document_id}/quiz/stats", response_model=DocumentQuizStatsResponse)
@@ -1853,6 +2323,35 @@ def get_document_quiz_stats(document_id: int, db: Session = Depends(get_db)):
         attempts_last_7d=attempts_7d,
         average_score_last_7d=float(avg_7d)
     )
+
+
+@router.post("/{document_id}/highlight/action", response_model=HighlightActionResponse)
+async def run_highlight_action(
+    document_id: int,
+    request: HighlightActionRequest,
+    db: Session = Depends(get_db)
+):
+    document = db.query(Document).filter(Document.id == document_id).first()
+    if not document:
+        raise HTTPException(status_code=404, detail="Document not found")
+    action = (request.action or "").lower().strip()
+    selection = request.selection_text or ""
+    if not selection.strip():
+        raise HTTPException(status_code=400, detail="Selection text is required")
+
+    if action == "ask":
+        question = request.question or "What does this mean?"
+        prompt = f"Answer the user's question using the excerpt.\n\nQuestion: {question}\n\nExcerpt:\n{selection}\n\nProvide a concise response."
+    elif action == "summarize":
+        prompt = f"Summarize this excerpt in 3-5 bullet points:\n\n{selection}"
+    else:
+        prompt = f"Explain this excerpt clearly for a student:\n\n{selection}"
+
+    response = await llm_service.get_chat_completion(
+        messages=[{"role": "user", "content": prompt}],
+        config=request.llm_config
+    )
+    return HighlightActionResponse(output=response or "")
 def _normalize_tag_list(tags: Optional[List[str]]) -> List[str]:
     if not tags:
         return []

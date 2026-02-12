@@ -3,10 +3,8 @@ import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
     ArrowLeft,
     Maximize2,
-    Settings,
     ZoomIn,
     ZoomOut,
-    Download,
     PanelRightClose,
     PanelRightOpen,
     Play,
@@ -19,9 +17,7 @@ import {
     StickyNote,
     Layers
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import useDocumentStore from '../stores/useDocumentStore';
-import useFlashcardStore from '../stores/useFlashcardStore';
+import { toast } from 'sonner';
 import ConceptService from '../services/concepts';
 import api from '../services/api';
 import { getApiUrl } from '../lib/config';
@@ -30,9 +26,14 @@ import { useTimer } from '../hooks/useTimer';
 import FlashcardCreator from '../components/flashcards/FlashcardCreator';
 import RecallStudio from '../components/documents/RecallStudio';
 import { Document, Page, pdfjs } from 'react-pdf';
-import ReactMarkdown from 'react-markdown';
+import { MarkdownEditor } from '@/components/ui/markdown-editor';
 import { Panel, Group, Separator, usePanelRef } from 'react-resizable-panels';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import { DocumentLoadingState, DocumentErrorState, PdfErrorFallback } from '@/components/common/DocumentStates';
+import DocumentMarkdownService from '@/services/documentMarkdown';
+import DocumentQuizService from '@/services/documentQuiz';
+import LlmConfigPanel from '@/components/ai/LlmConfigPanel';
+import { LLM_PROVIDER_OPTIONS, MODEL_PRESETS } from '@/lib/llm-options';
 
 // Open Notebook Components
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/modules/open-notebook/ui/tabs';
@@ -54,12 +55,19 @@ const ensureTrailingSlash = (value) => {
     return value.endsWith('/') ? value : `${value}/`;
 };
 
+const PDF_PAGE_RATIO = 1.414;
+const PDF_PAGE_GAP = 32;
+const PAGE_RENDER_BUFFER = 6;
+const THUMBNAIL_RENDER_BUFFER = 20;
+const THUMBNAIL_BLOCK_HEIGHT = 216;
+
 const LazyPage = ({ pageNumber, pageWidth, handleTextSelection }) => {
     const [isVisible, setIsVisible] = useState(false);
     const elementRef = React.useRef(null);
     const placeholderHeight = Math.max(400, Math.round(pageWidth * 1.414));
 
     useEffect(() => {
+        const node = elementRef.current;
         const observer = new IntersectionObserver(
             ([entry]) => {
                 setIsVisible(entry.isIntersecting);
@@ -71,13 +79,13 @@ const LazyPage = ({ pageNumber, pageWidth, handleTextSelection }) => {
             }
         );
 
-        if (elementRef.current) {
-            observer.observe(elementRef.current);
+        if (node) {
+            observer.observe(node);
         }
 
         return () => {
-            if (elementRef.current) {
-                observer.unobserve(elementRef.current);
+            if (node) {
+                observer.unobserve(node);
             }
         };
     }, []);
@@ -128,6 +136,7 @@ const ThumbnailPage = ({ pageNumber, onSelect }) => {
     const placeholderHeight = Math.max(180, Math.round(thumbnailWidth * 1.414));
 
     useEffect(() => {
+        const node = elementRef.current;
         const observer = new IntersectionObserver(
             ([entry]) => {
                 setIsVisible(entry.isIntersecting);
@@ -139,13 +148,13 @@ const ThumbnailPage = ({ pageNumber, onSelect }) => {
             }
         );
 
-        if (elementRef.current) {
-            observer.observe(elementRef.current);
+        if (node) {
+            observer.observe(node);
         }
 
         return () => {
-            if (elementRef.current) {
-                observer.unobserve(elementRef.current);
+            if (node) {
+                observer.unobserve(node);
             }
         };
     }, []);
@@ -179,18 +188,6 @@ const ThumbnailPage = ({ pageNumber, onSelect }) => {
     );
 };
 
-const PdfErrorFallback = ({ error, resetError }) => (
-    <div className="w-full max-w-2xl bg-red-500/10 border border-red-500/20 text-red-200 px-4 py-4 rounded-xl text-sm space-y-2">
-        <div className="font-semibold">Failed to render PDF.</div>
-        {error?.message && (
-            <div className="text-red-100/80 break-words">{error.message}</div>
-        )}
-        <button onClick={resetError} className="btn-secondary text-xs">
-            Try again
-        </button>
-    </div>
-);
-
 const DocumentViewer = () => {
     const { id } = useParams();
     const navigate = useNavigate();
@@ -199,6 +196,20 @@ const DocumentViewer = () => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState(null);
     const [selectedText, setSelectedText] = useState('');
+    const [highlightMenu, setHighlightMenu] = useState({ visible: false, x: 0, y: 0, text: '' });
+    const [highlightQuestion, setHighlightQuestion] = useState('');
+    const [highlightResult, setHighlightResult] = useState('');
+    const [highlightLoading, setHighlightLoading] = useState(false);
+    const [mdContent, setMdContent] = useState('');
+    const [mdLoaded, setMdLoaded] = useState(false);
+    const [mdSaving, setMdSaving] = useState(false);
+    const [llmConfig, setLlmConfig] = useState({
+        provider: 'openai',
+        model: '',
+        base_url: '',
+        api_key: ''
+    });
+    const [llmTesting, setLlmTesting] = useState(false);
     const [zoom, setZoom] = useState(1);
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [progress, setProgress] = useState(0);
@@ -209,7 +220,7 @@ const DocumentViewer = () => {
     const [ingestionError, setIngestionError] = useState(null);
 
     // Open Notebook State
-    const [contextSelections, setContextSelections] = useState({ sources: {}, notes: {} });
+    const [contextSelections] = useState({ sources: {}, notes: {} });
     const initialTab = searchParams.get('tab') || "chat";
     const initialSessionId = searchParams.get('sessionId') || null;
     const [activeTab, setActiveTab] = useState(initialTab);
@@ -220,6 +231,7 @@ const DocumentViewer = () => {
     const [isSectionBusy, setIsSectionBusy] = useState(false);
     const [navMode, setNavMode] = useState('sections');
     const [pageJump, setPageJump] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
 
     // Flashcard State
     const [flashcardFront, setFlashcardFront] = useState('');
@@ -228,6 +240,9 @@ const DocumentViewer = () => {
     const flashcardCreatorRef = React.useRef(null);
     const rightPanelRef = usePanelRef();
     const leftPanelContainerRef = useRef(null);
+    const initialScrollProgressRef = useRef(null);
+    const programmaticScrollRef = useRef(false);
+    const scrollRafRef = useRef(null);
     const [panelWidth, setPanelWidth] = useState(0);
 
     const { seconds } = useTimer(true);
@@ -278,6 +293,37 @@ const DocumentViewer = () => {
             standardFontDataUrl: ensureTrailingSlash(`${assetBase}standard_fonts`)
         };
     }, []);
+    const pageWidth = useMemo(
+        () => Math.max(320, Math.floor((panelWidth || 900) * 0.92 * zoom)),
+        [panelWidth, zoom]
+    );
+    const estimatedPageBlockHeight = useMemo(
+        () => Math.max(420, Math.round(pageWidth * PDF_PAGE_RATIO)) + PDF_PAGE_GAP,
+        [pageWidth]
+    );
+    const pageRenderStart = useMemo(
+        () => Math.max(1, currentPage - PAGE_RENDER_BUFFER),
+        [currentPage]
+    );
+    const pageRenderEnd = useMemo(
+        () => Math.min(numPages || 0, currentPage + PAGE_RENDER_BUFFER),
+        [currentPage, numPages]
+    );
+    const visiblePageNumbers = useMemo(() => {
+        if (!numPages || pageRenderEnd < pageRenderStart) return [];
+        return Array.from(
+            { length: pageRenderEnd - pageRenderStart + 1 },
+            (_, idx) => pageRenderStart + idx
+        );
+    }, [numPages, pageRenderStart, pageRenderEnd]);
+    const topPageSpacerHeight = useMemo(
+        () => Math.max(0, (pageRenderStart - 1) * estimatedPageBlockHeight),
+        [pageRenderStart, estimatedPageBlockHeight]
+    );
+    const bottomPageSpacerHeight = useMemo(
+        () => Math.max(0, ((numPages || 0) - pageRenderEnd) * estimatedPageBlockHeight),
+        [numPages, pageRenderEnd, estimatedPageBlockHeight]
+    );
 
     useEffect(() => {
         const startSession = async () => {
@@ -334,20 +380,18 @@ const DocumentViewer = () => {
 
     useEffect(() => {
         const fetchDoc = async () => {
+            setIsLoading(true);
+            setError(null);
+            setPdfError(null);
+            setNumPages(null);
+            setCurrentPage(1);
             try {
                 const data = await api.get(`/documents/${id}`);
                 setStudyDoc(data);
                 setIngestionError(data?.ingestion_error || null);
                 const savedProgress = data.reading_progress || 0;
                 setProgress(Math.round(savedProgress * 100));
-
-                setTimeout(() => {
-                    const container = window.document.getElementById('document-scroll-container');
-                    if (container) {
-                        const scrollTo = container.scrollHeight * savedProgress;
-                        container.scrollTop = scrollTo;
-                    }
-                }, 1000);
+                initialScrollProgressRef.current = Math.max(0, Math.min(1, savedProgress));
             } catch (err) {
                 console.error('Failed to fetch document', err);
                 setError(err?.userMessage || err?.message || 'Failed to load document');
@@ -357,6 +401,32 @@ const DocumentViewer = () => {
         };
         fetchDoc();
     }, [id, navigate]);
+
+    useEffect(() => {
+        if (!studyDoc) return;
+        if (studyDoc.file_type === 'markdown' || studyDoc.file_type === 'text') {
+            setMdLoaded(false);
+            DocumentMarkdownService.getMarkdown(id, { include_images: true, image_mode: 'base64' })
+                .then((res) => {
+                    setMdContent(res?.markdown || studyDoc.extracted_text || '');
+                })
+                .catch(() => {
+                    setMdContent(studyDoc.extracted_text || '');
+                })
+                .finally(() => setMdLoaded(true));
+        }
+    }, [studyDoc, id]);
+
+    useEffect(() => {
+        if (!id) return;
+        DocumentQuizService.getStudySettings(id)
+            .then((data) => {
+                if (data?.llm_config) {
+                    setLlmConfig((prev) => ({ ...prev, ...data.llm_config }));
+                }
+            })
+            .catch(() => {});
+    }, [id]);
 
     useEffect(() => {
         const fetchCore = async () => {
@@ -407,21 +477,58 @@ const DocumentViewer = () => {
         }
     }, [isPdf, navMode]);
 
+    useEffect(() => {
+        return () => {
+            if (scrollRafRef.current) {
+                cancelAnimationFrame(scrollRafRef.current);
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        const handleClick = () => {
+            setHighlightMenu((prev) => ({ ...prev, visible: false }));
+        };
+        window.addEventListener('mousedown', handleClick);
+        return () => window.removeEventListener('mousedown', handleClick);
+    }, []);
+
+    useEffect(() => {
+        const handleKey = (event) => {
+            if (event.key === 'Escape') {
+                setHighlightMenu((prev) => ({ ...prev, visible: false }));
+            }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, []);
+
 
     const handleScroll = useCallback((e) => {
+        if (programmaticScrollRef.current) return;
         const container = e.target;
-        // Simple throttle
-        const scrollPercentage = container.scrollTop / (container.scrollHeight - container.clientHeight);
-        const newProgress = Math.round(scrollPercentage * 100);
-        if (Math.abs(newProgress - progress) > 1) {
-            setProgress(newProgress);
+        if (scrollRafRef.current) {
+            cancelAnimationFrame(scrollRafRef.current);
         }
-    }, [progress]);
+        scrollRafRef.current = requestAnimationFrame(() => {
+            const denom = Math.max(1, container.scrollHeight - container.clientHeight);
+            const scrollPercentage = container.scrollTop / denom;
+            const newProgress = Math.round(scrollPercentage * 100);
+            setProgress((prev) => (Math.abs(newProgress - prev) > 1 ? newProgress : prev));
+
+            if (numPages) {
+                const estimated = Math.floor(container.scrollTop / Math.max(1, estimatedPageBlockHeight)) + 1;
+                const nextPage = Math.min(numPages, Math.max(1, estimated));
+                setCurrentPage((prev) => (prev !== nextPage ? nextPage : prev));
+            }
+        });
+    }, [estimatedPageBlockHeight, numPages]);
 
     const scrollToPage = useCallback((pageNumber) => {
         const container = window.document.getElementById('document-scroll-container');
-        const target = window.document.getElementById(`page-${pageNumber}`);
         if (!container) return;
+        const target = window.document.getElementById(`page-${pageNumber}`);
+        programmaticScrollRef.current = true;
         if (target) {
             const containerRect = container.getBoundingClientRect();
             const targetRect = target.getBoundingClientRect();
@@ -430,9 +537,14 @@ const DocumentViewer = () => {
                 behavior: 'smooth'
             });
         } else {
-            container.scrollTo({ top: 0, behavior: 'smooth' });
+            const fallbackTop = Math.max(0, (pageNumber - 1) * estimatedPageBlockHeight);
+            container.scrollTo({ top: fallbackTop, behavior: 'smooth' });
         }
-    }, []);
+        setCurrentPage(pageNumber);
+        setTimeout(() => {
+            programmaticScrollRef.current = false;
+        }, 220);
+    }, [estimatedPageBlockHeight]);
 
     const handleJump = () => {
         const pageNum = parseInt(pageJump, 10);
@@ -459,21 +571,118 @@ const DocumentViewer = () => {
         setPdfError(null);
     };
 
+    useEffect(() => {
+        const saved = initialScrollProgressRef.current;
+        if (saved == null) return;
+        if (!numPages) return;
+        const container = window.document.getElementById('document-scroll-container');
+        if (!container) return;
+        const maxScroll = Math.max(0, container.scrollHeight - container.clientHeight);
+        programmaticScrollRef.current = true;
+        container.scrollTop = Math.round(maxScroll * saved);
+        setTimeout(() => {
+            programmaticScrollRef.current = false;
+        }, 120);
+        initialScrollProgressRef.current = null;
+    }, [numPages]);
+
     const handleTextSelection = useCallback(() => {
-        const selection = window.getSelection().toString().trim();
-        if (selection) {
-            setSelectedText(selection);
+        const selection = window.getSelection();
+        const text = selection?.toString().trim() || '';
+        if (!text) {
+            return;
+        }
+        setSelectedText(text);
+        try {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            const menuWidth = 260;
+            const menuHeight = 180;
+            const padding = 12;
+            const maxX = window.scrollX + window.innerWidth - menuWidth - padding;
+            const maxY = window.scrollY + window.innerHeight - menuHeight - padding;
+            const nextX = Math.min(Math.max(rect.left + window.scrollX, window.scrollX + padding), maxX);
+            const nextY = Math.min(Math.max(rect.top + window.scrollY - 8, window.scrollY + padding), maxY);
+            setHighlightMenu({
+                visible: true,
+                x: nextX,
+                y: nextY,
+                text
+            });
+            setHighlightQuestion('');
+            setHighlightResult('');
+        } catch {
+            setHighlightMenu({ visible: false, x: 0, y: 0, text: '' });
         }
     }, []);
 
     const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
     const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.5));
 
-    // Toast logic
-    const [toast, setToast] = useState(null);
     const showToast = (message, type = 'success') => {
-        setToast({ message, type });
-        setTimeout(() => setToast(null), 2000);
+        if (type === 'error') {
+            toast.error(message);
+            return;
+        }
+        toast.success(message);
+    };
+
+    const runHighlightAction = async (action) => {
+        if (!highlightMenu.text) return;
+        setHighlightLoading(true);
+        setHighlightResult('');
+        try {
+            const res = await DocumentMarkdownService.highlightAction(id, {
+                action,
+                selection_text: highlightMenu.text,
+                question: highlightQuestion || null,
+                llm_config: llmConfig
+            });
+            setHighlightResult(res?.output || '');
+        } catch (err) {
+            showToast(err?.userMessage || err?.message || 'LLM action failed', 'error');
+        } finally {
+            setHighlightLoading(false);
+        }
+    };
+
+    const handleSaveMarkdown = async () => {
+        if (!mdContent) return;
+        setMdSaving(true);
+        try {
+            await DocumentMarkdownService.saveMarkdown(id, { markdown: mdContent });
+            showToast('Markdown saved');
+        } catch (err) {
+            showToast(err?.userMessage || err?.message || 'Failed to save markdown', 'error');
+        } finally {
+            setMdSaving(false);
+        }
+    };
+
+    useEffect(() => {
+        const handleKey = (event) => {
+            if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+                event.preventDefault();
+                handleSaveMarkdown();
+            }
+        };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [handleSaveMarkdown]);
+
+    const handleTestLlm = async () => {
+        setLlmTesting(true);
+        try {
+            const result = await DocumentQuizService.testLlm({
+                prompt: 'Say hello in one line.',
+                llm_config: llmConfig
+            });
+            showToast(`LLM OK • ${result?.latency_ms || 'n/a'}ms`);
+        } catch (err) {
+            showToast(err?.userMessage || err?.message || 'LLM test failed', 'error');
+        } finally {
+            setLlmTesting(false);
+        }
     };
 
     const toggleFocusMode = () => {
@@ -595,26 +804,16 @@ const DocumentViewer = () => {
     }, [selectedText, isRightPanelCollapsed]);
 
     if (isLoading) {
-        return (
-            <div className="flex items-center justify-center h-full">
-                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
-            </div>
-        );
+        return <DocumentLoadingState message="Loading document..." />;
     }
 
     if (error || !studyDoc) {
         return (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-center p-8">
-                <div className="p-4 rounded-full bg-red-500/10 text-red-500">
-                    <Maximize2 className="w-12 h-12" />
-                </div>
-                <h2 className="text-xl font-bold text-white">Something went wrong</h2>
-                <p className="text-dark-400 max-w-md">{error || 'Document not found'}</p>
-                <button onClick={() => navigate('/documents')} className="btn-secondary">
-                    <ArrowLeft className="w-4 h-4 mr-2" />
-                    Back to Library
-                </button>
-            </div>
+            <DocumentErrorState
+                error={error || 'Document not found'}
+                onBack={() => navigate('/documents')}
+                onRetry={() => window.location.reload()}
+            />
         );
     }
 
@@ -622,15 +821,6 @@ const DocumentViewer = () => {
 
     return (
         <div className={`flex flex-col bg-dark-950 transition-all duration-300 ${isFocusMode ? 'fixed inset-0 z-[60] p-0 h-screen' : 'h-[calc(100vh-4rem)]'}`}>
-            {/* Toast Notification */}
-            {toast && (
-                <div className="fixed top-20 right-8 z-[200] animate-slide-in">
-                    <div className={`px-4 py-2 rounded-lg shadow-2xl backdrop-blur-md border border-white/10 flex items-center gap-2 font-bold text-sm ${toast.type === 'error' ? 'bg-red-500/20 text-red-200' : 'bg-primary-500/20 text-primary-100'}`}>
-                        {toast.message}
-                    </div>
-                </div>
-            )}
-
             {/* Top Fixed Progress Bar - Removed per user request */}
 
             {/* Header */}
@@ -652,6 +842,14 @@ const DocumentViewer = () => {
                                 <span className="text-[10px] text-dark-500 font-semibold uppercase tracking-widest">
                                     {progress}% READ
                                 </span>
+                                {numPages ? (
+                                    <>
+                                        <span className="w-1 h-1 rounded-full bg-white/10" />
+                                        <span className="text-[10px] text-dark-500 font-semibold uppercase tracking-widest">
+                                            Page {currentPage}/{numPages}
+                                        </span>
+                                    </>
+                                ) : null}
                             </div>
                         </div>
                     </div>
@@ -797,13 +995,32 @@ const DocumentViewer = () => {
                                                     options={pdfOptions}
                                                     loading={<div className="text-xs text-dark-500">Loading thumbnails...</div>}
                                                 >
-                                                    {Array.from({ length: numPages }, (_, idx) => (
+                                                    {numPages > 80 && (
+                                                        <div style={{ height: `${Math.max(0, (Math.max(1, currentPage - THUMBNAIL_RENDER_BUFFER) - 1) * THUMBNAIL_BLOCK_HEIGHT)}px` }} />
+                                                    )}
+                                                    {Array.from(
+                                                        {
+                                                            length:
+                                                                (numPages > 80
+                                                                    ? Math.min(
+                                                                        numPages,
+                                                                        currentPage + THUMBNAIL_RENDER_BUFFER
+                                                                    ) - Math.max(1, currentPage - THUMBNAIL_RENDER_BUFFER) + 1
+                                                                    : numPages)
+                                                        },
+                                                        (_, idx) => (numPages > 80
+                                                            ? Math.max(1, currentPage - THUMBNAIL_RENDER_BUFFER) + idx
+                                                            : idx + 1)
+                                                    ).map((pageNum) => (
                                                         <ThumbnailPage
-                                                            key={`thumb_${idx + 1}`}
-                                                            pageNumber={idx + 1}
-                                                            onSelect={() => scrollToPage(idx + 1)}
+                                                            key={`thumb_${pageNum}`}
+                                                            pageNumber={pageNum}
+                                                            onSelect={() => scrollToPage(pageNum)}
                                                         />
                                                     ))}
+                                                    {numPages > 80 && (
+                                                        <div style={{ height: `${Math.max(0, (numPages - Math.min(numPages, currentPage + THUMBNAIL_RENDER_BUFFER)) * THUMBNAIL_BLOCK_HEIGHT)}px` }} />
+                                                    )}
                                                 </Document>
                                             ) : (
                                                 <div className="text-xs text-dark-500">Preparing thumbnails...</div>
@@ -874,14 +1091,24 @@ const DocumentViewer = () => {
                                                                 {pdfError}
                                                             </div>
                                                         )}
-                                                        {numPages && !pdfError && Array.from({ length: numPages }, (el, index) => (
-                                                            <LazyPage
-                                                                key={`page_${index + 1}`}
-                                                                pageNumber={index + 1}
-                                                                pageWidth={Math.max(320, Math.floor((panelWidth || 900) * 0.92 * zoom))}
-                                                                handleTextSelection={handleTextSelection}
-                                                            />
-                                                        ))}
+                                                        {numPages && !pdfError && (
+                                                            <>
+                                                                {topPageSpacerHeight > 0 && (
+                                                                    <div style={{ height: `${topPageSpacerHeight}px`, width: '100%' }} />
+                                                                )}
+                                                                {visiblePageNumbers.map((pageNum) => (
+                                                                    <LazyPage
+                                                                        key={`page_${pageNum}`}
+                                                                        pageNumber={pageNum}
+                                                                        pageWidth={pageWidth}
+                                                                        handleTextSelection={handleTextSelection}
+                                                                    />
+                                                                ))}
+                                                                {bottomPageSpacerHeight > 0 && (
+                                                                    <div style={{ height: `${bottomPageSpacerHeight}px`, width: '100%' }} />
+                                                                )}
+                                                            </>
+                                                        )}
                                                         {!numPages && !pdfError && (
                                                             <div className="text-dark-400 text-sm py-10">Preparing pages...</div>
                                                         )}
@@ -899,14 +1126,62 @@ const DocumentViewer = () => {
                                         </div>
                                     ) : (studyDoc.file_type === 'markdown' || studyDoc.file_type === 'text') ? (
                                         <div className="w-full flex-1 flex flex-col items-center py-10 px-6">
-                                            <div
-                                                className="w-full max-w-5xl bg-dark-900/50 backdrop-blur-md rounded-[2.5rem] border border-white/10 shadow-2xl p-8 md:p-14 relative"
-                                                onMouseUp={handleTextSelection}
-                                            >
-                                                <div className="markdown-content">
-                                                    {studyDoc.file_type === 'markdown' ? (
-                                                        <ReactMarkdown>{studyDoc.extracted_text}</ReactMarkdown>
-                                                    ) : <pre className="whitespace-pre-wrap font-sans text-lg">{studyDoc.extracted_text}</pre>}
+                                            <div className="w-full max-w-6xl bg-dark-900/50 backdrop-blur-md rounded-[2.5rem] border border-white/10 shadow-2xl p-8 md:p-12 relative">
+                                                <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                                                    <div>
+                                                        <p className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Markdown Workspace</p>
+                                                        <h3 className="text-white font-black text-xl mt-1">Edit, Highlight, and Ask the LLM</h3>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <button
+                                                            onClick={handleSaveMarkdown}
+                                                            disabled={mdSaving || !mdContent}
+                                                            className="px-3 py-2 rounded-xl text-[10px] uppercase tracking-widest font-black bg-primary-500/20 text-primary-200 border border-primary-400/30 hover:bg-primary-500/30 transition-all disabled:opacity-60"
+                                                        >
+                                                            {mdSaving ? 'Saving...' : 'Save Markdown'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                                    <div className="lg:col-span-2" onMouseUp={handleTextSelection}>
+                                                        {!mdLoaded && (
+                                                            <div className="h-[240px] rounded-2xl bg-white/5 animate-pulse" />
+                                                        )}
+                                                        {mdLoaded && (
+                                                            <MarkdownEditor
+                                                                value={mdContent}
+                                                                onChange={setMdContent}
+                                                                height={720}
+                                                                className="rounded-2xl border border-white/10"
+                                                            />
+                                                        )}
+                                                    </div>
+
+                                                    <div className="lg:col-span-1 space-y-4">
+                                                        <LlmConfigPanel
+                                                            value={llmConfig}
+                                                            onChange={setLlmConfig}
+                                                            providers={LLM_PROVIDER_OPTIONS}
+                                                            modelPresets={MODEL_PRESETS}
+                                                            onTest={handleTestLlm}
+                                                            testing={llmTesting}
+                                                            showPrompt={false}
+                                                            helper="Used for highlight actions and grading inside this document."
+                                                        />
+
+                                                        <div className="p-4 rounded-2xl border border-white/10 bg-dark-950/40">
+                                                            <p className="text-[10px] uppercase tracking-widest text-dark-500 font-bold">Highlight Actions</p>
+                                                            <p className="text-[11px] text-dark-400 mt-2">
+                                                                Highlight text in the editor to ask, explain, or summarize.
+                                                            </p>
+                                                            {highlightResult && (
+                                                                <div className="mt-3 text-xs text-white/80 whitespace-pre-wrap bg-white/5 p-3 rounded-xl">
+                                                                    {highlightResult}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1060,6 +1335,49 @@ const DocumentViewer = () => {
                     </Panel>
                 </Group>
             </div>
+            {highlightMenu.visible && (
+                <div
+                    className="fixed z-[80] bg-dark-900/95 border border-white/10 rounded-2xl shadow-2xl p-3 min-w-[220px]"
+                    style={{ top: highlightMenu.y, left: highlightMenu.x }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    role="dialog"
+                    aria-label="Highlight actions"
+                    tabIndex={-1}
+                >
+                    <div className="flex items-center gap-2 mb-2">
+                        <button
+                            onClick={() => runHighlightAction('ask')}
+                            className="px-2 py-1 rounded-lg text-[10px] uppercase tracking-widest font-black bg-primary-500/20 text-primary-200 border border-primary-400/30"
+                            disabled={highlightLoading}
+                        >
+                            Ask
+                        </button>
+                        <button
+                            onClick={() => runHighlightAction('explain')}
+                            className="px-2 py-1 rounded-lg text-[10px] uppercase tracking-widest font-black bg-white/5 text-white border border-white/10"
+                            disabled={highlightLoading}
+                        >
+                            Explain
+                        </button>
+                        <button
+                            onClick={() => runHighlightAction('summarize')}
+                            className="px-2 py-1 rounded-lg text-[10px] uppercase tracking-widest font-black bg-white/5 text-white border border-white/10"
+                            disabled={highlightLoading}
+                        >
+                            Summarize
+                        </button>
+                    </div>
+                    <input
+                        value={highlightQuestion}
+                        onChange={(e) => setHighlightQuestion(e.target.value)}
+                        placeholder="Ask a question..."
+                        className="w-full rounded-lg bg-dark-950 border border-white/10 px-2 py-1 text-[11px] text-white mb-2"
+                    />
+                    {highlightLoading && (
+                        <div className="text-[10px] text-dark-400">Thinking...</div>
+                    )}
+                </div>
+            )}
         </div>
     );
 };

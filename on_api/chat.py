@@ -5,7 +5,7 @@ from uuid import uuid4
 from datetime import datetime, timezone
 from surrealdb import AsyncSurreal
 from .router_main import get_surreal_db
-from .db_utils import normalize_id, first_record, validate_record_id
+from .db_utils import normalize_id, first_record, validate_record_id, unwrap_query_result
 from src.services.llm_service import llm_service
 from src.services.llm_config_resolver import resolve_llm_config
 from src.database.orm import get_db

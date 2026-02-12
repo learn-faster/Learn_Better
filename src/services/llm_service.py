@@ -491,7 +491,7 @@ class LLMService:
         elif provider == "ollama":
             effective_base = f"{(base_url or settings.ollama_base_url).rstrip('/')}/v1"
             effective_api_key = "ollama"
-        elif provider in {"openrouter", "together", "fireworks", "mistral", "deepseek", "perplexity", "huggingface", "custom"}:
+        elif provider in {"openrouter", "together", "fireworks", "mistral", "deepseek", "perplexity", "huggingface", "custom", "google"}:
             default_base = {
                 "openrouter": "https://openrouter.ai/api/v1",
                 "together": "https://api.together.xyz/v1",
@@ -500,7 +500,8 @@ class LLMService:
                 "deepseek": "https://api.deepseek.com/v1",
                 "perplexity": "https://api.perplexity.ai",
                 "huggingface": None,
-                "custom": None
+                "custom": None,
+                "google": None
             }.get(provider)
 
             effective_base = (base_url or default_base)

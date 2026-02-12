@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { getApiUrl } from '../lib/config';
 import { formatApiErrorMessage, parseApiError } from '../lib/utils/api-error';
-import { getUserId } from '../lib/utils/user-id';
 import { toast } from 'sonner';
 
 /**
@@ -31,13 +30,12 @@ api.interceptors.request.use(async (config) => {
     const apiKey = localStorage.getItem('llm_api_key');
     const baseUrl = localStorage.getItem('ollama_base_url');
     const model = localStorage.getItem('llm_model');
-    const userId = getUserId();
 
     if (provider) config.headers['X-LLM-Provider'] = provider;
     if (apiKey) config.headers['X-LLM-Key'] = apiKey;
     if (baseUrl) config.headers['X-LLM-Base-Url'] = baseUrl;
     if (model) config.headers['X-LLM-Model'] = model;
-    if (userId) config.headers['X-User-Id'] = userId;
+    // Single-user mode: no user ID header.
 
     return config;
 });

@@ -1,7 +1,6 @@
 import axios from 'axios'
 import { getApiUrl } from '@/modules/open-notebook/lib/config'
 import { formatApiErrorMessage, parseApiError } from '@/lib/utils/api-error'
-import { getUserId } from '@/lib/utils/user-id'
 
 // API client with runtime-configurable base URL
 // The base URL is fetched from the API config endpoint on first request
@@ -39,10 +38,7 @@ apiClient.interceptors.request.use(async (config) => {
     }
   }
 
-  const userId = getUserId()
-  if (userId) {
-    config.headers['X-User-Id'] = userId
-  }
+  // Single-user mode: no user ID header.
 
   // Handle FormData vs JSON content types
   if (config.data instanceof FormData) {

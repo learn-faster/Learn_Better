@@ -4,6 +4,7 @@ Service layer for managing saved knowledge graphs.
 
 from datetime import datetime
 from src.utils.time import utcnow
+import os
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
@@ -12,9 +13,63 @@ from src.models.orm import KnowledgeGraph, KnowledgeGraphDocument, Document, Use
 from src.models.schemas import LLMConfig
 from src.database.graph_storage import multi_doc_graph_storage
 from src.ingestion.ingestion_engine import IngestionEngine
+from src.services.model_limits import recommend_extraction_settings
 
 
 class KnowledgeGraphService:
+    @staticmethod
+    def _is_large_source(doc: Document) -> bool:
+        if doc.page_count and doc.page_count >= 40:
+            return True
+        if doc.word_count and doc.word_count >= 20000:
+            return True
+        if doc.file_path and os.path.exists(doc.file_path):
+            try:
+                if os.path.getsize(doc.file_path) >= 20 * 1024 * 1024:
+                    return True
+            except OSError:
+                pass
+        return False
+
+    @staticmethod
+    def _build_processing_recommendation(
+        doc: Document,
+        llm_config: LLMConfig,
+        requested_extraction_max_chars: Optional[int] = None,
+        requested_chunk_size: Optional[int] = None
+    ) -> Dict[str, Any]:
+        provider = getattr(llm_config, "provider", None)
+        model = getattr(llm_config, "model", None)
+        rec = recommend_extraction_settings(provider, model)
+        is_large = KnowledgeGraphService._is_large_source(doc)
+
+        applied_extraction = requested_extraction_max_chars or (rec["recommended_extraction_max_chars"] if is_large else None)
+        applied_chunk = requested_chunk_size or (rec["recommended_chunk_size"] if is_large else None)
+
+        clamped = False
+        max_input_chars = int(rec.get("max_input_chars") or 0)
+        if max_input_chars and applied_extraction and applied_extraction > max_input_chars:
+            applied_extraction = max_input_chars
+            clamped = True
+        if applied_chunk and applied_extraction and applied_chunk > applied_extraction:
+            applied_chunk = max(400, int(applied_extraction / 4))
+            clamped = True
+
+        reason = "large_source_auto_safe" if is_large else "model_based_default"
+        if clamped:
+            reason = "clamped_to_model_limit"
+
+        return {
+            "provider": rec["provider"],
+            "model": rec["model"],
+            "context_tokens": rec["context_tokens"],
+            "recommended_extraction_max_chars": rec["recommended_extraction_max_chars"],
+            "recommended_chunk_size": rec["recommended_chunk_size"],
+            "applied_extraction_max_chars": applied_extraction,
+            "applied_chunk_size": applied_chunk,
+            "is_large_source": is_large,
+            "reason": reason
+        }
     @staticmethod
     def _validate_document_ids(db: Session, document_ids: Optional[List[int]]) -> List[int]:
         if not document_ids:
@@ -109,13 +164,13 @@ class KnowledgeGraphService:
         db.commit()
 
     @staticmethod
-    def _resolve_llm_config(db: Session, user_id: str, override: Optional[LLMConfig], graph_config: Optional[Dict[str, Any]]) -> LLMConfig:
+    def _resolve_llm_config(db: Session, user_id: str, override: Optional[LLMConfig]) -> LLMConfig:
         """
         Resolve LLM config using the shared resolver.
-        Maintains backward compatibility by delegating to the centralized resolver.
+        Knowledge maps use global overrides configured in Settings.
         """
         from src.services.llm_config_resolver import resolve_llm_config
-        return resolve_llm_config(db, user_id, override=override, entity_config=graph_config)
+        return resolve_llm_config(db, user_id, override=override, entity_config=None, config_type="knowledge_graph")
 
     @staticmethod
     async def build_graph(
@@ -146,11 +201,11 @@ class KnowledgeGraphService:
         db.commit()
 
         # Resolve LLM config
-        llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, llm_config_override, graph.llm_config)
+        llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, llm_config_override)
         
         # Resolve extraction parameters (Request > Saved Graph > Defaults)
-        final_extraction_max_chars = extraction_max_chars or graph.extraction_max_chars
-        final_chunk_size = chunk_size or graph.chunk_size
+        requested_extraction_max_chars = extraction_max_chars or graph.extraction_max_chars
+        requested_chunk_size = chunk_size or graph.chunk_size
 
         total_docs = max(1, len(doc_ids))
 
@@ -180,6 +235,13 @@ class KnowledgeGraphService:
                     if not source_text or not source_text.strip():
                         raise ValueError(f"Document {doc_id} has no extracted text")
 
+                    processing_rec = KnowledgeGraphService._build_processing_recommendation(
+                        doc,
+                        llm_config,
+                        requested_extraction_max_chars=requested_extraction_max_chars,
+                        requested_chunk_size=requested_chunk_size
+                    )
+
                     def _progress(step, pct, idx=idx):
                         base = 5.0 + (idx / total_docs) * 75.0
                         span = 75.0 / total_docs
@@ -189,8 +251,8 @@ class KnowledgeGraphService:
                         source_text,
                         doc_id,
                         llm_config=llm_config,
-                        extraction_max_chars=final_extraction_max_chars,
-                        chunk_size=final_chunk_size,
+                        extraction_max_chars=processing_rec.get("applied_extraction_max_chars"),
+                        chunk_size=processing_rec.get("applied_chunk_size"),
                         on_progress=_progress
                     )
             elif build_mode == "rebuild":
@@ -208,6 +270,13 @@ class KnowledgeGraphService:
                     if not source_text or not source_text.strip():
                         raise ValueError(f"Document {doc_id} has no extracted text")
 
+                    processing_rec = KnowledgeGraphService._build_processing_recommendation(
+                        doc,
+                        llm_config,
+                        requested_extraction_max_chars=requested_extraction_max_chars,
+                        requested_chunk_size=requested_chunk_size
+                    )
+
                     def _progress(step, pct, idx=idx):
                         base = 10.0 + (idx / total_docs) * 70.0
                         span = 70.0 / total_docs
@@ -217,8 +286,8 @@ class KnowledgeGraphService:
                         source_text,
                         doc_id,
                         llm_config=llm_config,
-                        extraction_max_chars=final_extraction_max_chars,
-                        chunk_size=final_chunk_size,
+                        extraction_max_chars=processing_rec.get("applied_extraction_max_chars"),
+                        chunk_size=processing_rec.get("applied_chunk_size"),
                         on_progress=_progress
                     )
             else:

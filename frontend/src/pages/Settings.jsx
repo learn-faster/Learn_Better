@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Shield, Watch, Bell, Brain, Save, Loader2, CheckCircle2, XCircle, User, Copy, ArrowLeft } from 'lucide-react';
+import { Shield, Watch, Bell, Brain, Save, Loader2, CheckCircle2, XCircle, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getHealth } from '../lib/config';
 import { formatApiErrorMessage } from '../lib/utils/api-error';
 import InlineErrorBanner from '../components/common/InlineErrorBanner';
-import { getUserId, setUserId, isValidUserId } from '../lib/utils/user-id';
+// Single-user mode: no user ID management.
 import aiSettings from '../services/aiSettings';
 
 const Settings = () => {
@@ -18,9 +18,6 @@ const Settings = () => {
   const [errorMessage, setErrorMessage] = useState('');
   const [backendHealth, setBackendHealth] = useState(null);
   const [lastTraceId, setLastTraceId] = useState(() => (localStorage.getItem('opik_last_trace_id') || ''));
-  const [userId, setUserIdState] = useState(() => getUserId());
-  const [newUserId, setNewUserId] = useState('');
-  const [identityMessage, setIdentityMessage] = useState('');
   const [providerRegistry, setProviderRegistry] = useState([]);
 
   // Settings state
@@ -67,6 +64,7 @@ const Settings = () => {
   const embeddingProviderOptions = (providerRegistry && providerRegistry.length ? providerRegistry : [
     { id: 'openai', label: 'OpenAI', supports_embeddings: true },
     { id: 'ollama', label: 'Ollama (Local)', supports_embeddings: true },
+    { id: 'google', label: 'Google (Gemini)', supports_embeddings: true },
     { id: 'openrouter', label: 'OpenRouter', supports_embeddings: true },
     { id: 'together', label: 'Together', supports_embeddings: true },
     { id: 'fireworks', label: 'Fireworks', supports_embeddings: true },
@@ -118,15 +116,14 @@ const Settings = () => {
     setErrorMessage('');
     try {
       // 1. Fetch Fitbit Status
-      const userId = getUserId();
-      const statusRes = await fetch(`/api/fitbit/status?user_id=${encodeURIComponent(userId)}`);
+      const statusRes = await fetch('/api/fitbit/status');
       const statusData = await statusRes.json();
       setConnected(statusData.connected);
 
       // 2. Fetch AI Settings + Agent Settings (which now includes use_biometrics)
       const [aiData, settingsRes] = await Promise.all([
         aiSettings.get(),
-        fetch(`/api/goals/agent/settings?user_id=${encodeURIComponent(userId)}`)
+        fetch('/api/goals/agent/settings')
       ]);
       const settingsData = await settingsRes.json();
       const globalConfig = aiData?.llm?.global || {};
@@ -153,9 +150,15 @@ const Settings = () => {
     setSaveStatus(null);
     setErrorMessage('');
     try {
-      const userId = getUserId();
+      const sanitizedLlmConfig = {
+        ...settings.llm_config,
+        base_url: settings.llm_config.provider === 'ollama'
+          ? (settings.llm_config.base_url || '')
+          : ((settings.llm_config.base_url && !settings.llm_config.base_url.includes('localhost:11434')) ? settings.llm_config.base_url : '')
+      };
+
       await aiSettings.update({
-        llm: { global: settings.llm_config },
+        llm: { global: sanitizedLlmConfig },
         embedding_config: settings.embedding_config
       });
       localStorage.setItem('llm_provider', settings.llm_config.provider || '');
@@ -163,13 +166,13 @@ const Settings = () => {
       localStorage.setItem('ollama_base_url', settings.llm_config.base_url || '');
       localStorage.setItem('llm_model', settings.llm_config.model || '');
       localStorage.setItem('llm_base_url', settings.llm_config.base_url || '');
-      const response = await fetch(`/api/goals/agent/settings?user_id=${encodeURIComponent(userId)}`, {
+      const response = await fetch('/api/goals/agent/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...settings,
-          llm_config: settings.llm_config,
-          vision_llm_config: settings.llm_config,
+          llm_config: sanitizedLlmConfig,
+          vision_llm_config: sanitizedLlmConfig,
           embedding_config: settings.embedding_config
         })
       });
@@ -189,44 +192,13 @@ const Settings = () => {
     }
   };
 
-  const handleCopyUserId = async () => {
-    try {
-      await navigator.clipboard.writeText(userId);
-      setIdentityMessage('User ID copied to clipboard.');
-      setTimeout(() => setIdentityMessage(''), 2500);
-    } catch (error) {
-      setIdentityMessage('Unable to copy. Please select and copy manually.');
-      setTimeout(() => setIdentityMessage(''), 3500);
-    }
-  };
-
-  const handleRestoreUserId = () => {
-    setIdentityMessage('');
-    try {
-      if (!isValidUserId(newUserId)) {
-        setIdentityMessage('Enter a valid user ID (letters, numbers, - or _, 6-80 chars).');
-        return;
-      }
-      const updated = setUserId(newUserId);
-      setUserIdState(updated);
-      setNewUserId('');
-      setIdentityMessage('User ID updated. Reload pages to access existing data.');
-      setTimeout(() => setIdentityMessage(''), 3500);
-    } catch (error) {
-      setIdentityMessage(error?.message || 'Unable to update user ID.');
-      setTimeout(() => setIdentityMessage(''), 3500);
-    }
-  };
-
   const handleConnectFitbit = () => {
-    const userId = getUserId();
-    window.location.href = `/api/fitbit/auth?user_id=${encodeURIComponent(userId)}`;
+    window.location.href = '/api/fitbit/auth';
   };
 
   const handleDisconnectFitbit = async () => {
     try {
-      const userId = getUserId();
-      const response = await fetch(`/api/fitbit/disconnect?user_id=${encodeURIComponent(userId)}`, {
+      const response = await fetch('/api/fitbit/disconnect', {
         method: 'DELETE',
         credentials: 'include'
       });
@@ -298,58 +270,6 @@ const Settings = () => {
         />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-
-          {/* Identity & Recovery */}
-          <div className="bg-dark-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-colors md:col-span-2">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 rounded-xl bg-primary-500/10">
-                <User className="w-5 h-5 text-primary-300" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold">Identity & Recovery</h2>
-                <p className="text-xs text-dark-400">Your data is tied to this local ID. Save it if you switch devices or clear storage.</p>
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2">
-                <label className="block text-xs font-medium text-gray-500 mb-1">Current User ID</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    value={userId}
-                    readOnly
-                    className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200"
-                  />
-                  <button
-                    onClick={handleCopyUserId}
-                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 text-xs flex items-center gap-2"
-                  >
-                    <Copy className="w-4 h-4" />
-                    Copy
-                  </button>
-                </div>
-              </div>
-              <div className="md:col-span-1">
-                <label className="block text-xs font-medium text-gray-500 mb-1">Restore Existing ID</label>
-                <div className="flex items-center gap-2">
-                  <input
-                    value={newUserId}
-                    onChange={(e) => setNewUserId(e.target.value)}
-                    placeholder="Paste saved ID"
-                    className="w-full bg-dark-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-gray-200"
-                  />
-                  <button
-                    onClick={handleRestoreUserId}
-                    className="px-3 py-2 rounded-lg bg-primary-500/80 hover:bg-primary-500 text-dark-950 text-xs"
-                  >
-                    Restore
-                  </button>
-                </div>
-              </div>
-            </div>
-            {identityMessage && (
-              <div className="mt-3 text-xs text-primary-200">{identityMessage}</div>
-            )}
-          </div>
 
           {/* Fitbit Section */}
           <div className="bg-dark-900/50 backdrop-blur-xl border border-white/5 rounded-2xl p-6 hover:border-white/10 transition-colors">
@@ -554,7 +474,7 @@ const Settings = () => {
                       />
                     </div>
                   )}
-                  {(settings.llm_config.provider === 'ollama' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface','custom'].includes(settings.llm_config.provider)) && (
+                  {(settings.llm_config.provider === 'ollama' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface','custom','google'].includes(settings.llm_config.provider)) && (
                     <div className="md:col-span-2">
                       <label className="block text-xs font-medium text-gray-500 mb-1">Base URL</label>
                       <input
@@ -606,7 +526,7 @@ const Settings = () => {
                       />
                     </div>
                   )}
-                  {(settings.embedding_config.provider === 'ollama' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface','custom'].includes(settings.embedding_config.provider)) && (
+                  {(settings.embedding_config.provider === 'ollama' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface','custom','google'].includes(settings.embedding_config.provider)) && (
                     <div className="md:col-span-2">
                       <label className="block text-xs font-medium text-gray-500 mb-1">Base URL</label>
                       <input

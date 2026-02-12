@@ -32,6 +32,8 @@ import { Card } from '../components/ui/card';
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
 import InlineErrorBanner from '../components/common/InlineErrorBanner';
+import { getRecommendedExtractionSettings } from '../lib/utils/modelLimits';
+import aiSettings from '../services/aiSettings';
 
 /**
  * Premium Starfield Background with multiple parallax layers
@@ -125,7 +127,6 @@ const KnowledgeGraph = () => {
         name: '',
         description: '',
         document_ids: [],
-        llm_config: { provider: 'openai', model: '', base_url: '', api_key: '' },
         extraction_max_chars: 4000,
         chunk_size: 1500
     });
@@ -164,7 +165,13 @@ const KnowledgeGraph = () => {
     const [activeIntel, setActiveIntel] = useState(null);
     const [isLoadingIntel, setIsLoadingIntel] = useState(false);
     const [activeTab, setActiveTab] = useState('overview');
-    const [showGraphApiKey, setShowGraphApiKey] = useState(false);
+    const [kgLlmConfig, setKgLlmConfig] = useState({ provider: null, model: null, source: 'global' });
+    const recommendedSettings = useMemo(() => {
+        if (typeof window === 'undefined') return null;
+        const provider = kgLlmConfig?.provider || localStorage.getItem('llm_provider');
+        const model = kgLlmConfig?.model || localStorage.getItem('llm_model');
+        return getRecommendedExtractionSettings(provider, model);
+    }, [kgLlmConfig?.provider, kgLlmConfig?.model]);
 
     const fgRef = useRef();
     const containerRef = useRef();
@@ -226,6 +233,27 @@ const KnowledgeGraph = () => {
         }
     }, [location.search]);
 
+    useEffect(() => {
+        const loadAiSettings = async () => {
+            try {
+                const data = await aiSettings.get();
+                const llmConfig = data?.llm || {};
+                const override = llmConfig?.knowledge_graph || {};
+                const global = llmConfig?.global || {};
+                const hasOverride = override && Object.values(override).some((val) => val);
+                const resolved = hasOverride ? override : global;
+                setKgLlmConfig({
+                    provider: resolved?.provider || null,
+                    model: resolved?.model || null,
+                    source: hasOverride ? 'override' : 'global'
+                });
+            } catch {
+                // Leave defaults if settings are unavailable.
+            }
+        };
+        loadAiSettings();
+    }, []);
+
     const loadGraphs = async () => {
         try {
             const data = await GraphService.listGraphs();
@@ -246,7 +274,6 @@ const KnowledgeGraph = () => {
             name: '',
             description: '',
             document_ids: [],
-            llm_config: { provider: 'openai', model: '', base_url: '', api_key: '' },
             extraction_max_chars: 4000,
             chunk_size: 1500
         });
@@ -259,7 +286,6 @@ const KnowledgeGraph = () => {
             name: graph.name || '',
             description: graph.description || '',
             document_ids: graph.document_ids || [],
-            llm_config: graph.llm_config || { provider: 'openai', model: '', base_url: '', api_key: '' },
             extraction_max_chars: graph.extraction_max_chars || 4000,
             chunk_size: graph.chunk_size || 1500
         });
@@ -274,7 +300,6 @@ const KnowledgeGraph = () => {
                 name: graphForm.name,
                 description: graphForm.description,
                 document_ids: graphForm.document_ids,
-                llm_config: graphForm.llm_config,
                 extraction_max_chars: graphForm.extraction_max_chars,
                 chunk_size: graphForm.chunk_size
             };
@@ -309,7 +334,6 @@ const KnowledgeGraph = () => {
                 name: graphForm.name,
                 description: graphForm.description,
                 document_ids: graphForm.document_ids,
-                llm_config: graphForm.llm_config,
                 extraction_max_chars: graphForm.extraction_max_chars,
                 chunk_size: graphForm.chunk_size
             };
@@ -858,33 +882,36 @@ const KnowledgeGraph = () => {
                                 </div>
                             )}
 
-                            <button
-                                onClick={() => setShowConnections(true)}
-                                className="px-4 py-2.5 rounded-2xl glass-morphism border-white/5 text-white/80 text-xs font-black uppercase tracking-widest hover:bg-white/5 transition-all"
-                                disabled={!selectedGraphId}
-                            >
-                                Connections
-                            </button>
-
-                            <div ref={viewMenuRef} className="relative">
-                                <button
-                                    onClick={() => setShowViewMenu((prev) => !prev)}
-                                    className="px-4 py-2.5 rounded-2xl glass-morphism border-white/5 text-white/80 text-xs font-black uppercase tracking-widest hover:bg-white/5 transition-all"
-                                >
-                                    View
-                                </button>
+                              <div ref={viewMenuRef} className="relative">
+                                  <button
+                                      onClick={() => setShowViewMenu((prev) => !prev)}
+                                      className="px-4 py-2.5 rounded-2xl glass-morphism border-white/5 text-white/80 text-xs font-black uppercase tracking-widest hover:bg-white/5 transition-all"
+                                  >
+                                      Advanced
+                                  </button>
                                 <AnimatePresence>
                                     {showViewMenu && (
-                                        <motion.div
-                                            initial={{ opacity: 0, y: 6 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            exit={{ opacity: 0, y: 6 }}
-                                            className="absolute right-0 mt-2 w-56 glass-dark border border-white/10 rounded-2xl overflow-hidden z-40"
-                                        >
-                                            <button
-                                                onClick={() => setShowCrossLinks(!showCrossLinks)}
-                                                className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2"
-                                            >
+                                          <motion.div
+                                              initial={{ opacity: 0, y: 6 }}
+                                              animate={{ opacity: 1, y: 0 }}
+                                              exit={{ opacity: 0, y: 6 }}
+                                              className="absolute right-0 mt-2 w-56 glass-dark border border-white/10 rounded-2xl overflow-hidden z-40"
+                                          >
+                                              <button
+                                                  onClick={() => {
+                                                      setShowConnections(true);
+                                                      setShowViewMenu(false);
+                                                  }}
+                                                  className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2"
+                                                  disabled={!selectedGraphId}
+                                              >
+                                                  <Link2 className="w-4 h-4" />
+                                                  Connections
+                                              </button>
+                                              <button
+                                                  onClick={() => setShowCrossLinks(!showCrossLinks)}
+                                                  className="w-full px-4 py-3 text-left text-xs font-bold uppercase tracking-widest text-white/80 hover:bg-white/5 flex items-center gap-2"
+                                              >
                                                 <Link2 className="w-4 h-4" />
                                                 Cross-Graph Links
                                                 <span className="ml-auto text-[10px] text-white/50">{showCrossLinks ? 'On' : 'Off'}</span>
@@ -988,7 +1015,8 @@ const KnowledgeGraph = () => {
                                 <Network className="w-12 h-12 text-white/80 mb-4" />
                                 <h3 className="text-2xl font-black text-white mb-2">No Graph Selected</h3>
                                 <p className="text-xs text-dark-400 max-w-md">
-                                    Create a graph, choose documents, and build to generate the neural map.
+                                    Create a graph, choose processed documents, and build to generate the neural map.
+                                    Large sources use model-safe defaults automatically.
                                 </p>
                                 <button
                                     onClick={openCreateGraph}
@@ -1336,41 +1364,18 @@ const KnowledgeGraph = () => {
                                             placeholder="Purpose and focus of this graph"
                                         />
                                         <div className="pt-2">
-                                            <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">LLM Settings</label>
-                                            <div className="grid grid-cols-1 gap-3 mt-2">
-                                                <input
-                                                    className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
-                                                    value={graphForm.llm_config.provider || ''}
-                                                    onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, provider: e.target.value } })}
-                                                    placeholder="provider (openai, groq, ollama)"
-                                                />
-                                                <input
-                                                    className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
-                                                    value={graphForm.llm_config.model || ''}
-                                                    onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, model: e.target.value } })}
-                                                    placeholder="model"
-                                                />
-                                                <input
-                                                    className="w-full px-4 py-2 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
-                                                    value={graphForm.llm_config.base_url || ''}
-                                                    onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, base_url: e.target.value } })}
-                                                    placeholder="base_url (optional)"
-                                                />
-                                                <div className="relative">
-                                                    <input
-                                                        type={showGraphApiKey ? "text" : "password"}
-                                                        className="w-full px-4 py-2 pr-20 rounded-2xl bg-dark-900/60 border border-white/5 text-white focus:outline-none focus:border-primary-500/50"
-                                                        value={graphForm.llm_config.api_key || ''}
-                                                        onChange={(e) => setGraphForm({ ...graphForm, llm_config: { ...graphForm.llm_config, api_key: e.target.value } })}
-                                                        placeholder="api_key (optional)"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setShowGraphApiKey((prev) => !prev)}
-                                                        className="absolute right-2 top-1/2 -translate-y-1/2 px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-xl bg-white/10 text-white/80 hover:bg-white/20"
-                                                    >
-                                                        {showGraphApiKey ? 'Hide' : 'Show'}
-                                                    </button>
+                                            <div className="rounded-2xl border border-white/5 bg-dark-900/50 p-4">
+                                                <div className="flex items-center justify-between">
+                                                    <div>
+                                                        <p className="text-[10px] font-black uppercase tracking-widest text-dark-500">LLM Source</p>
+                                                        <p className="text-[9px] text-dark-600 leading-tight mt-1">
+                                                            {kgLlmConfig.source === 'override' ? 'Using Knowledge Map override' : 'Using global LLM settings'}
+                                                        </p>
+                                                    </div>
+                                                    <div className="text-right text-[10px] text-white/80">
+                                                        <div>{kgLlmConfig.provider || 'Not set'}</div>
+                                                        <div className="text-white/40">{kgLlmConfig.model || 'Model not set'}</div>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
@@ -1403,6 +1408,29 @@ const KnowledgeGraph = () => {
                                                     />
                                                 </div>
                                             </div>
+                                            {recommendedSettings && (
+                                                <div className="mt-4 rounded-2xl border border-white/10 bg-dark-900/60 p-4 text-[11px] text-white/70">
+                                                    <div className="flex items-center justify-between">
+                                                        <span className="text-[10px] font-black uppercase tracking-widest text-white/50">
+                                                            Recommended for {recommendedSettings.model}
+                                                        </span>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setGraphForm({
+                                                                ...graphForm,
+                                                                extraction_max_chars: recommendedSettings.recommendedExtractionMaxChars,
+                                                                chunk_size: recommendedSettings.recommendedChunkSize
+                                                            })}
+                                                            className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest text-white/80"
+                                                        >
+                                                            Use Recommended
+                                                        </button>
+                                                    </div>
+                                                    <div className="mt-2">
+                                                        Extraction window: {recommendedSettings.recommendedExtractionMaxChars} chars · Chunk size: {recommendedSettings.recommendedChunkSize}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                     <div>
@@ -1440,6 +1468,11 @@ const KnowledgeGraph = () => {
                                                 );
                                             })}
                                         </div>
+                                        {recommendedSettings && (
+                                            <div className="mt-3 text-[10px] text-dark-500">
+                                                Large sources will use model-safe defaults ({recommendedSettings.recommendedExtractionMaxChars} chars, chunk {recommendedSettings.recommendedChunkSize}).
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

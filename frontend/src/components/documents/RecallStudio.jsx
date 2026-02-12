@@ -1,34 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, Loader2, Play, Pause, TestTube, Sparkles } from 'lucide-react';
+import { Mic, MicOff, Loader2, Play, Pause, Sparkles } from 'lucide-react';
 import DocumentQuizService from '../../services/documentQuiz';
+import LlmConfigPanel from '@/components/ai/LlmConfigPanel';
+import { LLM_PROVIDER_OPTIONS, MODEL_PRESETS } from '@/lib/llm-options';
 
-const PROVIDERS = [
-    'openai',
-    'groq',
-    'openrouter',
-    'ollama',
-    'ollama_cloud',
-    'huggingface',
-    'together',
-    'fireworks',
-    'mistral',
-    'deepseek',
-    'perplexity'
-];
-
-const MODEL_PRESETS = {
-    openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1', 'gpt-4.1-mini', 'o3-mini'],
-    groq: ['llama-3.1-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
-    openrouter: ['anthropic/claude-3.5-sonnet', 'google/gemini-2.0-flash', 'mistralai/mistral-large'],
-    ollama: ['llama3', 'qwen2.5', 'mistral'],
-    ollama_cloud: ['llama3', 'qwen2.5', 'mistral'],
-    together: ['meta-llama/Meta-Llama-3.1-70B-Instruct-Turbo', 'Qwen/Qwen2.5-72B-Instruct-Turbo'],
-    fireworks: ['accounts/fireworks/models/llama-v3p1-70b-instruct', 'accounts/fireworks/models/qwen2-72b-instruct'],
-    mistral: ['mistral-large-latest', 'mistral-small-latest'],
-    deepseek: ['deepseek-chat', 'deepseek-reasoner'],
-    perplexity: ['sonar', 'sonar-pro'],
-    huggingface: ['meta-llama/Llama-3.1-70B-Instruct', 'mistralai/Mixtral-8x7B-Instruct']
-};
 
 const defaultReveal = {
     total_duration_sec: 30,
@@ -47,6 +22,9 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
     const [session, setSession] = useState(null);
     const [activeItem, setActiveItem] = useState(null);
     const [answer, setAnswer] = useState('');
+    const [answerFile, setAnswerFile] = useState(null);
+    const [batchGradeResult, setBatchGradeResult] = useState(null);
+    const [batchGrading, setBatchGrading] = useState(false);
     const [grading, setGrading] = useState(false);
     const [gradeResult, setGradeResult] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -155,26 +133,54 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
         setGenerating(true);
         setGradeResult(null);
         try {
-            const generated = await DocumentQuizService.generateQuizItems(documentId, {
-                mode,
-                count,
-                max_length: maxLength,
-                difficulty,
-                source_mode: sourceMode,
-                selection_text: sourceMode === 'selection' ? selectedText : null,
-                llm_config: settings.llm_config
-            });
-            setItems(generated || []);
-            if (generated && generated.length > 0) {
-                const sessionResp = await DocumentQuizService.createSession(documentId, {
-                    mode,
-                    item_ids: generated.map(i => i.id),
-                    settings: settings.reveal_config
+            if (mode === 'exercise') {
+                const preview = await DocumentQuizService.previewExercises(documentId, {
+                    source_mode: sourceMode,
+                    selection_text: sourceMode === 'selection' ? selectedText : null,
+                    use_llm: false,
+                    llm_config: settings.llm_config
                 });
-                setSession(sessionResp);
-                setActiveItem(sessionResp.items?.[0] || generated[0]);
-                setRevealPercent(0);
-                stopReveal();
+                const itemsToCreate = (preview || []).slice(0, count).map((item) => ({
+                    text: item.text,
+                    question_number: item.question_number,
+                    page_start: item.page_start,
+                    page_end: item.page_end
+                }));
+                const created = await DocumentQuizService.createExercises(documentId, { items: itemsToCreate, mode: 'exercise' });
+                setItems(created || []);
+                if (created && created.length > 0) {
+                    const sessionResp = await DocumentQuizService.createSession(documentId, {
+                        mode: 'exercise',
+                        item_ids: created.map(i => i.id),
+                        settings: settings.reveal_config
+                    });
+                    setSession(sessionResp);
+                    setActiveItem(sessionResp.items?.[0] || created[0]);
+                    setRevealPercent(0);
+                    stopReveal();
+                }
+            } else {
+                const generated = await DocumentQuizService.generateQuizItems(documentId, {
+                    mode,
+                    count,
+                    max_length: maxLength,
+                    difficulty,
+                    source_mode: sourceMode,
+                    selection_text: sourceMode === 'selection' ? selectedText : null,
+                    llm_config: settings.llm_config
+                });
+                setItems(generated || []);
+                if (generated && generated.length > 0) {
+                    const sessionResp = await DocumentQuizService.createSession(documentId, {
+                        mode,
+                        item_ids: generated.map(i => i.id),
+                        settings: settings.reveal_config
+                    });
+                    setSession(sessionResp);
+                    setActiveItem(sessionResp.items?.[0] || generated[0]);
+                    setRevealPercent(0);
+                    stopReveal();
+                }
             }
         } catch (err) {
             console.error(err);
@@ -206,6 +212,24 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
             console.error(err);
         } finally {
             setGrading(false);
+        }
+    };
+
+    const handleBatchGrade = async () => {
+        if (!session || !answerFile) return;
+        setBatchGrading(true);
+        setBatchGradeResult(null);
+        try {
+            const formData = new FormData();
+            formData.append('session_id', session.id);
+            formData.append('file', answerFile);
+            formData.append('llm_config_json', JSON.stringify(settings.llm_config || {}));
+            const result = await DocumentQuizService.gradeBatch(documentId, formData);
+            setBatchGradeResult(result);
+        } catch (err) {
+            console.error(err);
+        } finally {
+            setBatchGrading(false);
         }
     };
 
@@ -331,6 +355,7 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
                         <select value={mode} onChange={(e) => setMode(e.target.value)} className="mt-2 w-full bg-dark-950 border border-white/5 rounded-xl px-3 py-2 text-xs">
                             <option value="cloze">Cloze Recall</option>
                             <option value="recall">Semantic Recall</option>
+                            <option value="exercise">Exercise Review</option>
                         </select>
                     </div>
                     <div className="bg-dark-900/60 border border-white/5 rounded-2xl p-3">
@@ -395,6 +420,23 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
                         <div className="space-y-2">
                             <div className="text-[10px] font-black uppercase tracking-widest text-dark-500">Your Recall</div>
                             <textarea value={answer} onChange={(e) => setAnswer(e.target.value)} className="w-full bg-dark-950 border border-white/5 rounded-2xl p-3 text-xs min-h-[110px]" placeholder="Type what you recall..." />
+                            <div className="flex flex-col gap-2">
+                                <label className="text-[10px] uppercase tracking-widest text-dark-500 font-black">Upload Answer Sheet (Q1/Q2 labels)</label>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="file"
+                                        onChange={(e) => setAnswerFile(e.target.files?.[0] || null)}
+                                        className="flex-1 text-[10px] text-dark-400"
+                                    />
+                                    <button
+                                        onClick={handleBatchGrade}
+                                        disabled={batchGrading || !answerFile}
+                                        className="px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-xs font-bold uppercase tracking-widest"
+                                    >
+                                        {batchGrading ? 'Grading...' : 'Grade File'}
+                                    </button>
+                                </div>
+                            </div>
                             <div className="flex items-center gap-2">
                                 <button onClick={handleGrade} disabled={grading} className="px-4 py-2 rounded-xl bg-primary-500/20 border border-primary-500/40 text-primary-200 text-xs font-black uppercase tracking-widest">
                                     {grading ? 'Grading...' : 'Grade Recall'}
@@ -415,6 +457,36 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
                             <div className="rounded-2xl border border-primary-500/30 bg-primary-500/10 p-3 text-xs">
                                 <div className="font-bold text-primary-300">Score: {Math.round((gradeResult.score || 0) * 100)}%</div>
                                 <div className="text-primary-100/80 mt-1">{gradeResult.feedback}</div>
+                                {gradeResult.alternative_approaches && gradeResult.alternative_approaches.length > 0 && (
+                                    <div className="mt-3 text-primary-100/80">
+                                        <div className="text-[10px] uppercase tracking-widest font-black text-primary-200 mb-1">Alternative Approaches</div>
+                                        <ul className="list-disc list-inside space-y-1">
+                                            {gradeResult.alternative_approaches.map((item, idx) => (
+                                                <li key={`${item}-${idx}`}>{item}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                        {batchGradeResult && (
+                            <div className="rounded-2xl border border-white/10 bg-white/5 p-3 text-xs">
+                                <div className="text-[10px] uppercase tracking-widest font-black text-dark-400 mb-2">Batch Results</div>
+                                <div className="space-y-2">
+                                    {(batchGradeResult.items || []).map((item, idx) => (
+                                        <div key={`${item.quiz_item_id || idx}`} className="flex items-center justify-between">
+                                            <span className="text-dark-300">{item.question_number || `Q${idx + 1}`}</span>
+                                            <span className="text-primary-300">
+                                                {item.mapped ? `${Math.round((item.score || 0) * 100)}%` : 'Unmapped'}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                                {batchGradeResult.unmapped_text && (
+                                    <div className="mt-2 text-[10px] text-rose-300">
+                                        Some answers could not be mapped. Ensure Q1/Q2 labels in the upload.
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -429,33 +501,18 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
                             <button onClick={() => setSettingsOpen(false)} className="text-dark-400 text-xs uppercase tracking-widest">Close</button>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Provider</label>
-                                <select value={settings.llm_config.provider} onChange={(e) => setSettings({ ...settings, llm_config: { ...settings.llm_config, provider: e.target.value } })} className="mt-2 w-full bg-dark-900 border border-white/5 rounded-xl px-3 py-2 text-xs">
-                                    {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
-                                </select>
-                                <div className="text-[10px] text-dark-500 mt-1">Non-default providers require OpenAI-compatible base URL.</div>
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Model</label>
-                                <input value={settings.llm_config.model || ''} onChange={(e) => setSettings({ ...settings, llm_config: { ...settings.llm_config, model: e.target.value } })} className="mt-2 w-full bg-dark-900 border border-white/5 rounded-xl px-3 py-2 text-xs" placeholder="gpt-4o, llama3, qwen" />
-                                <select onChange={(e) => e.target.value && setSettings({ ...settings, llm_config: { ...settings.llm_config, model: e.target.value } })} className="mt-2 w-full bg-dark-900 border border-white/5 rounded-xl px-3 py-2 text-[10px] text-dark-300">
-                                    <option value="">Model presets (examples)</option>
-                                    {(MODEL_PRESETS[settings.llm_config.provider] || []).map((m) => (
-                                        <option key={m} value={m}>{m}</option>
-                                    ))}
-                                </select>
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">Base URL</label>
-                                <input value={settings.llm_config.base_url || ''} onChange={(e) => setSettings({ ...settings, llm_config: { ...settings.llm_config, base_url: e.target.value } })} className="mt-2 w-full bg-dark-900 border border-white/5 rounded-xl px-3 py-2 text-xs" placeholder="https://..." />
-                            </div>
-                            <div>
-                                <label className="text-[10px] font-black uppercase tracking-widest text-dark-500">API Key</label>
-                                <input type="password" value={settings.llm_config.api_key || ''} onChange={(e) => setSettings({ ...settings, llm_config: { ...settings.llm_config, api_key: e.target.value } })} className="mt-2 w-full bg-dark-900 border border-white/5 rounded-xl px-3 py-2 text-xs" placeholder="sk-..." />
-                            </div>
-                        </div>
+                        <LlmConfigPanel
+                            value={settings.llm_config}
+                            onChange={(next) => setSettings({ ...settings, llm_config: next })}
+                            providers={LLM_PROVIDER_OPTIONS}
+                            modelPresets={MODEL_PRESETS}
+                            onTest={handleTestLlm}
+                            testing={testing}
+                            testPrompt={testPrompt}
+                            onTestPromptChange={setTestPrompt}
+                            testResult={testResult}
+                            helper="Non-default providers may require an OpenAI-compatible base URL."
+                        />
 
                         <div className="grid grid-cols-2 gap-4">
                             <div>
@@ -480,17 +537,6 @@ const RecallStudio = ({ documentId, selectedText, initialSessionId }) => {
                             <input type="checkbox" checked={settings.voice_mode_enabled} onChange={(e) => setSettings({ ...settings, voice_mode_enabled: e.target.checked })} />
                             Enable voice recall mode (browser speech recognition)
                         </label>
-
-                        <div className="border border-white/5 rounded-2xl p-4 space-y-2">
-                            <div className="text-[10px] font-black uppercase tracking-widest text-dark-500">Test LLM</div>
-                            <input value={testPrompt} onChange={(e) => setTestPrompt(e.target.value)} className="w-full bg-dark-900 border border-white/5 rounded-xl px-3 py-2 text-xs" />
-                            <button onClick={handleTestLlm} disabled={testing} className="px-4 py-2 rounded-xl bg-white/5 border border-white/5 text-xs font-bold uppercase tracking-widest">
-                                {testing ? <Loader2 className="w-3 h-3 animate-spin inline-block mr-2" /> : <TestTube className="w-3 h-3 inline-block mr-2" />}Test
-                            </button>
-                            {testResult && (
-                                <div className="text-[10px] text-dark-400">{testResult.output_sample || testResult.error}</div>
-                            )}
-                        </div>
 
                         <div className="flex justify-end gap-2">
                             <button onClick={() => setSettingsOpen(false)} className="px-4 py-2 rounded-xl bg-white/5 border border-white/5 text-xs font-bold uppercase tracking-widest">Cancel</button>

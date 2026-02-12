@@ -677,9 +677,21 @@ class DocumentQuizAttempt(Base):
     quiz_item_id = Column(String, ForeignKey("document_quiz_items.id"), index=True, nullable=False)
     user_answer = Column(Text, nullable=True)
     transcript = Column(Text, nullable=True)
+    submission_id = Column(String, ForeignKey("document_quiz_submissions.id"), nullable=True)
     score = Column(Float, default=0.0)
     feedback = Column(Text, nullable=True)
     llm_eval = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=utcnow)
+
+
+class DocumentQuizSubmission(Base):
+    __tablename__ = "document_quiz_submissions"
+
+    id = Column(String, primary_key=True, index=True)
+    session_id = Column(String, ForeignKey("document_quiz_sessions.id"), index=True, nullable=False)
+    file_path = Column(Text, nullable=False)
+    ocr_text = Column(Text, nullable=True)
+    mapping_json = Column(JSON, default=dict)
     created_at = Column(DateTime, default=utcnow)
 
 class DocumentStudySettings(Base):

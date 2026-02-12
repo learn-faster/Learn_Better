@@ -35,6 +35,7 @@ const Settings = ({ isOpen, onClose }) => {
         quiz: { useGlobal: true, config: {} },
         curriculum: { useGlobal: true, config: {} },
         extraction: { useGlobal: true, config: {} },
+        knowledge_graph: { useGlobal: true, config: {} },
         agent: { useGlobal: true, config: {} },
         vision: { useGlobal: true, config: {} }
     });
@@ -62,6 +63,8 @@ const Settings = ({ isOpen, onClose }) => {
     const [saveError, setSaveError] = useState('');
     const [backendHealth, setBackendHealth] = useState(null);
     const [backendHealthLoading, setBackendHealthLoading] = useState(false);
+    const [embeddingHealth, setEmbeddingHealth] = useState(null);
+    const [embeddingHealthLoading, setEmbeddingHealthLoading] = useState(false);
     const [llmHealth, setLlmHealth] = useState(null);
     const [llmHealthLoading, setLlmHealthLoading] = useState(false);
 
@@ -69,6 +72,7 @@ const Settings = ({ isOpen, onClose }) => {
         const fallback = [
             { id: 'openai', label: 'OpenAI', supports_embeddings: true },
             { id: 'ollama', label: 'Ollama (Local)', supports_embeddings: true },
+            { id: 'google', label: 'Google (Gemini)', supports_embeddings: true },
             { id: 'openrouter', label: 'OpenRouter', supports_embeddings: true },
             { id: 'together', label: 'Together', supports_embeddings: true },
             { id: 'fireworks', label: 'Fireworks', supports_embeddings: true },
@@ -88,6 +92,7 @@ const Settings = ({ isOpen, onClose }) => {
         const fallback = [
             { id: 'openai', label: 'OpenAI' },
             { id: 'groq', label: 'Groq' },
+            { id: 'google', label: 'Google (Gemini)' },
             { id: 'openrouter', label: 'OpenRouter' },
             { id: 'together', label: 'Together' },
             { id: 'fireworks', label: 'Fireworks' },
@@ -114,9 +119,21 @@ const Settings = ({ isOpen, onClose }) => {
         'quiz',
         'curriculum',
         'extraction',
+        'knowledge_graph',
         'agent',
         'vision'
     ]), []);
+
+    const overrideLabels = useMemo(() => ({
+        chat: 'Chat',
+        flashcards: 'Flashcards',
+        quiz: 'Quiz',
+        curriculum: 'Curriculum',
+        extraction: 'Extraction',
+        knowledge_graph: 'Knowledge Map',
+        agent: 'Agent',
+        vision: 'Vision'
+    }), []);
 
     const buildOverrideState = React.useCallback((llmConfig = {}) => {
         const globalConfig = llmConfig.global || {};
@@ -177,6 +194,21 @@ const Settings = ({ isOpen, onClose }) => {
         }
     };
 
+    const checkEmbeddingHealth = async () => {
+        setEmbeddingHealthLoading(true);
+        try {
+            const result = await cognitiveService.checkEmbeddingHealth();
+            setEmbeddingHealth(result);
+        } catch (err) {
+            setEmbeddingHealth({
+                ok: false,
+                detail: err?.userMessage || err?.message || 'Failed to check embedding connection.'
+            });
+        } finally {
+            setEmbeddingHealthLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (!isOpen) return;
         setIsLoading(true);
@@ -228,6 +260,7 @@ const Settings = ({ isOpen, onClose }) => {
                 if (settingsData.fitbit_redirect_uri) setFitbitRedirectUri(settingsData.fitbit_redirect_uri);
                 setConnected(statusData.connected || false);
                 await checkBackendHealth();
+                await checkEmbeddingHealth();
                 await checkLlmHealth();
             } catch (err) {
                 setLoadError(err?.userMessage || err?.message || 'Failed to load settings.');
@@ -265,11 +298,15 @@ const Settings = ({ isOpen, onClose }) => {
         setIsSaving(true);
         setSaveError('');
 
+        const resolvedBaseUrl = provider === 'ollama' ? ollamaUrl : (
+            baseUrl && baseUrl !== ollamaUrl && !baseUrl.includes('localhost:11434') ? baseUrl : ''
+        );
+
         const llmConfig = {
             provider,
             api_key: apiKey,
             model,
-            base_url: provider === 'ollama' ? ollamaUrl : baseUrl
+            base_url: resolvedBaseUrl
         };
 
         const overridePayload = {};
@@ -421,7 +458,7 @@ const Settings = ({ isOpen, onClose }) => {
                                         {activeTab === 'ai' && (
                                             <div className="space-y-5">
                                                 <SectionCard title="Connection Status" description="Check if the backend and LLM are reachable.">
-                                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                                         <div className={`rounded-xl border px-3 py-3 text-xs ${backendHealth?.ok ? 'border-primary-500/30 bg-primary-500/10 text-primary-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
                                                             <div className="flex items-center justify-between">
                                                                 <span>Backend</span>
@@ -435,6 +472,27 @@ const Settings = ({ isOpen, onClose }) => {
                                                             </div>
                                                             <div className="mt-2 text-[10px] opacity-80">{backendHealthLoading ? 'Checking...' : (backendHealth?.detail || 'Unknown')}</div>
                                                         </div>
+                                                        <div className={`rounded-xl border px-3 py-3 text-xs ${embeddingHealth?.ok ? 'border-primary-500/30 bg-primary-500/10 text-primary-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
+                                                            <div className="flex items-center justify-between">
+                                                                <span>Embeddings</span>
+                                                                <button
+                                                                    onClick={checkEmbeddingHealth}
+                                                                    disabled={embeddingHealthLoading}
+                                                                    className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[10px] text-white disabled:opacity-60"
+                                                                >
+                                                                    {embeddingHealthLoading ? 'Checking...' : 'Check'}
+                                                                </button>
+                                                            </div>
+                                                            <div className="mt-2 text-[10px] opacity-80">{embeddingHealthLoading ? 'Checking...' : (embeddingHealth?.detail || 'Unknown')}</div>
+                                                            {embeddingHealth && (
+                                                                <div className="mt-1 text-[10px] opacity-70">
+                                                                    Provider: {embeddingHealth.provider || '—'} • Model: {embeddingHealth.model || '—'} • Base URL: {embeddingHealth.base_url || '—'}
+                                                                </div>
+                                                            )}
+                                                            {!embeddingHealth?.ok && (
+                                                                <div className="mt-2 text-[10px] opacity-70">Save settings first if you recently changed provider or model.</div>
+                                                            )}
+                                                        </div>
                                                         <div className={`rounded-xl border px-3 py-3 text-xs ${llmHealth?.ok ? 'border-primary-500/30 bg-primary-500/10 text-primary-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
                                                             <div className="flex items-center justify-between">
                                                                 <span>LLM</span>
@@ -447,6 +505,11 @@ const Settings = ({ isOpen, onClose }) => {
                                                                 </button>
                                                             </div>
                                                             <div className="mt-2 text-[10px] opacity-80">{llmHealthLoading ? 'Checking...' : (llmHealth?.detail || 'Unknown')}</div>
+                                                            {llmHealth && (
+                                                                <div className="mt-1 text-[10px] opacity-70">
+                                                                    Provider: {llmHealth.provider || '—'} • Model: {llmHealth.model || '—'} • Base URL: {llmHealth.base_url || '—'}
+                                                                </div>
+                                                            )}
                                                             {!llmHealth?.ok && (
                                                                 <div className="mt-2 text-[10px] opacity-70">Save settings first if you recently changed provider or model.</div>
                                                             )}
@@ -460,6 +523,11 @@ const Settings = ({ isOpen, onClose }) => {
                                                             onChange={(e) => {
                                                                 const p = e.target.value;
                                                                 setProvider(p);
+                                                                if (p === 'ollama') {
+                                                                    setBaseUrl('');
+                                                                } else if (baseUrl === ollamaUrl || baseUrl.includes('localhost:11434')) {
+                                                                    setBaseUrl('');
+                                                                }
                                                                 if (p === 'openai') setModel('gpt-4o-mini');
                                                                 else if (p === 'groq') setModel('qwen/qwen3-32b');
                                                                 else if (p === 'openrouter') setModel('openai/gpt-4o');
@@ -489,7 +557,7 @@ const Settings = ({ isOpen, onClose }) => {
                                                                 />
                                                             </div>
                                                         )}
-                                                        {(provider === 'ollama' || provider === 'custom' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface'].includes(provider)) && (
+                                                        {(provider === 'ollama' || provider === 'custom' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface','google'].includes(provider)) && (
                                                             <input
                                                                 type="text"
                                                                 value={provider === 'ollama' ? ollamaUrl : baseUrl}
@@ -538,7 +606,7 @@ const Settings = ({ isOpen, onClose }) => {
                                                                 className={inputClass}
                                                             />
                                                         )}
-                                                        {(embeddingProvider === 'ollama' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface','custom'].includes(embeddingProvider)) && (
+                                                        {(embeddingProvider === 'ollama' || ['openrouter','together','fireworks','mistral','deepseek','perplexity','huggingface','custom','google'].includes(embeddingProvider)) && (
                                                             <input
                                                                 type="text"
                                                                 value={embeddingBaseUrl}
@@ -563,8 +631,8 @@ const Settings = ({ isOpen, onClose }) => {
                                                         {overrideKeys.map((key) => (
                                                             <div key={key} className="rounded-xl border border-white/10 bg-white/5 p-3 space-y-2">
                                                                 <div className="flex items-center justify-between">
-                                                                    <div className="text-xs font-semibold uppercase tracking-wider text-dark-300">
-                                                                        {key}
+                                                                <div className="text-xs font-semibold uppercase tracking-wider text-dark-300">
+                                                                        {overrideLabels[key] || key}
                                                                     </div>
                                                                     <button
                                                                         type="button"

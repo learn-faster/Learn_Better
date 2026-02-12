@@ -15,6 +15,7 @@ from src.services.ai_settings import (
     get_or_create_user_settings,
     get_provider_registry,
     mark_llm_config_modified,
+    merge_canonical_into_raw,
     sync_embedding_columns,
 )
 from src.services.llm_service import llm_service
@@ -89,6 +90,18 @@ def update_ai_settings(
     merged_config, embeddings_updated = apply_ai_settings_update(settings_row, payload)
 
     settings_row.llm_config = merged_config
+    canonical = build_canonical_llm_config(settings_row)
+
+    # Sanitize base_url if a non-ollama provider inherited localhost.
+    global_cfg = canonical.get("global") or {}
+    base_url = global_cfg.get("base_url")
+    provider = (global_cfg.get("provider") or "").lower()
+    if provider and provider != "ollama" and isinstance(base_url, str) and "localhost:11434" in base_url:
+        global_cfg["base_url"] = None
+        canonical["global"] = global_cfg
+        merged_config = merge_canonical_into_raw(settings_row.llm_config or {}, canonical)
+        settings_row.llm_config = merged_config
+
     mark_llm_config_modified(settings_row)
 
     canonical = build_canonical_llm_config(settings_row)

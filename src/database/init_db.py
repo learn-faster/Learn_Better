@@ -77,6 +77,8 @@ def initialize_orm_tables():
         migrate_knowledge_graphs_table()
         # Manually migrate 'document_sections' table
         migrate_document_sections_table()
+        # Manually migrate quiz submissions table/columns
+        migrate_document_quiz_submissions_table()
         
         return True
     except Exception as e:
@@ -138,6 +140,31 @@ def migrate_document_sections_table():
         except Exception:
             # Ignore error if column already exists
             pass
+
+
+def migrate_document_quiz_submissions_table():
+    """Ensure quiz submissions table exists and attempts include submission_id."""
+    try:
+        postgres_conn.execute_write("""
+            CREATE TABLE IF NOT EXISTS document_quiz_submissions (
+                id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL REFERENCES document_quiz_sessions(id),
+                file_path TEXT NOT NULL,
+                ocr_text TEXT,
+                mapping_json JSONB DEFAULT '{}'::jsonb,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        postgres_conn.execute_write("CREATE INDEX IF NOT EXISTS idx_doc_quiz_submissions_session_id ON document_quiz_submissions(session_id)")
+    except Exception:
+        pass
+
+    try:
+        postgres_conn.execute_write("ALTER TABLE document_quiz_attempts ADD COLUMN submission_id TEXT REFERENCES document_quiz_submissions(id)")
+        print("Added column submission_id to document_quiz_attempts table")
+    except Exception:
+        # Ignore if column exists
+        pass
 
 
 def migrate_user_settings_table():

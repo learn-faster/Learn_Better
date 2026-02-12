@@ -349,7 +349,40 @@ def mark_llm_config_modified(user_settings: UserSettings) -> None:
 def get_or_create_user_settings(db: Session, user_id: str) -> UserSettings:
     settings_row = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
     if not settings_row:
-        settings_row = UserSettings(user_id=user_id)
+        if user_id == "default_user":
+            # Single-user mode: migrate the most recent settings to default_user if available.
+            source = db.query(UserSettings).filter(UserSettings.user_id != "default_user").order_by(UserSettings.updated_at.desc()).first()
+            if source:
+                settings_row = UserSettings(
+                    user_id="default_user",
+                    email=source.email,
+                    resend_api_key=source.resend_api_key,
+                    resend_reply_domain=source.resend_reply_domain,
+                    timezone=source.timezone,
+                    target_retention=source.target_retention,
+                    daily_new_limit=source.daily_new_limit,
+                    focus_duration=source.focus_duration,
+                    break_duration=source.break_duration,
+                    email_daily_reminder=source.email_daily_reminder,
+                    email_streak_alert=source.email_streak_alert,
+                    email_weekly_digest=source.email_weekly_digest,
+                    weekly_digest_day=source.weekly_digest_day,
+                    weekly_digest_hour=source.weekly_digest_hour,
+                    weekly_digest_minute=source.weekly_digest_minute,
+                    use_biometrics=source.use_biometrics,
+                    fitbit_client_id=source.fitbit_client_id,
+                    fitbit_client_secret=source.fitbit_client_secret,
+                    fitbit_redirect_uri=source.fitbit_redirect_uri,
+                    llm_config=source.llm_config,
+                    embedding_provider=source.embedding_provider,
+                    embedding_model=source.embedding_model,
+                    embedding_api_key=source.embedding_api_key,
+                    embedding_base_url=source.embedding_base_url
+                )
+            else:
+                settings_row = UserSettings(user_id=user_id)
+        else:
+            settings_row = UserSettings(user_id=user_id)
         db.add(settings_row)
         db.commit()
         db.refresh(settings_row)

@@ -1,5 +1,4 @@
 import apiClient from './client'
-import { getUserId } from '@/lib/utils/user-id'
 
 const normalizeId = (value) => {
   if (!value) return value
@@ -60,7 +59,7 @@ export const chatApi = {
 
   // Messaging (synchronous, no streaming)
   sendMessage: async (data) => {
-    const payload = { ...data, user_id: data?.user_id ?? getUserId() }
+    const payload = { ...data }
     const response = await apiClient.post(
       `/chat/execute`,
       payload

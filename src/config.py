@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     ocr_max_pages: int = 8
     ocr_cloud_fallback: bool = True
     ocr_language: str = "eng"
+    markdown_inline_image_max_kb: int = 5120
 
     # Web extraction
     web_extraction_timeout: int = 20

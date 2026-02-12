@@ -43,7 +43,7 @@ export class ErrorBoundary extends React.Component {
 
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-4">
-          <Card className="w-full max-w-md">
+          <Card className="w-full max-w-md animate-in zoom-in-95 duration-200">
             <CardHeader className="text-center">
               <div className="mx-auto w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center mb-4">
                 <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />

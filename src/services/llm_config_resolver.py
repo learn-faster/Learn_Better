@@ -13,8 +13,8 @@ from typing import Any, Dict, Optional
 from sqlalchemy.orm import Session
 
 from src.models.schemas import LLMConfig
-from src.models.orm import UserSettings
 from src.config import settings
+from src.services.ai_settings import build_canonical_llm_config, get_or_create_user_settings
 
 
 def resolve_llm_config(
@@ -50,26 +50,15 @@ def resolve_llm_config(
 
     # 3. User settings from database
     try:
-        user_settings = db.query(UserSettings).filter(UserSettings.user_id == user_id).first()
-        if user_settings and user_settings.llm_config:
-            config_data = user_settings.llm_config
-            if isinstance(config_data, dict):
-                # Try specific key, then 'global', then fall back to root dict if it looks like a config
-                if config_type and config_type in config_data:
-                    config_data = config_data[config_type]
-                elif "global" in config_data:
-                    config_data = config_data["global"]
-                elif "agent_settings" in config_data and isinstance(config_data.get("agent_settings"), dict):
-                    agent_llm = config_data["agent_settings"].get("llm_config")
-                    if agent_llm:
-                        config_data = agent_llm
-                
-                # If the resulting data is a dict, attempt to use it
-                if isinstance(config_data, dict):
-                    # If it's missing the provider but the root has it, fall back to root (flat structure support)
-                    if not config_data.get("provider") and "provider" in user_settings.llm_config:
-                        config_data = user_settings.llm_config
-                    return LLMConfig(**config_data)
+        user_settings = get_or_create_user_settings(db, user_id)
+        canonical = build_canonical_llm_config(user_settings)
+        if config_type:
+            candidate = canonical.get(config_type) or {}
+            if isinstance(candidate, dict) and candidate.get("provider"):
+                return LLMConfig(**candidate)
+        global_cfg = canonical.get("global") or {}
+        if isinstance(global_cfg, dict) and global_cfg.get("provider"):
+            return LLMConfig(**global_cfg)
     except Exception:
         pass
 

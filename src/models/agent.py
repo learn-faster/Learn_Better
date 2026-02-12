@@ -35,6 +35,7 @@ class AgentEmbeddingConfig(BaseModel):
     provider: Literal[
         "openai",
         "ollama",
+        "google",
         "openrouter",
         "together",
         "mistral",

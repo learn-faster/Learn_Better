@@ -21,7 +21,7 @@ export const MarkdownEditor = forwardRef(
               id: textareaId,
               name: name,
             }}
-            data-color-mode="light"
+            data-color-mode="dark"
           />
         </Suspense>
       </div>

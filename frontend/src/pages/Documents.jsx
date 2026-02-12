@@ -21,8 +21,8 @@ import FileUpload from '../components/documents/FileUpload';
 import useDocumentStore from '../stores/useDocumentStore';
 import useFolderStore from '../stores/useFolderStore';
 import cognitiveService from '../services/cognitive';
+import aiSettings from '../services/aiSettings';
 import InlineErrorBanner from '../components/common/InlineErrorBanner';
-import { getUserId } from '../lib/utils/user-id';
 import { getApiUrl, getConfig, resetConfig } from '../lib/config';
 
 const STATUS_STYLES = {
@@ -42,21 +42,6 @@ const FOLDER_COLORS = [
   '#c2efb3', '#dcd6f7', '#2ec4b6', '#b5efe2',
   '#7fe3d2', '#49d6c2', '#e8e5f2', '#8f8aa0'
 ];
-
-const EMBEDDING_PROVIDERS = [
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'ollama', label: 'Ollama (Local)' },
-  { value: 'openrouter', label: 'OpenRouter' },
-  { value: 'together', label: 'Together' },
-  { value: 'fireworks', label: 'Fireworks' },
-  { value: 'mistral', label: 'Mistral' },
-  { value: 'deepseek', label: 'DeepSeek' },
-  { value: 'perplexity', label: 'Perplexity' },
-  { value: 'huggingface', label: 'Hugging Face' },
-  { value: 'custom', label: 'OpenAI-Compatible' }
-];
-
-const EMBEDDING_DIM_PRESETS = [256, 384, 512, 768, 1024, 1536, 3072];
 
 const Documents = () => {
   const navigate = useNavigate();
@@ -90,14 +75,11 @@ const Documents = () => {
   const [newFolderColor, setNewFolderColor] = useState(FOLDER_COLORS[0]);
   const [contextMenu, setContextMenu] = useState(null);
 
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
-  const [settingsLoading, setSettingsLoading] = useState(false);
-  const [settingsSaving, setSettingsSaving] = useState(false);
-  const [settingsError, setSettingsError] = useState(null);
   const [folderError, setFolderError] = useState(null);
   const [llmStatus, setLlmStatus] = useState(null);
   const [llmLoading, setLlmLoading] = useState(false);
   const [llmError, setLlmError] = useState(null);
+  const [llmDisplay, setLlmDisplay] = useState({ provider: null, model: null });
   const [deleteModal, setDeleteModal] = useState(null);
   const [deleteError, setDeleteError] = useState(null);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -106,8 +88,6 @@ const Documents = () => {
   const [queueStatus, setQueueStatus] = useState(null);
   const [queueWorkers, setQueueWorkers] = useState(null);
   const [queueTesting, setQueueTesting] = useState(false);
-  const [reindexing, setReindexing] = useState(false);
-  const [reindexError, setReindexError] = useState(null);
   const [wsConnected, setWsConnected] = useState(false);
   const [embeddingSettings, setEmbeddingSettings] = useState({
     embedding_provider: 'ollama',
@@ -116,8 +96,6 @@ const Documents = () => {
     embedding_base_url: 'http://localhost:11434',
     embedding_dimensions: 768
   });
-  const [embeddingDimSelection, setEmbeddingDimSelection] = useState('768');
-  const [embeddingDimCustom, setEmbeddingDimCustom] = useState('768');
   const [progressDisplay, setProgressDisplay] = useState({});
   const progressTrackerRef = useRef(new Map());
 
@@ -189,7 +167,7 @@ const Documents = () => {
     const map = progressTrackerRef.current;
     const now = Date.now();
     documents.forEach((doc) => {
-      const progress = Number(doc.ingestion_progress ?? 0);
+      const progress = Number(doc.progress_percent ?? doc.ingestion_progress ?? 0);
       const existing = map.get(doc.id);
       if (!existing) {
         map.set(doc.id, { progress, changedAt: now, prevProgress: progress, prevChangedAt: now });
@@ -213,7 +191,7 @@ const Documents = () => {
         documents.forEach((doc) => {
           const statusKey = doc.status || 'complete';
           const isProcessing = ['processing', 'pending', 'ingesting', 'uploading'].includes(statusKey);
-          const ingestionProgress = Math.max(0, Math.min(100, Number(doc.ingestion_progress ?? 0)));
+          const ingestionProgress = Math.max(0, Math.min(100, Number(doc.progress_percent ?? doc.ingestion_progress ?? 0)));
           const readingProgress = Math.max(0, Math.min(100, Math.round((doc.reading_progress || 0) * 100)));
           const target = isProcessing ? ingestionProgress : readingProgress;
           const current = prev[doc.id] ?? target;
@@ -238,8 +216,8 @@ const Documents = () => {
 
   useEffect(() => {
     checkEmbeddingHealth();
+    loadAiSettings();
     loadLlmStatus();
-    loadEmbeddingSettings();
   }, []);
 
   useEffect(() => {
@@ -282,7 +260,7 @@ const Documents = () => {
   };
 
   useEffect(() => {
-    if (isUploadOpen || showFolderModal || showSettingsModal || deleteModal) {
+    if (isUploadOpen || showFolderModal || deleteModal) {
       document.body.style.overflow = 'hidden';
     } else {
       document.body.style.overflow = 'unset';
@@ -290,7 +268,7 @@ const Documents = () => {
     return () => {
       document.body.style.overflow = 'unset';
     };
-  }, [isUploadOpen, showFolderModal, showSettingsModal, deleteModal]);
+  }, [isUploadOpen, showFolderModal, deleteModal]);
 
   useEffect(() => {
     if (wsConnected) return;
@@ -330,62 +308,41 @@ const Documents = () => {
     return () => clearInterval(interval);
   }, [documents, fetchDocuments]);
 
-  const loadEmbeddingSettings = async () => {
-    setSettingsLoading(true);
-    setSettingsError(null);
-    try {
-      const data = await cognitiveService.getSettings();
-      setEmbeddingSettings((prev) => ({
-        ...prev,
-        embedding_provider: data?.embedding_provider || prev.embedding_provider,
-        embedding_model: data?.embedding_model || prev.embedding_model,
-        embedding_api_key: data?.embedding_api_key || prev.embedding_api_key,
-        embedding_base_url: data?.embedding_base_url || prev.embedding_base_url,
-        embedding_dimensions: data?.embedding_dimensions || prev.embedding_dimensions
-      }));
-      const dims = Number(data?.embedding_dimensions || embeddingSettings.embedding_dimensions || 768);
-      if (EMBEDDING_DIM_PRESETS.includes(dims)) {
-        setEmbeddingDimSelection(String(dims));
-        setEmbeddingDimCustom(String(dims));
-      } else {
-        setEmbeddingDimSelection('custom');
-        setEmbeddingDimCustom(String(dims));
-      }
-      await checkEmbeddingHealth();
-    } catch (err) {
-      setSettingsError(err?.userMessage || err?.message || 'Failed to load embedding settings.');
-    } finally {
-      setSettingsLoading(false);
-    }
-  };
-
   const loadLlmStatus = async () => {
     setLlmLoading(true);
     setLlmError(null);
     try {
-      const userId = getUserId();
-      let data = null;
-      const response = await fetch(`/api/config/llm?user_id=${encodeURIComponent(userId)}`);
-      if (response.ok) {
-        data = await response.json();
-      }
-      if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) {
-        const fallbackRes = await fetch(`/api/goals/agent/settings?user_id=${encodeURIComponent(userId)}`);
-        if (!fallbackRes.ok) {
-          throw new Error(`LLM config status ${fallbackRes.status}`);
-        }
-        const fallbackData = await fallbackRes.json();
-        data = fallbackData?.llm_config || null;
-      }
-      setLlmStatus(data);
+      const status = await cognitiveService.checkLlmHealth();
+      setLlmStatus(status);
     } catch (err) {
       setLlmStatus(null);
-      setLlmError(err?.message || 'Unable to check LLM status');
+      setLlmError(err?.userMessage || err?.message || 'Unable to check LLM status');
     } finally {
       setLlmLoading(false);
     }
   };
 
+  const loadAiSettings = async () => {
+    try {
+      const data = await aiSettings.get();
+      const embeddingConfig = data?.embeddings || data?.llm?.embedding_config || {};
+      const globalConfig = data?.llm?.global || {};
+      setEmbeddingSettings((prev) => ({
+        ...prev,
+        embedding_provider: embeddingConfig?.provider || prev.embedding_provider,
+        embedding_model: embeddingConfig?.model || prev.embedding_model,
+        embedding_api_key: embeddingConfig?.api_key || prev.embedding_api_key,
+        embedding_base_url: embeddingConfig?.base_url || prev.embedding_base_url,
+        embedding_dimensions: embeddingConfig?.dimensions || prev.embedding_dimensions
+      }));
+      setLlmDisplay({
+        provider: globalConfig?.provider || null,
+        model: globalConfig?.model || null
+      });
+    } catch {
+      // Silent: status card still renders and can be checked.
+    }
+  };
 
   const checkEmbeddingHealth = async () => {
     setEmbeddingHealthLoading(true);
@@ -402,46 +359,7 @@ const Documents = () => {
     }
   };
 
-  const handleSaveEmbeddingSettings = async () => {
-    setSettingsSaving(true);
-    setSettingsError(null);
-    try {
-      await cognitiveService.updateSettings({
-        embedding_provider: embeddingSettings.embedding_provider,
-        embedding_model: embeddingSettings.embedding_model,
-        embedding_api_key: embeddingSettings.embedding_api_key,
-        embedding_base_url: embeddingSettings.embedding_base_url,
-        embedding_dimensions: embeddingSettings.embedding_dimensions
-      });
-      await checkEmbeddingHealth();
-      setShowSettingsModal(false);
-    } catch (err) {
-      setSettingsError(err?.userMessage || err?.message || 'Unable to save settings. Please try again.');
-    } finally {
-      setSettingsSaving(false);
-    }
-  };
 
-  const handleReindexEmbeddings = async () => {
-    setReindexError(null);
-    const confirmed = window.confirm('Reindex embeddings for all documents? This can take several minutes.');
-    if (!confirmed) return;
-    setReindexing(true);
-    try {
-      const res = await cognitiveService.reindexEmbeddings({});
-      if (res?.status === 'no_documents') {
-        toast.info('No documents available for reindexing.');
-      } else {
-        toast.success('Reindexing started.');
-      }
-    } catch (err) {
-      const msg = err?.userMessage || err?.message || 'Failed to start reindexing.';
-      setReindexError(msg);
-      toast.error(msg);
-    } finally {
-      setReindexing(false);
-    }
-  };
 
   const handleCreateFolder = async () => {
     if (!newFolderName.trim()) return;
@@ -541,23 +459,9 @@ const Documents = () => {
     }
   };
 
-  const resolveLlmGlobal = () => {
-    if (!llmStatus) return null;
-    if (llmStatus.global) return llmStatus.global;
-    if (llmStatus.provider || llmStatus.api_key || llmStatus.model || llmStatus.base_url) return llmStatus;
-    return null;
-  };
-  const llmGlobal = resolveLlmGlobal();
-  const llmConfigured = (() => {
-    const globalCfg = llmGlobal || {};
-    const provider = globalCfg.provider || '';
-    if (!provider) return false;
-    if (provider === 'ollama') return Boolean(globalCfg.base_url || globalCfg.model);
-    return Boolean(globalCfg.api_key || globalCfg.model);
-  })();
-  const llmProviderLabel = llmGlobal?.provider || 'Not set';
-  const showBaseUrl = ['openrouter', 'together', 'fireworks', 'mistral', 'deepseek', 'perplexity', 'huggingface', 'custom', 'ollama'].includes(embeddingSettings.embedding_provider);
-  const showApiKey = embeddingSettings.embedding_provider !== 'ollama';
+  const llmConfigured = Boolean(llmStatus?.ok);
+  const llmProviderLabel = llmDisplay.provider || llmStatus?.provider || 'Not set';
+  const llmModelLabel = llmDisplay.model || llmStatus?.model || 'Not set';
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 min-h-[calc(100vh-6rem)]">
@@ -639,23 +543,9 @@ const Documents = () => {
             <div>
               <p className="text-[11px] uppercase tracking-[0.3em] text-primary-300 font-black">Processing Readiness</p>
               <p className="text-sm text-primary-100/80 mt-2 max-w-2xl">
-                Extraction and knowledge maps require embeddings. Advanced summarization and rewriting require an LLM.
-                Check both before starting large ingestions.
+                Upload files or URLs. If auto-process is off, use Process to extract content.
+                Advanced rewriting requires an LLM.
               </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => { setShowSettingsModal(true); loadEmbeddingSettings(); }}
-                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-primary-100/80 text-[11px] font-bold uppercase tracking-widest border border-primary-500/20"
-              >
-                Embedding Settings
-              </button>
-              <button
-                onClick={() => navigate('/settings')}
-                className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-primary-100/80 text-[11px] font-bold uppercase tracking-widest border border-primary-500/20"
-              >
-                LLM Settings
-              </button>
             </div>
           </div>
           <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -697,12 +587,15 @@ const Documents = () => {
               <div className="mt-2">
                 {llmLoading ? 'Checking connection...' : llmConfigured ? `Connected (${llmProviderLabel})` : 'Not connected'}
                 {llmError && <div className="mt-1 text-[10px] text-rose-200/80">{llmError}</div>}
+                {!llmConfigured && llmStatus?.detail && (
+                  <div className="mt-1 text-[10px] text-rose-200/80">{llmStatus.detail}</div>
+                )}
               </div>
               <div className="mt-2 text-[10px] text-primary-100/80">
-                Provider: {llmGlobal?.provider || 'Not set'}
+                Provider: {llmProviderLabel}
               </div>
               <div className="text-[10px] text-primary-100/80">
-                Model: {llmGlobal?.model || 'Not set'}
+                Model: {llmModelLabel}
               </div>
             </div>
           </div>
@@ -789,7 +682,7 @@ const Documents = () => {
               const title = doc.title || doc.filename || `Document ${doc.id}`;
               const isProcessing = ['processing', 'pending', 'ingesting', 'uploading'].includes(statusKey);
               const canIngest = ['extracted', 'completed', 'failed'].includes(statusKey);
-              const ingestionProgress = Math.max(0, Math.min(100, Number(doc.ingestion_progress ?? 0)));
+              const ingestionProgress = Math.max(0, Math.min(100, Number(doc.progress_percent ?? doc.ingestion_progress ?? 0)));
               const readingProgress = Math.max(0, Math.min(100, Math.round((doc.reading_progress || 0) * 100)));
               const displayProgress = isProcessing ? ingestionProgress : readingProgress;
               const smoothProgress = progressDisplay[doc.id] ?? displayProgress;
@@ -812,9 +705,11 @@ const Documents = () => {
                 complete: 'Complete'
               };
               const phaseFriendly = phaseFriendlyMap[phase] || (phaseLabel ? `Working: ${phaseLabel}` : '');
-              const messageLabel = jobMessage && (!phaseLabel || !jobMessage.toLowerCase().includes(phaseLabel))
-                ? jobMessage
-                : '';
+                const messageLabel = jobMessage && (!phaseLabel || !jobMessage.toLowerCase().includes(phaseLabel))
+                  ? jobMessage
+                  : '';
+                const recommendation = doc.processing_recommendation;
+                const showRecommendation = Boolean(recommendation?.is_large_source);
               let queueState = isProcessing
                 ? (phase.includes('queued') || statusKey === 'pending' ? 'queued' : (phase === 'initializing' ? 'starting' : 'running'))
                 : null;
@@ -856,7 +751,7 @@ const Documents = () => {
               return (
                 <div
                   key={doc.id}
-                  className={`rounded-2xl border border-white/10 bg-dark-900/60 p-4 hover:border-primary-500/30 transition ${viewMode === 'list' ? 'flex items-center gap-4' : 'space-y-3'}`}
+                  className={`rounded-2xl border border-white/10 bg-dark-900/60 p-4 hover:border-primary-500/30 transition ${viewMode === 'list' ? 'flex flex-col md:flex-row md:items-center gap-4' : 'space-y-3'}`}
                 >
                   <div className="w-12 h-12 shrink-0 rounded-2xl bg-dark-950 border border-white/5 flex items-center justify-center">
                     {(iconType === 'pdf' || (doc.filename && doc.filename.toLowerCase().endsWith('.pdf'))) ? (
@@ -874,9 +769,30 @@ const Documents = () => {
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold text-white truncate">{title}</h3>
-                      <div className="flex items-center gap-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold text-white truncate">{title}</h3>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-dark-400">
+                          <span className="uppercase tracking-wider text-dark-500">Type: {iconType || 'file'}</span>
+                          {isProcessing ? (
+                            <span className="text-dark-300">Progress: {Math.round(smoothProgress)}%</span>
+                          ) : (
+                            <span className="text-dark-300">Reading: {readingProgress}%</span>
+                          )}
+                          {showRecommendation && (
+                            <span className="text-[10px] text-primary-200/80">
+                              Auto-safe for {recommendation?.model || 'model'}: {recommendation?.recommended_extraction_max_chars} chars · chunk {recommendation?.recommended_chunk_size}
+                            </span>
+                          )}
+                          {doc.linked_to_graph && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-primary-500/10 text-primary-200 border border-primary-500/20 px-2 py-0.5">
+                              <Network className="w-3 h-3" />
+                              Graph linked{doc.graph_link_count > 1 ? ` · ${doc.graph_link_count}` : ''}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
                         {queueState && (
                           <span className="text-[10px] px-2 py-1 rounded-full bg-white/5 border border-white/10 text-white/80 uppercase tracking-wider">
                             {queueState}
@@ -889,20 +805,6 @@ const Documents = () => {
                           </span>
                         )}
                       </div>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-dark-400">
-                      <span className="uppercase tracking-wider text-dark-500">Type: {iconType || 'file'}</span>
-                      {isProcessing ? (
-                        <span className="text-dark-300">Progress: {Math.round(smoothProgress)}%</span>
-                      ) : (
-                        <span className="text-dark-300">Reading: {readingProgress}%</span>
-                      )}
-                      {doc.linked_to_graph && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-primary-500/10 text-primary-200 border border-primary-500/20 px-2 py-0.5">
-                          <Network className="w-3 h-3" />
-                          Graph linked{doc.graph_link_count > 1 ? ` · ${doc.graph_link_count}` : ''}
-                        </span>
-                      )}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-dark-300">
                       {isProcessing && phaseFriendly && (
@@ -927,8 +829,16 @@ const Documents = () => {
                       </div>
                     )}
                     {doc.ingestion_error && (
-                      <div className="mt-2 text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2 py-1">
-                        {doc.ingestion_error}
+                      <div className="mt-2 text-[11px] text-rose-300 bg-rose-500/10 border border-rose-500/20 rounded-lg px-2 py-1 flex items-center justify-between gap-2">
+                        <span>{doc.ingestion_error}</span>
+                        {doc.ingestion_error.toLowerCase().includes('requires an api key') && (
+                          <button
+                            onClick={() => navigate('/settings')}
+                            className="text-[10px] uppercase tracking-widest text-rose-200 border border-rose-300/30 px-2 py-1 rounded-md hover:bg-rose-500/20"
+                          >
+                            Fix in Settings
+                          </button>
+                        )}
                       </div>
                     )}
                     {showQueueHint && (
@@ -966,24 +876,23 @@ const Documents = () => {
                         <span>{progressAgeSeconds < 60 ? 'Updating now' : `No change for ${progressAgeMinutes}m`}</span>
                       </div>
                     )}
-                    <div className="mt-1 h-2 bg-dark-950 rounded-full overflow-hidden border border-white/5 relative">
+                    <div className="mt-2 h-2 bg-dark-950 rounded-full overflow-hidden border border-white/5 relative">
                       <div
                         className={`h-full ${isProcessing ? 'bg-gradient-to-r from-primary-400 via-primary-500 to-primary-300' : 'bg-primary-400'} ${isProcessing ? 'animate-pulse' : ''}`}
-                        style={{ width: `${Math.max(5, smoothProgress)}%` }}
+                        style={{ width: `${Math.max(0, smoothProgress)}%` }}
                       />
                       {isProcessing && (
                         <div
                           className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-white/80 shadow-[0_0_12px_rgba(194,239,179,0.8)]"
-                          style={{ left: `calc(${Math.max(5, smoothProgress)}% - 6px)` }}
+                          style={{ left: `calc(${Math.max(0, smoothProgress)}% - 6px)` }}
                         />
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-
+                  <div className="flex w-full md:w-auto md:max-w-[360px] flex-wrap items-center gap-2 md:justify-end">
                     <button
                       onClick={(e) => { e.stopPropagation(); handleRename(doc); }}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-dark-200"
+                      className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-dark-200 inline-flex items-center justify-center"
                       title="Rename"
                     >
                       <Pencil className="w-4 h-4" />
@@ -992,7 +901,7 @@ const Documents = () => {
                     {canIngest && !isRateLimited && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleSynthesize(doc.id); }}
-                        className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-primary-200 text-xs font-semibold"
+                        className="h-9 min-w-[98px] px-3 rounded-lg bg-white/10 hover:bg-white/20 text-primary-200 text-[11px] font-semibold inline-flex items-center justify-center whitespace-nowrap"
                         title="Build graph"
                       >
                         Build Graph
@@ -1011,7 +920,7 @@ const Documents = () => {
                             handleSynthesize(doc.id);
                           }
                         }}
-                        className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-primary-200 text-xs font-semibold"
+                        className="h-9 min-w-[98px] px-3 rounded-lg bg-white/10 hover:bg-white/20 text-primary-200 text-[11px] font-semibold inline-flex items-center justify-center whitespace-nowrap"
                         title="Retry"
                       >
                         Retry
@@ -1019,20 +928,21 @@ const Documents = () => {
                     )}
                     <button
                       onClick={(e) => { e.stopPropagation(); setContextMenu({ docId: doc.id, x: e.clientX, y: e.clientY }); }}
-                      className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-dark-300"
+                      className="w-9 h-9 rounded-lg bg-white/5 hover:bg-white/10 text-dark-300 inline-flex items-center justify-center"
+                      title="More"
                     >
                       <MoreVertical className="w-4 h-4" />
                     </button>
                     <button
                       onClick={(e) => { e.stopPropagation(); handleDelete(doc.id); }}
-                      className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300"
+                      className="w-9 h-9 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 inline-flex items-center justify-center"
                       title="Delete document"
                     >
                       <X className="w-4 h-4" />
                     </button>
                     <Link
                       to={`/documents/${doc.id}`}
-                      className="px-3 py-2 rounded-lg bg-primary-500 text-white text-xs font-semibold"
+                      className="h-9 min-w-[98px] px-4 rounded-lg bg-primary-500 text-white text-[11px] font-semibold inline-flex items-center justify-center whitespace-nowrap"
                     >
                       Open
                     </Link>
@@ -1187,157 +1097,6 @@ const Documents = () => {
         </div>
       )}
 
-      {showSettingsModal && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-dark-950/80 backdrop-blur" onClick={() => setShowSettingsModal(false)}>
-          <div className="bg-dark-900 border border-white/10 rounded-2xl p-6 w-full max-w-xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-lg font-semibold text-white">Processing settings</h2>
-                <p className="text-xs text-dark-400">Configure embedding provider and model for ingestion.</p>
-              </div>
-              <button onClick={() => setShowSettingsModal(false)} className="p-2 rounded-lg hover:bg-white/5 text-dark-400">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {settingsError && <div className="text-xs text-rose-300 mb-3">{settingsError}</div>}
-            {settingsLoading ? (
-              <div className="text-sm text-dark-400">Loading settings...</div>
-            ) : (
-              <div className="space-y-4">
-                <div className="rounded-xl border border-white/10 bg-dark-950/60 p-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-widest text-dark-400">Embedding Connection</p>
-                    <p className={`text-xs font-semibold ${embeddingHealth?.ok ? 'text-primary-300' : 'text-rose-300'}`}>
-                      {embeddingHealthLoading ? 'Checking...' : (embeddingHealth?.ok ? 'Connected' : 'Not connected')}
-                    </p>
-                    {embeddingHealth?.detail && (
-                      <p className="text-[11px] text-dark-400 mt-1">{embeddingHealth.detail}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={checkEmbeddingHealth}
-                    disabled={embeddingHealthLoading}
-                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-dark-200 border border-white/10 disabled:opacity-60"
-                  >
-                    {embeddingHealthLoading ? 'Checking...' : 'Check'}
-                  </button>
-                </div>
-                <div>
-                  <label className="text-xs text-dark-400">Embedding provider</label>
-                  <select
-                    value={embeddingSettings.embedding_provider}
-                    onChange={(e) => setEmbeddingSettings((prev) => ({ ...prev, embedding_provider: e.target.value }))}
-                    className="mt-1 w-full px-3 py-2 rounded-xl bg-dark-900/70 border border-white/10 text-sm text-white"
-                  >
-                    {EMBEDDING_PROVIDERS.map((provider) => (
-                      <option key={provider.value} value={provider.value}>{provider.label}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs text-dark-400">Embedding model</label>
-                  <input
-                    value={embeddingSettings.embedding_model}
-                    onChange={(e) => setEmbeddingSettings((prev) => ({ ...prev, embedding_model: e.target.value }))}
-                    className="mt-1 w-full px-3 py-2 rounded-xl bg-dark-900/70 border border-white/10 text-sm text-white"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-dark-400">Embedding dimensions</label>
-                  <div className="mt-1 grid grid-cols-1 md:grid-cols-[160px_1fr] gap-3">
-                    <select
-                      value={embeddingDimSelection}
-                      onChange={(e) => {
-                        const value = e.target.value;
-                        setEmbeddingDimSelection(value);
-                        if (value !== 'custom') {
-                          const next = Number(value);
-                          setEmbeddingDimCustom(String(next));
-                          setEmbeddingSettings((prev) => ({ ...prev, embedding_dimensions: next }));
-                        }
-                      }}
-                      className="w-full px-3 py-2 rounded-xl bg-dark-900/70 border border-white/10 text-sm text-white"
-                    >
-                      {EMBEDDING_DIM_PRESETS.map((dim) => (
-                        <option key={dim} value={String(dim)}>{dim}</option>
-                      ))}
-                      <option value="custom">Custom</option>
-                    </select>
-                    <input
-                      type="number"
-                      min="16"
-                      step="1"
-                      value={embeddingDimCustom}
-                      onChange={(e) => {
-                        const next = e.target.value;
-                        setEmbeddingDimCustom(next);
-                        const parsed = Number(next);
-                        if (Number.isFinite(parsed) && parsed > 0) {
-                          setEmbeddingSettings((prev) => ({ ...prev, embedding_dimensions: parsed }));
-                          setEmbeddingDimSelection(EMBEDDING_DIM_PRESETS.includes(parsed) ? String(parsed) : 'custom');
-                        }
-                      }}
-                      disabled={embeddingDimSelection !== 'custom'}
-                      className="w-full px-3 py-2 rounded-xl bg-dark-900/70 border border-white/10 text-sm text-white disabled:opacity-60"
-                      placeholder="Custom dimensions"
-                    />
-                  </div>
-                  <p className="mt-2 text-[11px] text-primary-300">
-                    Changing dimensions requires re-indexing documents.
-                  </p>
-                </div>
-                <div className="rounded-xl border border-white/10 bg-dark-950/60 p-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-[11px] uppercase tracking-widest text-dark-400">Reindex Embeddings</p>
-                    <p className="text-xs text-dark-400">Rebuild vectors using the current embedding model.</p>
-                    {reindexError && (
-                      <p className="text-[11px] text-rose-300 mt-1">{reindexError}</p>
-                    )}
-                  </div>
-                  <button
-                    onClick={handleReindexEmbeddings}
-                    disabled={reindexing}
-                    className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs text-dark-200 border border-white/10 disabled:opacity-60"
-                  >
-                    {reindexing ? 'Reindexing...' : 'Reindex'}
-                  </button>
-                </div>
-                {showApiKey && (
-                  <div>
-                    <label className="text-xs text-dark-400">API key</label>
-                    <input
-                      type="password"
-                      value={embeddingSettings.embedding_api_key}
-                      onChange={(e) => setEmbeddingSettings((prev) => ({ ...prev, embedding_api_key: e.target.value }))}
-                      className="mt-1 w-full px-3 py-2 rounded-xl bg-dark-900/70 border border-white/10 text-sm text-white"
-                    />
-                  </div>
-                )}
-                {showBaseUrl && (
-                  <div>
-                    <label className="text-xs text-dark-400">Base URL</label>
-                    <input
-                      value={embeddingSettings.embedding_base_url}
-                      onChange={(e) => setEmbeddingSettings((prev) => ({ ...prev, embedding_base_url: e.target.value }))}
-                      className="mt-1 w-full px-3 py-2 rounded-xl bg-dark-900/70 border border-white/10 text-sm text-white"
-                    />
-                  </div>
-                )}
-                <div className="flex items-center justify-end gap-3 pt-2">
-                  <button onClick={() => setShowSettingsModal(false)} className="px-3 py-2 rounded-lg text-sm text-dark-300 hover:text-white">Cancel</button>
-                  <button
-                    onClick={handleSaveEmbeddingSettings}
-                    disabled={settingsSaving}
-                    className="px-4 py-2 rounded-lg bg-primary-500 text-white text-sm font-semibold disabled:opacity-60"
-                  >
-                    {settingsSaving ? 'Saving...' : 'Save'}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 };

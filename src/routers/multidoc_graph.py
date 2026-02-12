@@ -441,7 +441,7 @@ async def suggest_connections(
     if not source_concepts or not target_concepts:
         return {"connections": [], "message": "No concepts available to compare"}
 
-    llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, payload.llm_config, graph.llm_config)
+    llm_config = KnowledgeGraphService._resolve_llm_config(db, graph.user_id, payload.llm_config)
 
     prompt = f"""
 You are a knowledge graph alignment assistant.
