@@ -1,9 +1,10 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Upload, X, FileText, ImageIcon, Loader2, Link as LinkIcon, Globe } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useDocumentStore from '../../stores/useDocumentStore';
 import useFolderStore from '../../stores/useFolderStore';
+import { getRecommendedExtractionSettings } from '../../lib/utils/modelLimits';
 
 const FileUpload = ({ onComplete, selectedFolderId: initialFolderId }) => {
     const [activeTab, setActiveTab] = useState('upload'); // 'upload' or 'link'
@@ -19,6 +20,13 @@ const FileUpload = ({ onComplete, selectedFolderId: initialFolderId }) => {
 
     const { uploadDocument, addLinkDocument } = useDocumentStore();
     const { folders } = useFolderStore();
+    const recommendedSettings = useMemo(() => {
+        if (typeof window === 'undefined') return null;
+        const provider = localStorage.getItem('llm_provider');
+        const model = localStorage.getItem('llm_model');
+        return getRecommendedExtractionSettings(provider, model);
+    }, []);
+    const hasLargeFiles = files.some((item) => item.file?.size && item.file.size >= 20 * 1024 * 1024);
 
     const onDrop = useCallback((acceptedFiles) => {
         if (!acceptedFiles || acceptedFiles.length === 0) return;
@@ -192,6 +200,15 @@ const FileUpload = ({ onComplete, selectedFolderId: initialFolderId }) => {
                                 Add More
                             </button>
                         </div>
+                        {hasLargeFiles && recommendedSettings && (
+                            <div className="rounded-2xl border border-primary-500/30 bg-primary-500/10 p-4 text-[11px] text-primary-100/90">
+                                Large file detected. We will use model-safe defaults:
+                                <span className="ml-2 font-semibold text-primary-100">
+                                    {recommendedSettings.recommendedExtractionMaxChars} chars · chunk {recommendedSettings.recommendedChunkSize}
+                                </span>
+                                <span className="ml-2 text-[10px] text-primary-100/70">(Recommended for {recommendedSettings.model})</span>
+                            </div>
+                        )}
 
                         <div className="space-y-4 max-h-64 overflow-y-auto custom-scrollbar pr-2">
                             {files.map((item) => (

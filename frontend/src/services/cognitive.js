@@ -1,13 +1,12 @@
 import api from './api';
-import { getUserId } from '../lib/utils/user-id';
 
 /**
  * Service for Cognitive/Metacognitive features.
  */
 
-const getOverview = async (userId = getUserId()) => {
+const getOverview = async () => {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    return api.get(`/cognitive/overview?user_id=${userId}&timezone=${timezone}`);
+    return api.get(`/cognitive/overview?timezone=${timezone}`);
 };
 
 const getRecommendation = async () => {
@@ -19,8 +18,8 @@ const getStability = async () => {
     return api.get('/cognitive/stability');
 };
 
-const getFrontier = async (userId = getUserId()) => {
-    return api.get(`/cognitive/frontier?user_id=${userId}`);
+const getFrontier = async () => {
+    return api.get('/cognitive/frontier');
 };
 
 const getGaps = async () => {
@@ -30,35 +29,35 @@ const getGaps = async () => {
 /**
  * Fetches user's learning calibration settings from the backend.
  */
-const getSettings = async (userId = getUserId()) => {
-    return api.get(`/cognitive/settings?user_id=${userId}`);
+const getSettings = async () => {
+    return api.get('/cognitive/settings');
 };
 
 /**
  * Updates user's learning calibration settings.
  */
-const updateSettings = async (settings, userId = getUserId()) => {
-    return api.patch(`/cognitive/settings?user_id=${userId}`, settings);
+const updateSettings = async (settings) => {
+    return api.patch('/cognitive/settings', settings);
 };
 
-const checkEmbeddingHealth = async (userId = getUserId()) => {
-    return api.get(`/cognitive/embedding-health?user_id=${userId}`, {
+const checkEmbeddingHealth = async () => {
+    return api.get('/cognitive/embedding-health', {
         headers: {
             'X-Silent-Error': '1'
         }
     });
 };
 
-const checkLlmHealth = async (userId = getUserId()) => {
-    return api.get(`/cognitive/llm-health?user_id=${userId}`, {
+const checkLlmHealth = async () => {
+    return api.get('/cognitive/llm-health', {
         headers: {
             'X-Silent-Error': '1'
         }
     });
 };
 
-const reindexEmbeddings = async (payload = {}, userId = getUserId()) => {
-    return api.post(`/cognitive/reindex-embeddings?user_id=${userId}`, payload);
+const reindexEmbeddings = async (payload = {}) => {
+    return api.post('/cognitive/reindex-embeddings', payload);
 };
 
 export default {

@@ -18,8 +18,8 @@ const ConceptService = {
      * @param {string} userId - The user ID.
      * @returns {Promise<Array>} List of unlocked concept names.
      */
-    getUnlockedConcepts: async (userId) => {
-        return await api.get(`/concepts/unlocked/${userId}`);
+    getUnlockedConcepts: async () => {
+        return await api.get('/concepts/unlocked/default_user');
     },
 
     /**
@@ -27,8 +27,8 @@ const ConceptService = {
      * @param {string} userId - The user ID.
      * @returns {Promise<Object>} User state object.
      */
-    getUserProgress: async (userId) => {
-        return await api.get(`/progress/${userId}`);
+    getUserProgress: async () => {
+        return await api.get('/progress/default_user');
     },
 
     /**
@@ -36,8 +36,8 @@ const ConceptService = {
      * @param {string} userId - Optional user ID for personalized status.
      * @returns {Promise<Object>} Graph data { nodes: [], edges: [] }
      */
-    getGraph: async (userId = 'default_user') => {
-        return await api.get(`/concepts/graph?user_id=${userId}`);
+    getGraph: async () => {
+        return await api.get('/concepts/graph?user_id=default_user');
     },
 
     /**

@@ -3,7 +3,6 @@ import { CheckCircle2, Filter, Calendar, Clock } from 'lucide-react';
 import api from '../services/api';
 import InlineErrorBanner from '../components/common/InlineErrorBanner';
 import DailyConstellation from '../components/DailyConstellation';
-import { getUserId } from '../lib/utils/user-id';
 
 const DailyGoals = () => {
   const [history, setHistory] = useState([]);
@@ -48,8 +47,7 @@ const DailyGoals = () => {
 
   const fetchTodayPlan = async () => {
     try {
-      const userId = getUserId();
-      const dashboardData = await api.get('/dashboard/overview', { params: { user_id: userId } });
+      const dashboardData = await api.get('/dashboard/overview');
       setTodayPlan(dashboardData?.today_plan || null);
     } catch (e) {
       setTodayPlan(null);
@@ -58,7 +56,7 @@ const DailyGoals = () => {
 
   const toggleDailyPlan = async (itemId, completed) => {
     try {
-      const res = await api.patch(`/goals/daily-plan/${itemId}`, { completed: !completed }, { params: { user_id: getUserId() } });
+      const res = await api.patch(`/goals/daily-plan/${itemId}`, { completed: !completed });
       setTodayPlan((prev) => {
         if (!prev) return prev;
         const updatedItems = prev.items.map((it) =>

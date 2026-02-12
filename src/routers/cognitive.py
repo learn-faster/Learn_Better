@@ -244,10 +244,10 @@ async def embedding_health(
 
     provider = provider.lower()
 
-    if provider in {"openai", "openrouter", "together", "fireworks", "mistral", "deepseek", "perplexity", "huggingface", "custom"}:
+    if provider in {"openai", "openrouter", "together", "fireworks", "mistral", "deepseek", "perplexity", "huggingface", "custom", "google"}:
         if not api_key:
             return {"ok": False, "provider": provider, "model": model, "base_url": base_url, "detail": "Missing API key for embedding provider."}
-        if provider in {"huggingface", "custom"} and not base_url:
+        if provider in {"huggingface", "custom", "google"} and not base_url:
             return {"ok": False, "provider": provider, "model": model, "base_url": base_url, "detail": "Missing base URL for embedding provider."}
 
         effective_base = base_url
@@ -269,7 +269,10 @@ async def embedding_health(
             api_key=api_key
         )
         try:
-            await client.models.list()
+            if provider == "google":
+                await client.embeddings.create(input=["ping"], model=model or "text-embedding-3-small")
+            else:
+                await client.models.list()
             return {"ok": True, "provider": provider, "model": model, "base_url": effective_base, "detail": "Connected"}
         except Exception as e:
             return {"ok": False, "provider": provider, "model": model, "base_url": effective_base, "detail": str(e)}
@@ -299,25 +302,20 @@ async def llm_health(
     user_id: str = Depends(get_request_user_id),
     db: Session = Depends(get_db)
 ):
-    settings_row = db.query(UserSettings).filter_by(user_id=user_id).first()
-    if not settings_row:
-        settings_row = UserSettings(user_id=user_id)
-        db.add(settings_row)
-        db.commit()
+    settings_row = get_or_create_user_settings(db, user_id)
 
-    stored_config = getattr(settings_row, "llm_config", None) or {}
-    if isinstance(stored_config, dict) and stored_config.get("global"):
-        stored_config = stored_config.get("global") or stored_config
+    canonical = build_canonical_llm_config(settings_row)
+    global_config = canonical.get("global") or {}
 
-    provider = (stored_config.get("provider") or app_settings.llm_provider or "openai").lower()
-    model = stored_config.get("model") or app_settings.llm_model
-    api_key = stored_config.get("api_key")
-    base_url = stored_config.get("base_url")
+    provider = (global_config.get("provider") or app_settings.llm_provider or "openai").lower()
+    model = global_config.get("model") or app_settings.llm_model
+    api_key = global_config.get("api_key")
+    base_url = global_config.get("base_url")
 
-    if provider in {"openai", "groq", "openrouter", "together", "fireworks", "mistral", "deepseek", "perplexity", "huggingface", "custom"}:
+    if provider in {"openai", "groq", "openrouter", "together", "fireworks", "mistral", "deepseek", "perplexity", "huggingface", "custom", "google"}:
         if not api_key:
             return {"ok": False, "provider": provider, "model": model, "base_url": base_url, "detail": "Missing API key for LLM provider."}
-    if provider in {"huggingface", "custom"} and not base_url:
+    if provider in {"huggingface", "custom", "google"} and not base_url:
         return {"ok": False, "provider": provider, "model": model, "base_url": base_url, "detail": "Missing base URL for LLM provider."}
 
     effective_base = base_url
@@ -337,6 +335,17 @@ async def llm_health(
         effective_base = base_url or "https://api.perplexity.ai"
     elif provider == "ollama":
         effective_base = base_url or app_settings.ollama_base_url or "http://localhost:11434"
+        url = effective_base.rstrip("/")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{url}/api/tags")
+            if resp.status_code >= 400:
+                return {"ok": False, "provider": provider, "model": model, "base_url": effective_base, "detail": f"Ollama responded with status {resp.status_code}."}
+        except httpx.HTTPError as e:
+            return {"ok": False, "provider": provider, "model": model, "base_url": effective_base, "detail": f"Connection error: {str(e)}"}
+        except Exception as e:
+            return {"ok": False, "provider": provider, "model": model, "base_url": effective_base, "detail": str(e)}
+        return {"ok": True, "provider": provider, "model": model, "base_url": effective_base, "detail": "Connected"}
 
     client = AsyncOpenAI(
         base_url=effective_base.rstrip("/") if effective_base else None,

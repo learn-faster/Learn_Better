@@ -9,6 +9,7 @@ import { LoadingSpinner } from '@/components/common/LoadingSpinner'
 import { Card, CardContent } from '@/components/ui/card'
 import { AlertCircle } from 'lucide-react'
 import { useTranslation } from '@/modules/open-notebook/lib/hooks/use-translation'
+import { ErrorBoundary } from '@/components/common/ErrorBoundary'
 
 export function ChatColumn({ notebookId, contextSelections }) {
   const { t } = useTranslation()
@@ -85,25 +86,27 @@ export function ChatColumn({ notebookId, contextSelections }) {
   }
 
   return (
-    <ChatPanel
-      title={t.chat.chatWithNotebook}
-      contextType="notebook"
-      className="rounded-none border-0 shadow-none bg-transparent"
-      messages={chat.messages}
-      isStreaming={chat.isSending}
-      contextIndicators={null}
-      onSendMessage={(message, modelOverride) => chat.sendMessage(message, modelOverride)}
-      modelOverride={chat.currentSession?.model_override ?? chat.pendingModelOverride}
-      onModelChange={(model) => chat.setModelOverride(model ?? null)}
-      sessions={chat.sessions}
-      currentSessionId={chat.currentSessionId}
-      onCreateSession={(title) => chat.createSession(title)}
-      onSelectSession={chat.switchSession}
-      onUpdateSession={(sessionId, title) => chat.updateSession(sessionId, { title })}
-      onDeleteSession={chat.deleteSession}
-      loadingSessions={chat.loadingSessions}
-      notebookContextStats={contextStats}
-      notebookId={notebookId}
-    />
+    <ErrorBoundary>
+      <ChatPanel
+        title={t.chat.chatWithNotebook}
+        contextType="notebook"
+        className="rounded-none border-0 shadow-none bg-transparent"
+        messages={chat.messages}
+        isStreaming={chat.isSending}
+        contextIndicators={null}
+        onSendMessage={(message, modelOverride) => chat.sendMessage(message, modelOverride)}
+        modelOverride={chat.currentSession?.model_override ?? chat.pendingModelOverride}
+        onModelChange={(model) => chat.setModelOverride(model ?? null)}
+        sessions={chat.sessions}
+        currentSessionId={chat.currentSessionId}
+        onCreateSession={(title) => chat.createSession(title)}
+        onSelectSession={chat.switchSession}
+        onUpdateSession={(sessionId, title) => chat.updateSession(sessionId, { title })}
+        onDeleteSession={chat.deleteSession}
+        loadingSessions={chat.loadingSessions}
+        notebookContextStats={contextStats}
+        notebookId={notebookId}
+      />
+    </ErrorBoundary>
   )
 }

@@ -75,5 +75,4 @@ def get_content_retriever(request: Request):
     raise HTTPException(status_code=503, detail="Content Retriever not initialized")
 
 def get_request_user_id(request: Request) -> str:
-    user_id = request.headers.get("X-User-Id") or request.query_params.get("user_id")
-    return user_id or "default_user"
+    return "default_user"
