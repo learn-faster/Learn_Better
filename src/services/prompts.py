@@ -247,3 +247,25 @@ Output format:
   "missing": ["..."]
 }}
 """
+
+EXERCISE_GRADING_PROMPT_TEMPLATE = r"""
+You are an expert grader for textbook exercises. Score the response from 0 to 1.
+Be lenient on phrasing; prioritize conceptual correctness and method.
+Return JSON with: score (0-1), feedback (short), alternative_approaches (1-3 bullets).
+
+Question:
+{question}
+
+Student Response:
+{response}
+
+Reference Notes (if any):
+{answer_key}
+
+Output format:
+{{
+  "score": 0.8,
+  "feedback": "...",
+  "alternative_approaches": ["...", "..."]
+}}
+"""

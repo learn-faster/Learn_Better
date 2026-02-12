@@ -209,6 +209,10 @@ class DocumentResponse(DocumentBase):
     ingestion_job_phase: Optional[str] = None
     ingestion_job_message: Optional[str] = None
     ingestion_job_updated_at: Optional[datetime] = None
+    normalized_status: Optional[str] = None
+    status_reason: Optional[str] = None
+    progress_percent: Optional[float] = None
+    processing_recommendation: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -1009,17 +1013,78 @@ class DocumentQuizSessionResponse(BaseModel):
     status: str = "active"
     items: List[DocumentQuizItem] = []
 
+class MarkdownExportResponse(BaseModel):
+    markdown: str
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    image_mode: str = "base64"
+    warnings: List[str] = []
+
+class MarkdownSaveRequest(BaseModel):
+    markdown: str
+
+class ExercisePreviewRequest(BaseModel):
+    source_mode: str = "auto"
+    selection_text: Optional[str] = None
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    use_llm: bool = False
+    llm_config: Optional[LLMConfig] = None
+
+class ExerciseCandidate(BaseModel):
+    question_number: Optional[str] = None
+    text: str
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+    confidence: float = 0.5
+
+class ExerciseCreateItem(BaseModel):
+    text: str
+    question_number: Optional[str] = None
+    page_start: Optional[int] = None
+    page_end: Optional[int] = None
+
+class ExerciseCreateRequest(BaseModel):
+    items: List[ExerciseCreateItem]
+    mode: str = "exercise"
+
 class DocumentQuizGradeRequest(BaseModel):
     session_id: str
     quiz_item_id: str
     answer_text: str
     transcript: Optional[str] = None
     llm_config: Optional[LLMConfig] = None
+    submission_id: Optional[str] = None
 
 class DocumentQuizGradeResponse(BaseModel):
     score: float
     feedback: str
     llm_eval: Dict[str, Any] = {}
+    alternative_approaches: List[str] = []
+
+class DocumentQuizBatchGradeItem(BaseModel):
+    quiz_item_id: Optional[str] = None
+    question_number: Optional[str] = None
+    answer_text: Optional[str] = None
+    mapped: bool = False
+    score: Optional[float] = None
+    feedback: Optional[str] = None
+    llm_eval: Dict[str, Any] = {}
+    alternative_approaches: List[str] = []
+
+class DocumentQuizBatchGradeResponse(BaseModel):
+    submission_id: Optional[str] = None
+    items: List[DocumentQuizBatchGradeItem] = []
+    unmapped_text: Optional[str] = None
+
+class HighlightActionRequest(BaseModel):
+    action: str
+    selection_text: str
+    question: Optional[str] = None
+    llm_config: Optional[LLMConfig] = None
+
+class HighlightActionResponse(BaseModel):
+    output: str
 
 class DocumentStudySettingsPayload(BaseModel):
     reveal_config: Dict[str, Any] = Field(default_factory=dict)
