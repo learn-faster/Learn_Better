@@ -9,7 +9,7 @@ from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session, defer
 from sqlalchemy import func
 from sqlalchemy.orm.exc import ObjectDeletedError
-from typing import List, Optional, Callable
+from typing import List, Optional, Callable, Dict
 import os
 import shutil
 import logging
