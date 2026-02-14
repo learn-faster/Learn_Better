@@ -65,6 +65,10 @@ const Settings = ({ isOpen, onClose }) => {
     const [backendHealthLoading, setBackendHealthLoading] = useState(false);
     const [embeddingHealth, setEmbeddingHealth] = useState(null);
     const [embeddingHealthLoading, setEmbeddingHealthLoading] = useState(false);
+    const [embeddingDiagnostics, setEmbeddingDiagnostics] = useState(null);
+    const [embeddingDiagnosticsLoading, setEmbeddingDiagnosticsLoading] = useState(false);
+    const [isReindexing, setIsReindexing] = useState(false);
+    const [reindexStatus, setReindexStatus] = useState('');
     const [llmHealth, setLlmHealth] = useState(null);
     const [llmHealthLoading, setLlmHealthLoading] = useState(false);
 
@@ -209,6 +213,37 @@ const Settings = ({ isOpen, onClose }) => {
         }
     };
 
+    const checkEmbeddingDiagnostics = async () => {
+        setEmbeddingDiagnosticsLoading(true);
+        setReindexStatus('');
+        try {
+            const result = await cognitiveService.getEmbeddingDiagnostics();
+            setEmbeddingDiagnostics(result);
+        } catch (err) {
+            setEmbeddingDiagnostics({
+                ok: false,
+                status_code: 'unavailable',
+                detail: err?.userMessage || err?.message || 'Failed to load embedding diagnostics.'
+            });
+        } finally {
+            setEmbeddingDiagnosticsLoading(false);
+        }
+    };
+
+    const handleReindexEmbeddings = async () => {
+        setIsReindexing(true);
+        setReindexStatus('');
+        try {
+            const result = await cognitiveService.reindexEmbeddings({});
+            const queued = result?.documents_queued ?? 0;
+            setReindexStatus(`Reindex started for ${queued} document(s).`);
+        } catch (err) {
+            setReindexStatus(err?.userMessage || err?.message || 'Failed to start embedding reindex.');
+        } finally {
+            setIsReindexing(false);
+        }
+    };
+
     useEffect(() => {
         if (!isOpen) return;
         setIsLoading(true);
@@ -261,6 +296,7 @@ const Settings = ({ isOpen, onClose }) => {
                 setConnected(statusData.connected || false);
                 await checkBackendHealth();
                 await checkEmbeddingHealth();
+                await checkEmbeddingDiagnostics();
                 await checkLlmHealth();
             } catch (err) {
                 setLoadError(err?.userMessage || err?.message || 'Failed to load settings.');
@@ -622,7 +658,52 @@ const Settings = ({ isOpen, onClose }) => {
                                                             placeholder="Dimensions"
                                                             className={inputClass}
                                                         />
-                                                        <p className="text-[10px] text-dark-400">Dimensions should match the embedding model.</p>
+                                                        <p className="text-[10px] text-dark-400">Dimensions should match the vector index and model output.</p>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={checkEmbeddingDiagnostics}
+                                                                disabled={embeddingDiagnosticsLoading}
+                                                                className="px-3 py-2 rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 text-[10px] font-semibold uppercase tracking-wider text-white/80 disabled:opacity-50"
+                                                            >
+                                                                {embeddingDiagnosticsLoading ? 'Detecting...' : 'Detect Dimensions'}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const dbDim = Number(embeddingDiagnostics?.db_dimensions || 0);
+                                                                    if (dbDim > 0) setEmbeddingDimensions(dbDim);
+                                                                }}
+                                                                disabled={!embeddingDiagnostics?.db_dimensions}
+                                                                className="px-3 py-2 rounded-lg border border-primary-500/30 bg-primary-500/10 hover:bg-primary-500/20 text-[10px] font-semibold uppercase tracking-wider text-primary-200 disabled:opacity-40"
+                                                            >
+                                                                Use DB Dimension
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={handleReindexEmbeddings}
+                                                                disabled={isReindexing}
+                                                                className="px-3 py-2 rounded-lg border border-white/20 bg-white/5 hover:bg-white/10 text-[10px] font-semibold uppercase tracking-wider text-white/80 disabled:opacity-50"
+                                                            >
+                                                                {isReindexing ? 'Starting...' : 'Reindex Embeddings'}
+                                                            </button>
+                                                        </div>
+                                                        {embeddingDiagnostics && (
+                                                            <div className={`rounded-xl border px-3 py-3 text-xs ${embeddingDiagnostics.compatible ? 'border-primary-500/30 bg-primary-500/10 text-primary-200' : 'border-rose-500/30 bg-rose-500/10 text-rose-200'}`}>
+                                                                <div className="font-semibold">
+                                                                    {embeddingDiagnostics.compatible ? 'Embedding dimensions are compatible.' : 'Embedding dimensions mismatch detected.'}
+                                                                </div>
+                                                                <div className="mt-1 text-[11px] opacity-90">
+                                                                    Configured: {embeddingDiagnostics.configured_dimensions ?? '—'} | Model: {embeddingDiagnostics.detected_model_dimensions ?? '—'} | DB: {embeddingDiagnostics.db_dimensions ?? '—'}
+                                                                </div>
+                                                                <div className="mt-1 text-[10px] opacity-80">{embeddingDiagnostics.detail}</div>
+                                                            </div>
+                                                        )}
+                                                        {reindexStatus && (
+                                                            <div className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-[11px] text-white/80">
+                                                                {reindexStatus}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </SectionCard>
 

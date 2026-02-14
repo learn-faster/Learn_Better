@@ -3,7 +3,7 @@
 import logging
 import os
 import asyncio
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from dotenv import load_dotenv
 from src.database.connections import postgres_conn
 from src.models.schemas import LearningChunk
@@ -23,6 +23,46 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
+class EmbeddingDimensionMismatchError(ValueError):
+    """Raised when embedding model output does not match vector index dimension."""
+
+    def __init__(
+        self,
+        expected_db_dimensions: int,
+        actual_model_dimensions: int,
+        configured_dimensions: Optional[int],
+        provider: str,
+        model: str,
+        base_url: Optional[str],
+    ):
+        self.expected_db_dimensions = expected_db_dimensions
+        self.actual_model_dimensions = actual_model_dimensions
+        self.configured_dimensions = configured_dimensions
+        self.provider = provider
+        self.model = model
+        self.base_url = base_url
+        super().__init__(
+            f"Embedding dimension mismatch: model produced {actual_model_dimensions}, "
+            f"but vector index expects {expected_db_dimensions}."
+        )
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {
+            "code": "EMBEDDING_DIMENSION_MISMATCH",
+            "message": str(self),
+            "expected_db_dimensions": self.expected_db_dimensions,
+            "actual_model_dimensions": self.actual_model_dimensions,
+            "configured_dimensions": self.configured_dimensions,
+            "provider": self.provider,
+            "model": self.model,
+            "base_url": self.base_url,
+            "action": "update_dimensions_and_reindex",
+            "recommendation": (
+                "Update embedding dimensions to match your vector index and reindex embeddings."
+            ),
+        }
+
+
 class VectorStorage:
     """
     Handles vector embedding generation and storage using Ollama and PostgreSQL with pgvector.
@@ -40,12 +80,105 @@ class VectorStorage:
         Initialize the vector storage system.
         """
         self.db_conn = db_connection or postgres_conn
+        self._expected_vector_dim: Optional[int] = None
+        self._dimension_warning_emitted = False
         
     def _sanitize_text(self, text: str) -> str:
         """Remove null bytes from text to prevent PostgreSQL errors."""
         if not text:
             return text
         return text.replace('\x00', '')
+
+    def _get_expected_vector_dimension(self) -> Optional[int]:
+        """
+        Read vector dimension constraint from learning_chunks.embedding.
+        Returns None when column is unconstrained (vector).
+        """
+        if self._expected_vector_dim is not None:
+            return self._expected_vector_dim
+
+        try:
+            result = self.db_conn.execute_query(
+                """
+                SELECT
+                    a.atttypmod AS typmod,
+                    format_type(a.atttypid, a.atttypmod) AS ftype
+                FROM pg_attribute a
+                JOIN pg_class c ON c.oid = a.attrelid
+                JOIN pg_namespace n ON n.oid = c.relnamespace
+                WHERE n.nspname = 'public'
+                  AND c.relname = 'learning_chunks'
+                  AND a.attname = 'embedding'
+                LIMIT 1
+                """
+            )
+            dim = None
+            source = None
+            if result:
+                row = result[0]
+                ftype = str(row.get("ftype") or "")
+                if ftype == "vector":
+                    # Unconstrained vector supports mixed dimensions.
+                    dim = None
+                    source = "unconstrained"
+                elif ftype.startswith("vector(") and ftype.endswith(")"):
+                    try:
+                        dim = int(ftype[7:-1])
+                        source = "format_type"
+                    except Exception:
+                        dim = None
+
+            if isinstance(dim, int) and dim > 0:
+                self._expected_vector_dim = dim
+                logger.info("Using vector dimension %s from %s", dim, source or "schema")
+            elif source == "unconstrained":
+                self._expected_vector_dim = None
+                logger.info("Using unconstrained vector column: mixed embedding dimensions enabled")
+            else:
+                # Unknown schema shape: don't enforce local validation, let DB handle it.
+                self._expected_vector_dim = None
+                logger.warning(
+                    "Could not determine vector dimension from schema; disabling strict dimension validation"
+                )
+        except Exception as e:
+            logger.warning(f"Unable to determine pgvector dimension; disabling strict validation: {e}")
+            self._expected_vector_dim = None
+
+        return self._expected_vector_dim
+
+    def _validate_embedding_dimension(self, embedding: List[float]) -> None:
+        """Validate embedding length against the DB vector index dimension."""
+        expected = self._get_expected_vector_dimension()
+        if not expected or expected <= 0:
+            return
+
+        actual = len(embedding)
+        if actual == expected:
+            return
+
+        if not self._dimension_warning_emitted:
+            logger.warning(
+                "Embedding dimension mismatch detected (expected=%s, actual=%s). "
+                "Blocking vector write and requiring explicit settings/index alignment.",
+                expected,
+                actual
+            )
+            self._dimension_warning_emitted = True
+
+        provider = (getattr(settings, "embedding_provider", None) or "").lower()
+        model = getattr(settings, "embedding_model", None) or ""
+        base_url = getattr(settings, "embedding_base_url", None)
+        if provider == "ollama" and not base_url:
+            base_url = getattr(settings, "ollama_base_url", None)
+        configured = getattr(settings, "embedding_dimensions", None)
+        raise EmbeddingDimensionMismatchError(
+            expected_db_dimensions=expected,
+            actual_model_dimensions=actual,
+            configured_dimensions=configured,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+        )
 
     
     async def generate_embedding(self, text: str) -> List[float]:
@@ -61,8 +194,11 @@ class VectorStorage:
             from src.services.llm_service import llm_service
             
             embedding = await llm_service.get_embedding(text)
+            self._validate_embedding_dimension(embedding)
             return embedding
             
+        except EmbeddingDimensionMismatchError:
+            raise
         except Exception as e:
             logger.error(f"Failed to generate embedding: {str(e)}")
             raise ValueError(f"Embedding generation failed: {str(e)}") from e
@@ -93,18 +229,21 @@ class VectorStorage:
             
             # Store in PostgreSQL
             query = """
-                INSERT INTO learning_chunks (doc_source, content, embedding, concept_tag, document_id)
-                VALUES (%s, %s, %s::vector, %s, %s)
+                INSERT INTO learning_chunks (doc_source, content, embedding, concept_tag, document_id, embedding_dimensions)
+                VALUES (%s, %s, %s::vector, %s, %s, %s)
                 RETURNING id
             """
             
             result = self.db_conn.execute_query(
-                query, 
-                (self._sanitize_text(doc_source.strip()), 
-                 self._sanitize_text(content.strip()), 
-                 str(embedding), 
-                 self._sanitize_text(concept_tag.strip().lower()),
-                 document_id)
+                query,
+                (
+                    self._sanitize_text(doc_source.strip()),
+                    self._sanitize_text(content.strip()),
+                    str(embedding),
+                    self._sanitize_text(concept_tag.strip().lower()),
+                    document_id,
+                    len(embedding)
+                )
             )
             
             if not result:
@@ -114,7 +253,30 @@ class VectorStorage:
             # logger.info(f"Stored chunk {chunk_id} for concept '{concept_tag}' from '{doc_source}'")
             return chunk_id
             
+        except EmbeddingDimensionMismatchError:
+            raise
         except Exception as e:
+            err_text = str(e)
+            if "expected" in err_text.lower() and "dimensions" in err_text.lower() and "not" in err_text.lower():
+                import re
+                m = re.search(r"expected\s+(\d+)\s+dimensions,?\s+not\s+(\d+)", err_text, flags=re.IGNORECASE)
+                if m:
+                    expected = int(m.group(1))
+                    actual = int(m.group(2))
+                    provider = (getattr(settings, "embedding_provider", None) or "").lower()
+                    model = getattr(settings, "embedding_model", None) or ""
+                    base_url = getattr(settings, "embedding_base_url", None)
+                    if provider == "ollama" and not base_url:
+                        base_url = getattr(settings, "ollama_base_url", None)
+                    configured = getattr(settings, "embedding_dimensions", None)
+                    raise EmbeddingDimensionMismatchError(
+                        expected_db_dimensions=expected,
+                        actual_model_dimensions=actual,
+                        configured_dimensions=configured,
+                        provider=provider,
+                        model=model,
+                        base_url=base_url,
+                    ) from e
             msg = f"Chunk storage failed: {str(e)}"
             logger.error(msg)
             if isinstance(e, ValueError) and "Embedding connection error" in str(e):
@@ -156,14 +318,9 @@ class VectorStorage:
 
             embeddings = await asyncio.gather(*(embed_content(c) for c in contents))
             
-            # Prepare batch insert data logic...
-            # This is complex to robustly refactor with just string replace if logic changes significantly.
-            # I will assume caller passes (doc_source, content, concept_tag, document_id)
-            # But wait, python tuples are immutable.
-            
             insert_query = """
-                INSERT INTO learning_chunks (doc_source, content, embedding, concept_tag, document_id)
-                VALUES (%s, %s, %s::vector, %s, %s)
+                INSERT INTO learning_chunks (doc_source, content, embedding, concept_tag, document_id, embedding_dimensions)
+                VALUES (%s, %s, %s::vector, %s, %s, %s)
                 RETURNING id
             """
 
@@ -188,6 +345,7 @@ class VectorStorage:
                                     embedding_str,
                                     self._sanitize_text(concept_tag.strip().lower()),
                                     document_id,
+                                    len(embeddings[i]),
                                 ),
                             )
                             row = cursor.fetchone()
@@ -216,6 +374,7 @@ class VectorStorage:
                             embedding_str,
                             self._sanitize_text(concept_tag.strip().lower()),
                             document_id,
+                            len(embeddings[i]),
                         ),
                     )
                     if row:
@@ -224,7 +383,30 @@ class VectorStorage:
             logger.info(f"Stored {len(chunk_ids)} chunks in batch")
             return chunk_ids
             
+        except EmbeddingDimensionMismatchError:
+            raise
         except Exception as e:
+            err_text = str(e)
+            if "expected" in err_text.lower() and "dimensions" in err_text.lower() and "not" in err_text.lower():
+                import re
+                m = re.search(r"expected\s+(\d+)\s+dimensions,?\s+not\s+(\d+)", err_text, flags=re.IGNORECASE)
+                if m:
+                    expected = int(m.group(1))
+                    actual = int(m.group(2))
+                    provider = (getattr(settings, "embedding_provider", None) or "").lower()
+                    model = getattr(settings, "embedding_model", None) or ""
+                    base_url = getattr(settings, "embedding_base_url", None)
+                    if provider == "ollama" and not base_url:
+                        base_url = getattr(settings, "ollama_base_url", None)
+                    configured = getattr(settings, "embedding_dimensions", None)
+                    raise EmbeddingDimensionMismatchError(
+                        expected_db_dimensions=expected,
+                        actual_model_dimensions=actual,
+                        configured_dimensions=configured,
+                        provider=provider,
+                        model=model,
+                        base_url=base_url,
+                    ) from e
             msg = f"Batch chunk storage failed: {str(e)}"
             logger.error(msg)
             if isinstance(e, ValueError) and "Embedding connection error" in str(e):
@@ -300,6 +482,7 @@ class VectorStorage:
         try:
             # Generate embedding for the query
             query_embedding = await self.generate_embedding(query_text)
+            query_dim = len(query_embedding)
             
             # Build the similarity search query
             base_query = """
@@ -308,10 +491,11 @@ class VectorStorage:
                 FROM learning_chunks
             """
             
-            params = [str(query_embedding)]
+            params = [str(query_embedding), int(query_dim)]
+            base_query += " WHERE embedding_dimensions = %s"
             
             if concept_filter:
-                base_query += " WHERE concept_tag = %s"
+                base_query += " AND concept_tag = %s"
                 params.append(concept_filter.strip().lower())
             
             base_query += f" ORDER BY similarity DESC LIMIT {int(limit)}"
