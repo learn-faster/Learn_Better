@@ -34,6 +34,7 @@ from src.models.schemas import (
 from src.services.knowledge_graph_service import KnowledgeGraphService
 from src.dependencies import get_ingestion_engine, get_request_user_id
 from src.services.llm_service import llm_service
+from src.ingestion.vector_storage import EmbeddingDimensionMismatchError
 
 logger = logging.getLogger(__name__)
 
@@ -381,6 +382,8 @@ async def build_graph(
                 extraction_max_chars=payload.extraction_max_chars,
                 chunk_size=payload.chunk_size
             )
+        except EmbeddingDimensionMismatchError as e:
+            raise HTTPException(status_code=400, detail=e.to_payload())
         except Exception as e:
             raise HTTPException(status_code=400, detail=str(e))
         return _to_response(graph)

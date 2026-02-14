@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import GraphService from '../services/graphs';
 import ResourceService from '../services/resources';
+import cognitiveService from '../services/cognitive';
 import useTimerStore from '../stores/useTimerStore';
 import useDocumentStore from '../stores/useDocumentStore';
 import { Card } from '../components/ui/card';
@@ -155,6 +156,10 @@ const KnowledgeGraph = () => {
     const [lastGraphRefreshAt, setLastGraphRefreshAt] = useState(null);
     const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
     const [graphError, setGraphError] = useState('');
+    const [mismatchDiagnostics, setMismatchDiagnostics] = useState(null);
+    const [mismatchLoading, setMismatchLoading] = useState(false);
+    const [reindexLoading, setReindexLoading] = useState(false);
+    const [reindexMessage, setReindexMessage] = useState('');
 
     const [activeNeighbors, setActiveNeighbors] = useState(new Set());
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -181,6 +186,31 @@ const KnowledgeGraph = () => {
         () => graphs.find(g => g.id === selectedGraphId),
         [graphs, selectedGraphId]
     );
+    const parsedGraphErrorPayload = useMemo(() => {
+        if (!selectedGraph?.error_message) return null;
+        if (typeof selectedGraph.error_message === 'object') return selectedGraph.error_message;
+        if (typeof selectedGraph.error_message !== 'string') return null;
+        try {
+            const parsed = JSON.parse(selectedGraph.error_message);
+            return parsed && typeof parsed === 'object' ? parsed : null;
+        } catch {
+            const match = selectedGraph.error_message.match(/expected\s+(\d+)\s+dimensions,?\s+not\s+(\d+)/i);
+            if (match) {
+                return {
+                    code: 'EMBEDDING_DIMENSION_MISMATCH',
+                    message: `Embedding dimension mismatch: model produced ${match[2]}, but vector index expects ${match[1]}.`,
+                    expected_db_dimensions: Number(match[1]),
+                    actual_model_dimensions: Number(match[2]),
+                    raw_error: selectedGraph.error_message
+                };
+            }
+            return null;
+        }
+    }, [selectedGraph?.error_message]);
+    const mismatchPayload = useMemo(() => {
+        if (parsedGraphErrorPayload?.code === 'EMBEDDING_DIMENSION_MISMATCH') return parsedGraphErrorPayload;
+        return null;
+    }, [parsedGraphErrorPayload]);
 
     useEffect(() => {
         if (!containerRef.current) return;
@@ -265,6 +295,36 @@ const KnowledgeGraph = () => {
             const msg = error?.userMessage || error?.message || 'Failed to load graphs.';
             setGraphError(msg);
             toast.error(msg);
+        }
+    };
+
+    const runEmbeddingDiagnostics = async () => {
+        setMismatchLoading(true);
+        setReindexMessage('');
+        try {
+            const data = await cognitiveService.getEmbeddingDiagnostics();
+            setMismatchDiagnostics(data);
+        } catch (error) {
+            setMismatchDiagnostics({
+                ok: false,
+                detail: error?.userMessage || error?.message || 'Failed to run embedding diagnostics.'
+            });
+        } finally {
+            setMismatchLoading(false);
+        }
+    };
+
+    const triggerReindex = async () => {
+        setReindexLoading(true);
+        setReindexMessage('');
+        try {
+            const data = await cognitiveService.reindexEmbeddings({});
+            const queued = data?.documents_queued ?? 0;
+            setReindexMessage(`Reindex started for ${queued} document(s).`);
+        } catch (error) {
+            setReindexMessage(error?.userMessage || error?.message || 'Failed to start reindex.');
+        } finally {
+            setReindexLoading(false);
         }
     };
 
@@ -580,6 +640,11 @@ const KnowledgeGraph = () => {
             fetchGraph(true);
         }, 6000);
         return () => clearInterval(interval);
+    }, [selectedGraphId, selectedGraph?.status]);
+
+    useEffect(() => {
+        if (!selectedGraphId || selectedGraph?.status !== 'ready') return;
+        fetchGraph(true);
     }, [selectedGraphId, selectedGraph?.status]);
 
     useEffect(() => {
@@ -981,12 +1046,58 @@ const KnowledgeGraph = () => {
                 )}
                 <InlineErrorBanner
                     message={
-                        (selectedGraph && selectedGraph.status === 'error' && selectedGraph.error_message)
+                        mismatchPayload?.message
+                            ? mismatchPayload.message
+                            : (selectedGraph && selectedGraph.status === 'error' && selectedGraph.error_message)
                             ? selectedGraph.error_message
                             : graphError
                     }
                     className="pointer-events-auto"
                 />
+                {mismatchPayload && (
+                    <div className="pointer-events-auto rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-rose-100 mb-4">
+                        <div className="text-xs font-black uppercase tracking-wider">Embedding Mismatch</div>
+                        <div className="mt-2 text-sm">
+                            Model returns <b>{mismatchPayload.actual_model_dimensions}</b> dims, but vector index expects <b>{mismatchPayload.expected_db_dimensions}</b>.
+                        </div>
+                        <div className="mt-1 text-[11px] opacity-90">
+                            Provider: {mismatchPayload.provider || '—'} | Model: {mismatchPayload.model || '—'} | Configured: {mismatchPayload.configured_dimensions ?? '—'}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                                onClick={() => navigate('/settings')}
+                                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest border border-white/20"
+                            >
+                                Open Settings
+                            </button>
+                            <button
+                                onClick={runEmbeddingDiagnostics}
+                                disabled={mismatchLoading}
+                                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest border border-white/20 disabled:opacity-50"
+                            >
+                                {mismatchLoading ? 'Running...' : 'Run Diagnostics'}
+                            </button>
+                            <button
+                                onClick={triggerReindex}
+                                disabled={reindexLoading}
+                                className="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-[10px] font-black uppercase tracking-widest border border-white/20 disabled:opacity-50"
+                            >
+                                {reindexLoading ? 'Starting...' : 'Reindex Embeddings'}
+                            </button>
+                        </div>
+                        {mismatchDiagnostics && (
+                            <div className="mt-3 rounded-xl border border-white/20 bg-black/20 p-3 text-[11px]">
+                                {mismatchDiagnostics.detail}
+                                <div className="mt-1 opacity-80">
+                                    Configured: {mismatchDiagnostics.configured_dimensions ?? '—'} | Model: {mismatchDiagnostics.detected_model_dimensions ?? '—'} | DB: {mismatchDiagnostics.db_dimensions ?? '—'}
+                                </div>
+                            </div>
+                        )}
+                        {reindexMessage && (
+                            <div className="mt-3 text-[11px] text-white/90">{reindexMessage}</div>
+                        )}
+                    </div>
+                )}
 
                 <div className="flex-1 flex gap-6 overflow-hidden relative">
                     {/* Construction HUD */}

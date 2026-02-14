@@ -350,6 +350,77 @@ def migrate_knowledge_graphs_table():
             pass
 
 
+def migrate_learning_chunks_table():
+    """Ensure learning_chunks supports mixed embedding dimensions."""
+    try:
+        postgres_conn.execute_write("ALTER TABLE learning_chunks ADD COLUMN embedding_dimensions INTEGER")
+        print("Added column embedding_dimensions to learning_chunks table")
+    except Exception:
+        # Ignore if column already exists
+        pass
+
+    # Backfill missing dimensions from existing vectors where possible.
+    try:
+        postgres_conn.execute_write("""
+            UPDATE learning_chunks
+            SET embedding_dimensions = vector_dims(embedding)
+            WHERE embedding_dimensions IS NULL
+        """)
+    except Exception:
+        pass
+
+    # Convert fixed-size vector(N) column to unconstrained vector so mixed dims can coexist.
+    try:
+        res = postgres_conn.execute_query(
+            """
+            SELECT format_type(a.atttypid, a.atttypmod) AS ftype
+            FROM pg_attribute a
+            JOIN pg_class c ON c.oid = a.attrelid
+            JOIN pg_namespace n ON n.oid = c.relnamespace
+            WHERE n.nspname = 'public'
+              AND c.relname = 'learning_chunks'
+              AND a.attname = 'embedding'
+            LIMIT 1
+            """
+        )
+        ftype = (res[0].get("ftype") if res else None) or ""
+        if isinstance(ftype, str) and ftype.startswith("vector("):
+            try:
+                postgres_conn.execute_write("DROP INDEX IF EXISTS learning_chunks_embedding_idx")
+            except Exception:
+                pass
+            postgres_conn.execute_write(
+                "ALTER TABLE learning_chunks ALTER COLUMN embedding TYPE vector USING embedding::vector"
+            )
+            print("Converted learning_chunks.embedding to unconstrained vector")
+    except Exception as e:
+        print(f"Could not migrate learning_chunks.embedding type: {e}")
+
+    # Ensure dimensionality column is populated for future similarity filtering.
+    try:
+        postgres_conn.execute_write("""
+            UPDATE learning_chunks
+            SET embedding_dimensions = vector_dims(embedding)
+            WHERE embedding_dimensions IS NULL
+        """)
+    except Exception:
+        pass
+
+    # Index for fast dimensionality filtering.
+    try:
+        postgres_conn.execute_write(
+            "CREATE INDEX IF NOT EXISTS learning_chunks_embedding_dimensions_idx ON learning_chunks (embedding_dimensions)"
+        )
+    except Exception:
+        pass
+
+    # Enforce column presence for new writes once backfill completes.
+    try:
+        postgres_conn.execute_write("ALTER TABLE learning_chunks ALTER COLUMN embedding_dimensions SET NOT NULL")
+    except Exception:
+        pass
+
+
 def initialize_databases():
     """Initialize both Neo4j and PostgreSQL databases."""
     print("Initializing databases...")
@@ -363,6 +434,9 @@ def initialize_databases():
     if not initialize_orm_tables():
         logger.error("ORM initialization failed")
         return False
+    
+    # 2b. Ensure vector table supports mixed embedding dimensions
+    migrate_learning_chunks_table()
 
     # 3. Initialize Neo4j constraints
     try:

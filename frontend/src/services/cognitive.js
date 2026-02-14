@@ -48,6 +48,14 @@ const checkEmbeddingHealth = async () => {
     });
 };
 
+const getEmbeddingDiagnostics = async () => {
+    return api.get('/cognitive/embedding-diagnostics', {
+        headers: {
+            'X-Silent-Error': '1'
+        }
+    });
+};
+
 const checkLlmHealth = async () => {
     return api.get('/cognitive/llm-health', {
         headers: {
@@ -69,6 +77,7 @@ export default {
     getSettings,
     updateSettings,
     checkEmbeddingHealth,
+    getEmbeddingDiagnostics,
     checkLlmHealth,
     reindexEmbeddings
 };

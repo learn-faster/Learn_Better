@@ -40,14 +40,15 @@ CREATE TABLE IF NOT EXISTS learning_chunks (
     document_id INTEGER REFERENCES documents(id) ON DELETE CASCADE,
     doc_source TEXT NOT NULL,           -- Source filename or URL
     content TEXT NOT NULL,              -- Markdown text chunk
-    embedding vector(768) NOT NULL,     -- Semantic embedding from embeddinggemma:latest (768 dimensions)
+    embedding vector NOT NULL,          -- Unconstrained vector supports mixed embedding dimensions
+    embedding_dimensions INTEGER NOT NULL, -- Stored vector dimensionality for safe filtering
     concept_tag TEXT NOT NULL,          -- Links to Neo4j Concept.name
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create efficient vector similarity search index
-CREATE INDEX IF NOT EXISTS learning_chunks_embedding_idx 
-ON learning_chunks USING hnsw (embedding vector_cosine_ops);
+-- Create index to filter by vector dimensionality before similarity operations
+CREATE INDEX IF NOT EXISTS learning_chunks_embedding_dimensions_idx
+ON learning_chunks (embedding_dimensions);
 
 -- Create fast concept-based retrieval index
 CREATE INDEX IF NOT EXISTS learning_chunks_concept_tag_idx 

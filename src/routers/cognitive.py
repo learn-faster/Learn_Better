@@ -12,6 +12,7 @@ from src.services.llm_service import llm_service
 from src.models.orm import UserSettings, Document
 from src.config import settings as app_settings
 from src.ingestion.ingestion_engine import IngestionEngine
+from src.ingestion.vector_storage import VectorStorage
 from src.utils.logger import logger
 from src.dependencies import get_request_user_id
 from src.services.ai_settings import (
@@ -295,6 +296,75 @@ async def embedding_health(
         except Exception as e:
             return {"ok": False, "provider": provider, "model": model, "base_url": base_url, "detail": str(e)}
     return {"ok": True, "provider": provider, "model": model, "base_url": base_url, "detail": "Connected"}
+
+
+@router.get("/embedding-diagnostics")
+async def embedding_diagnostics(
+    user_id: str = Depends(get_request_user_id),
+    db: Session = Depends(get_db)
+):
+    settings_row = get_or_create_user_settings(db, user_id)
+    canonical = build_canonical_llm_config(settings_row)
+    embedding_cfg = canonical.get("embedding_config") or default_embedding_config()
+
+    provider = (embedding_cfg.get("provider") or app_settings.embedding_provider or "").lower()
+    model = embedding_cfg.get("model") or app_settings.embedding_model
+    base_url = embedding_cfg.get("base_url") or app_settings.embedding_base_url
+    configured_dimensions = embedding_cfg.get("dimensions")
+    if provider == "ollama" and not base_url:
+        base_url = app_settings.ollama_base_url
+
+    db_dimensions = None
+    detected_model_dimensions = None
+
+    try:
+        db_dimensions = VectorStorage()._get_expected_vector_dimension()
+    except Exception as e:
+        logger.warning(f"Failed to read vector index dimensions: {e}")
+
+    try:
+        probe = await llm_service.get_embedding("ping")
+        detected_model_dimensions = len(probe) if isinstance(probe, list) else None
+    except Exception as e:
+        return {
+            "ok": False,
+            "status_code": "unavailable",
+            "provider": provider or None,
+            "model": model,
+            "base_url": base_url,
+            "configured_dimensions": configured_dimensions,
+            "detected_model_dimensions": None,
+            "db_dimensions": db_dimensions,
+            "compatible": False,
+            "suggested_dimensions": db_dimensions,
+            "detail": f"Could not probe embedding model: {str(e)}"
+        }
+
+    compatible = True
+    if db_dimensions and detected_model_dimensions and int(db_dimensions) != int(detected_model_dimensions):
+        compatible = False
+
+    status_code = "ok" if compatible else "mismatch"
+    if db_dimensions is None:
+        detail = "DB vector column is unconstrained (mixed-dimension mode enabled)."
+    else:
+        detail = "Embedding dimensions are compatible." if compatible else (
+            f"Mismatch detected: vector index expects {db_dimensions}, model returns {detected_model_dimensions}."
+        )
+
+    return {
+        "ok": compatible,
+        "status_code": status_code,
+        "provider": provider or None,
+        "model": model,
+        "base_url": base_url,
+        "configured_dimensions": configured_dimensions,
+        "detected_model_dimensions": detected_model_dimensions,
+        "db_dimensions": db_dimensions,
+        "compatible": compatible,
+        "suggested_dimensions": db_dimensions or detected_model_dimensions,
+        "detail": detail
+    }
 
 
 @router.get("/llm-health")

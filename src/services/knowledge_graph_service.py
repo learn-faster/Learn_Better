@@ -3,6 +3,8 @@ Service layer for managing saved knowledge graphs.
 """
 
 from datetime import datetime
+import json
+import re
 from src.utils.time import utcnow
 import os
 from typing import Any, Dict, List, Optional
@@ -13,10 +15,49 @@ from src.models.orm import KnowledgeGraph, KnowledgeGraphDocument, Document, Use
 from src.models.schemas import LLMConfig
 from src.database.graph_storage import multi_doc_graph_storage
 from src.ingestion.ingestion_engine import IngestionEngine
+from src.ingestion.vector_storage import EmbeddingDimensionMismatchError
 from src.services.model_limits import recommend_extraction_settings
+from src.config import settings
 
 
 class KnowledgeGraphService:
+    @staticmethod
+    def _format_graph_error(error: Exception) -> str:
+        if isinstance(error, EmbeddingDimensionMismatchError):
+            payload = error.to_payload()
+            payload["context"] = "knowledge_graph_build"
+            return json.dumps(payload)
+        # Normalize legacy wrapped pgvector errors into structured payloads.
+        message = str(error or "")
+        match = re.search(r"expected\s+(\d+)\s+dimensions,?\s+not\s+(\d+)", message, flags=re.IGNORECASE)
+        if match:
+            expected = int(match.group(1))
+            actual = int(match.group(2))
+            provider = (getattr(settings, "embedding_provider", None) or "").lower()
+            model = getattr(settings, "embedding_model", None) or ""
+            base_url = getattr(settings, "embedding_base_url", None)
+            if provider == "ollama" and not base_url:
+                base_url = getattr(settings, "ollama_base_url", None)
+            payload = {
+                "code": "EMBEDDING_DIMENSION_MISMATCH",
+                "message": (
+                    f"Embedding dimension mismatch: model produced {actual}, "
+                    f"but vector index expects {expected}."
+                ),
+                "expected_db_dimensions": expected,
+                "actual_model_dimensions": actual,
+                "configured_dimensions": getattr(settings, "embedding_dimensions", None),
+                "provider": provider,
+                "model": model,
+                "base_url": base_url,
+                "action": "update_dimensions_and_reindex",
+                "recommendation": "Use mixed-dimension DB mode or align dimensions and reindex.",
+                "context": "knowledge_graph_build",
+                "raw_error": message,
+            }
+            return json.dumps(payload)
+        return str(error)
+
     @staticmethod
     def _is_large_source(doc: Document) -> bool:
         if doc.page_count and doc.page_count >= 40:
@@ -208,6 +249,8 @@ class KnowledgeGraphService:
         requested_chunk_size = chunk_size or graph.chunk_size
 
         total_docs = max(1, len(doc_ids))
+        total_concepts_stored = 0
+        total_relationships_stored = 0
 
         def update_build(stage: str, progress: float):
             graph.build_stage = stage
@@ -247,7 +290,7 @@ class KnowledgeGraphService:
                         span = 75.0 / total_docs
                         update_build(step, base + (pct / 100.0) * span)
 
-                    await ingestion_engine.process_document_scoped_from_text(
+                    result = await ingestion_engine.process_document_scoped_from_text(
                         source_text,
                         doc_id,
                         llm_config=llm_config,
@@ -255,6 +298,8 @@ class KnowledgeGraphService:
                         chunk_size=processing_rec.get("applied_chunk_size"),
                         on_progress=_progress
                     )
+                    total_concepts_stored += int(result.get("concepts_stored", 0) or 0)
+                    total_relationships_stored += int(result.get("relationships_stored", 0) or 0)
             elif build_mode == "rebuild":
                 for idx, doc_id in enumerate(doc_ids):
                     doc = db.query(Document).filter(Document.id == doc_id).first()
@@ -282,7 +327,7 @@ class KnowledgeGraphService:
                         span = 70.0 / total_docs
                         update_build(step, base + (pct / 100.0) * span)
 
-                    await ingestion_engine.process_document_scoped_from_text(
+                    result = await ingestion_engine.process_document_scoped_from_text(
                         source_text,
                         doc_id,
                         llm_config=llm_config,
@@ -290,6 +335,8 @@ class KnowledgeGraphService:
                         chunk_size=processing_rec.get("applied_chunk_size"),
                         on_progress=_progress
                     )
+                    total_concepts_stored += int(result.get("concepts_stored", 0) or 0)
+                    total_relationships_stored += int(result.get("relationships_stored", 0) or 0)
             else:
                 raise ValueError("Invalid build_mode. Use 'existing' or 'rebuild'.")
 
@@ -299,6 +346,12 @@ class KnowledgeGraphService:
             
             # Update graph metadata
             graph_data = KnowledgeGraphService.get_graph_data(graph, include_connections=False)
+            if int(graph_data.get("node_count", 0) or 0) == 0:
+                raise ValueError(
+                    "Graph build finished but produced 0 nodes. "
+                    "Extraction/storage returned empty output. "
+                    f"(concepts_stored={total_concepts_stored}, relationships_stored={total_relationships_stored})"
+                )
             graph.node_count = graph_data["node_count"]
             graph.relationship_count = graph_data["relationship_count"]
             graph.status = "ready"
@@ -311,7 +364,7 @@ class KnowledgeGraphService:
             
         except Exception as e:
             graph.status = "error"
-            graph.error_message = str(e)
+            graph.error_message = KnowledgeGraphService._format_graph_error(e)
             graph.build_stage = "error"
             db.commit()
             raise e

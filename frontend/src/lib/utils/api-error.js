@@ -1,6 +1,9 @@
 export function parseApiError(error) {
   const status = error?.response?.status;
   const data = error?.response?.data;
+  const detailObj = data?.detail && typeof data.detail === 'object' && !Array.isArray(data.detail)
+    ? data.detail
+    : null;
   let detail = data?.detail ?? data?.message ?? error?.message ?? 'An unexpected error occurred';
 
   if (Array.isArray(detail)) {
@@ -29,6 +32,16 @@ export function parseApiError(error) {
     .trim();
 
   const mappings = [
+    {
+      test: () => detailObj?.code === 'EMBEDDING_DIMENSION_MISMATCH',
+      message: 'Embedding dimensions are incompatible.',
+      hint: 'Open Settings, set embedding dimensions to match your vector index, then reindex embeddings.'
+    },
+    {
+      test: (m) => /expected\s+\d+\s+dimensions?,?\s+not\s+\d+/.test(m),
+      message: 'Embedding dimensions are incompatible.',
+      hint: 'Your DB vector index dimension does not match model output. Use mixed-dimension migration or reindex after alignment.'
+    },
     {
       test: (m) => m.includes('missing api key') || m.includes('api key is required'),
       message: 'Missing API key.',

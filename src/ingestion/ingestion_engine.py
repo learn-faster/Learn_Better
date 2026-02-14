@@ -20,7 +20,7 @@ from dotenv import load_dotenv
 from src.models.schemas import GraphSchema, PrerequisiteLink
 from src.database.neo4j_conn import neo4j_conn
 from src.database.graph_storage import graph_storage
-from .vector_storage import VectorStorage
+from .vector_storage import VectorStorage, EmbeddingDimensionMismatchError
 from .document_processor import DocumentProcessor
 from src.services.llm_service import llm_service, RateLimitException
 from src.models.schemas import LLMConfig
@@ -505,6 +505,8 @@ Content to analyze:
             logger.info(f"Stored {len(chunk_ids)} content chunks from '{doc_source}'")
             return chunk_ids
             
+        except EmbeddingDimensionMismatchError:
+            raise
         except Exception as e:
             logger.error(f"Failed to store vector data: {str(e)}")
             raise ValueError(f"Vector data storage failed: {str(e)}") from e
@@ -617,6 +619,8 @@ Content to analyze:
             
         except Exception as e:
             logger.error(f"Complete document processing failed: {str(e)}")
+            if isinstance(e, EmbeddingDimensionMismatchError):
+                raise
             raise ValueError(f"Document processing failed: {str(e)}") from e
 
     async def process_document(
